@@ -6,6 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma, PrismaClientKnownRequestError } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import * as bcrypt from 'bcrypt';
 import * as QRCode from 'qrcode';
@@ -115,56 +116,79 @@ export class AuthService {
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Create Company and Super Admin in a transaction
-    return this.prisma.$transaction(async (tx) => {
-      const company = await tx.company.create({
-        data: { name: companyName },
-      });
+    try {
+      // Create Company and Super Admin in a transaction
+      return await this.prisma.$transaction(async (tx) => {
+        const company = await tx.company.create({
+          data: { name: companyName },
+        });
 
-      const user = await tx.user.create({
-        data: {
-          email,
-          password_hash: passwordHash,
-          first_name: firstName,
-          last_name: lastName,
-          company_id: company.id,
-        },
-      });
+        const user = await tx.user.create({
+          data: {
+            email,
+            password_hash: passwordHash,
+            first_name: firstName,
+            last_name: lastName,
+            company_id: company.id,
+          },
+        });
 
-      // Initialize company setup tracking
-      await tx.companySetup.create({
-        data: { company_id: company.id },
-      });
+        // Initialize company setup tracking
+        await tx.companySetup.create({
+          data: { company_id: company.id },
+        });
 
-      // Add user to a system "Super Admin" role for this company
-      const role = await tx.role.create({
-        data: {
-          company_id: company.id,
-          name: 'Super Admin',
-          level: 1,
-          is_system: true,
-        },
-      });
+        // Add user to a system "Super Admin" role for this company
+        const role = await tx.role.create({
+          data: {
+            company_id: company.id,
+            name: 'Super Admin',
+            level: 1,
+            is_system: true,
+          },
+        });
 
-      await tx.departmentMember.create({
-        data: {
-          user_id: user.id,
-          department_id: (
-            await tx.department.create({
-              data: {
-                company_id: company.id,
-                name: 'Administration',
-                template_key: 'administration',
-              },
-            })
-          ).id,
-          role_id: role.id,
-          is_head: true,
-        },
-      });
+        const adminDepartment = await tx.department.create({
+          data: {
+            company_id: company.id,
+            name: 'Administration',
+            template_key: 'administration',
+          },
+        });
 
-      return { user, company };
-    });
+        await tx.departmentMember.create({
+          data: {
+            user_id: user.id,
+            department_id: adminDepartment.id,
+            role_id: role.id,
+            is_head: true,
+          },
+        });
+
+        return { user, company };
+      });
+    } catch (error) {
+      this.logger.error(
+        `Registration failed for ${email.toLowerCase()} / ${companyName}`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new ConflictException('An account or company record already exists with those details.');
+        }
+
+        if (error.code === 'P2003') {
+          throw new BadRequestException('Registration failed because related setup data could not be created.');
+        }
+      }
+
+      if (error instanceof Prisma.PrismaClientValidationError) {
+        throw new BadRequestException('Registration request could not be saved with the provided details.');
+      }
+
+      throw new BadRequestException('Registration failed unexpectedly. Please try again.');
+    }
   }
 
   async getCurrentUser(userId: string) {
