@@ -367,7 +367,7 @@ export default function LoginPage() {
             <p className="text-slate-500 text-sm">
               Don&apos;t have an operating system?{' '}
             <button 
-              onClick={() => router.push('/auth/register')}
+              onClick={() => router.push('/register')}
               className="text-brand-gold font-bold hover:underline"
               suppressHydrationWarning
             >

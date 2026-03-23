@@ -66,7 +66,7 @@ export default function RootPage() {
         }
       } catch {
         logout();
-        router.push('/auth/login');
+        router.push('/login');
       }
     };
 

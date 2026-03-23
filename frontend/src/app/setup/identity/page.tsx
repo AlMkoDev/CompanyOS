@@ -37,7 +37,7 @@ export default function IdentityStep() {
         }
       } catch (err) {
         console.error('Failed to fetch identity:', err);
-        router.push('/auth/login');
+        router.push('/login');
       }
     };
     fetchIdentity();

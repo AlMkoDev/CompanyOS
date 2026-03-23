@@ -218,7 +218,7 @@ export default function DepartmentWizard() {
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-3xl font-heading text-brand-navy mb-4">Unauthorized Session</h2>
         <p className="text-slate-500 mb-8 max-w-md">Your session has expired or you are not authorized to access this wizard. Please log in again.</p>
-        <button onClick={() => router.push('/auth/login')} className="btn-premium px-8 py-3">Return to Login</button>
+        <button onClick={() => router.push('/login')} className="btn-premium px-8 py-3">Return to Login</button>
       </div>
     );
   }

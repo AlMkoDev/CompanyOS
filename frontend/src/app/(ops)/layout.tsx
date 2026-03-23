@@ -40,7 +40,7 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
     }
 
     logout();
-    router.push('/auth/login');
+    router.push('/login');
   };
 
   const navItems = [
