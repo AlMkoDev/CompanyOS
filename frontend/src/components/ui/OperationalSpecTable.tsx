@@ -41,7 +41,7 @@ interface CommunicationLine {
   content: string;
 }
 
-type OperationalSpecData =
+export type OperationalSpecData =
   | RoutineData
   | DataPackAsset[]
   | ActivityItem[]

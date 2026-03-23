@@ -3,7 +3,7 @@
 import React from 'react';
 import { AlertCircle, CheckCircle2, Clock, ShieldAlert } from 'lucide-react';
 
-interface Gap {
+export interface Gap {
   id: string;
   item_name: string;
   gap_type: string;

@@ -67,7 +67,7 @@ export default function LoginPage() {
     if (
       setup &&
       (setup.is_complete ||
-        setup.current_step >= 4 ||
+        (setup.current_step ?? 0) >= 4 ||
         (setup.completed_steps && setup.completed_steps.length >= 4))
     ) {
       router.push('/dashboard');

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence, useAnimation, type PanInfo } from 'framer-motion';
+import { motion, AnimatePresence, useAnimation, type PanInfo, type Variants } from 'framer-motion';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 
 // ============================================================================
@@ -66,7 +66,7 @@ interface GanttChartAnimatedProps {
 // ANIMATION CONFIGURATIONS
 // ============================================================================
 
-const BAR_ANIMATIONS = {
+const BAR_ANIMATIONS: Variants = {
   // Normal state
   normal: {
     scale: 1,
@@ -103,7 +103,7 @@ const BAR_ANIMATIONS = {
   },
 };
 
-const MILESTONE_ANIMATIONS = {
+const MILESTONE_ANIMATIONS: Variants = {
   normal: {
     scale: 1,
     opacity: 0.9,

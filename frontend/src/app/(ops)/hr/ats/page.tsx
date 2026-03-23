@@ -41,7 +41,7 @@ interface AtsRequisition {
   id: string;
 }
 
-const stages = [
+const stages: Array<{ id: PipelineStageId; name: string; color: string }> = [
   { id: 'applied', name: 'Applied', color: 'bg-slate-100 text-slate-600' },
   { id: 'screened', name: 'Screened', color: 'bg-blue-50 text-blue-600' },
   { id: 'interview1', name: 'Interview 1', color: 'bg-indigo-50 text-indigo-600' },
@@ -149,7 +149,7 @@ export default function AtsDashboard() {
               </div>
 
               <div className="flex flex-col gap-3 min-h-[500px] bg-slate-50/50 p-3 rounded-2xl border border-dashed border-slate-200">
-                {pipeline?.[stage.id as PipelineStageId]?.map((app) => (
+                {pipeline?.[stage.id]?.map((app) => (
                   <Link 
                     key={app.id} 
                     href={`/hr/ats/candidates/${app.candidate_id}`}

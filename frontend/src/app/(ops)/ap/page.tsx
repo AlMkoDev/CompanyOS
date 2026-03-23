@@ -106,7 +106,7 @@ export default function ApDashboardPage() {
         />
         <StatCard 
           label="Active Vendors" 
-          value={dashboard ? dashboard.vendorCount : "0"} 
+          value={dashboard?.vendorCount ?? 0} 
           subtext="Onboarded Partners"
           icon={<Building2 className="text-brand-navy" />}
           trend="+2"
@@ -114,7 +114,7 @@ export default function ApDashboardPage() {
         />
         <StatCard 
           label="Pending POs" 
-          value={dashboard ? dashboard.recentPOs?.length : "0"} 
+          value={dashboard?.recentPOs?.length ?? 0} 
           subtext="Awaiting Approval"
           icon={<ShoppingCart className="text-brand-gold" />}
           trend="8 High"

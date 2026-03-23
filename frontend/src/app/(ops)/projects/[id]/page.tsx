@@ -376,6 +376,7 @@ export default function ProjectWorkspacePage() {
                   planned: false,
                   date: new Date('2026-03-01'),
                   createdBy: 'John Doe',
+                  createdAt: new Date('2026-03-01'),
                 },
                 {
                   id: 'spend-002',
@@ -388,6 +389,7 @@ export default function ProjectWorkspacePage() {
                   receiptUrl: '#',
                   receiptName: 'aws_invoice_q1.pdf',
                   createdBy: 'Jane Smith',
+                  createdAt: new Date('2026-03-05'),
                 },
                 {
                   id: 'spend-003',
@@ -398,6 +400,7 @@ export default function ProjectWorkspacePage() {
                   planned: true,
                   date: new Date('2026-03-10'),
                   createdBy: 'Mike Johnson',
+                  createdAt: new Date('2026-03-10'),
                 },
                 {
                   id: 'spend-004',
@@ -408,6 +411,7 @@ export default function ProjectWorkspacePage() {
                   planned: false,
                   date: new Date('2026-03-12'),
                   createdBy: 'Sarah Williams',
+                  createdAt: new Date('2026-03-12'),
                 },
                 {
                   id: 'spend-005',
@@ -418,6 +422,7 @@ export default function ProjectWorkspacePage() {
                   planned: true,
                   date: new Date('2026-03-15'),
                   createdBy: 'Alex Brown',
+                  createdAt: new Date('2026-03-15'),
                 },
               ]}
               onAddSpend={(entry: NewSpendEntry) => console.log('Adding spend entry:', entry)}

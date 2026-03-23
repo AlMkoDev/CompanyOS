@@ -25,6 +25,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { OperationalSpecTable } from '@/components/ui/OperationalSpecTable';
+import type { OperationalSpecData } from '@/components/ui/OperationalSpecTable';
 import { SOPLibrary } from '@/components/ops/SOPLibrary';
 import { KPIRegistry } from '@/components/ops/KPIRegistry';
 
@@ -56,10 +57,10 @@ interface DepartmentData {
   roles?: DepartmentRole[];
   kpis?: DepartmentKpi[];
   budget_allocation?: number;
-  operational_routines?: unknown[];
-  activities?: unknown[];
-  communication_lines?: unknown[];
-  data_pack?: unknown[];
+  operational_routines?: OperationalSpecData;
+  activities?: OperationalSpecData;
+  communication_lines?: OperationalSpecData;
+  data_pack?: OperationalSpecData;
 }
 
 interface DepartmentTemplate {
@@ -294,7 +295,7 @@ export default function DepartmentDetailPage() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Departmental Routines" 
-                data={data.operational_routines} 
+                data={data.operational_routines ?? {}} 
                 type="routines" 
                 icon={<Clock size={24} className="text-brand-gold" />}
               />
@@ -305,7 +306,7 @@ export default function DepartmentDetailPage() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Technical Activities" 
-                data={data.activities} 
+                data={data.activities ?? []} 
                 type="activities" 
                 icon={<GitBranch size={24} className="text-brand-accent" />}
               />
@@ -328,13 +329,13 @@ export default function DepartmentDetailPage() {
             <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Communication Network" 
-                data={data.communication_lines} 
+                data={data.communication_lines ?? []} 
                 type="comms" 
                 icon={<Network size={24} className="text-brand-navy" />}
               />
               <OperationalSpecTable 
                 title="Infrastructure Data Packs" 
-                data={data.data_pack} 
+                data={data.data_pack ?? []} 
                 type="datapack" 
                 icon={<Database size={24} className="text-emerald-500" />}
               />

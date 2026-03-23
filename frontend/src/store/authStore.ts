@@ -8,6 +8,7 @@ interface CompanySetup {
 }
 
 interface CompanySummary {
+  name?: string;
   setup?: CompanySetup;
   [key: string]: unknown;
 }

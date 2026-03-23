@@ -175,7 +175,7 @@ function CollectionItem({ data }: CollectionItemProps) {
                      {64} days overdue
                   </div>
                   <div className="text-xl font-heading text-brand-navy font-bold">
-                     R {Number(data.invoice?.amount - data.invoice?.paid_amount).toLocaleString()}
+                     R {(Number(data.invoice?.amount ?? 0) - Number(data.invoice?.paid_amount ?? 0)).toLocaleString()}
                   </div>
                </div>
             </div>

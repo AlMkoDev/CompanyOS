@@ -47,10 +47,11 @@ interface DependencyEdge {
   lagDays: number;
 }
 
-interface HoveredElement {
-  type: string;
-  data: ProjectBar | Milestone | RAIDFlag | DependencyEdge;
-}
+type HoveredElement =
+  | { type: 'project'; data: ProjectBar }
+  | { type: 'milestone'; data: Milestone }
+  | { type: 'raid'; data: RAIDFlag }
+  | { type: 'dependency'; data: DependencyEdge };
 
 interface GanttChartProps {
   projects: ProjectBar[];

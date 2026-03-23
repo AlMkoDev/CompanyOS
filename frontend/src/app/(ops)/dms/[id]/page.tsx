@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -144,11 +143,13 @@ export default function DocumentDetailPage() {
          </div>
 
          <div className="flex items-center gap-3">
-            {currentDownloadUrl ? (
-              <Button asChild variant="outline" className="h-12 px-6 rounded-2xl border-slate-200 text-slate-600 font-black uppercase tracking-widest text-[10px] flex gap-2 shadow-sm">
-                <Link href={currentDownloadUrl} target="_blank" rel="noopener noreferrer nofollow">
-                  <Download size={18} /> Download Current
-                </Link>
+           {currentDownloadUrl ? (
+              <Button
+                variant="outline"
+                className="h-12 px-6 rounded-2xl border-slate-200 text-slate-600 font-black uppercase tracking-widest text-[10px] flex gap-2 shadow-sm"
+                onClick={() => window.open(currentDownloadUrl, '_blank', 'noopener,noreferrer')}
+              >
+                <Download size={18} /> Download Current
               </Button>
             ) : (
               <Button variant="outline" disabled className="h-12 px-6 rounded-2xl border-slate-200 text-slate-600 font-black uppercase tracking-widest text-[10px] flex gap-2 shadow-sm">

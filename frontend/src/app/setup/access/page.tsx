@@ -41,7 +41,7 @@ export default function AccessStep() {
             ...user.company,
             setup: { ...(user.company.setup || {}), is_complete: true, current_step: 5 }
           }
-        }, null);
+        });
       }
       
       router.push('/dashboard');
@@ -105,7 +105,7 @@ export default function AccessStep() {
       }
 
       if (user) {
-        setAuth({ ...user, mfaEnabled: true }, null);
+        setAuth({ ...user, mfaEnabled: true });
       }
 
       setMfaSuccess('Multi-factor authentication is now active for this account.');

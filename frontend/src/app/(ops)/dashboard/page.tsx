@@ -3,17 +3,19 @@
 import React from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { CorporateVisualizer } from '@/components/viz/CorporateVisualizer';
-import { OperationalGapDashboard } from '@/components/ops/OperationalGapDashboard';
+import { OperationalGapDashboard, type Gap } from '@/components/ops/OperationalGapDashboard';
 import { apiFetch } from '@/lib/api';
 
 interface DepartmentSummary {
   id: string;
   name: string;
+  color?: string;
+  template_key?: string;
 }
 
 interface CompanySummary {
   tagline?: string;
-  gap_statuses?: unknown[];
+  gap_statuses?: Gap[];
 }
 
 interface TaskSummary {
@@ -138,7 +140,14 @@ export default function DashboardPage() {
             </h2>
             <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase font-bold opacity-50">Structural Schematic v5.0 // OPS_MODE_ENABLED</span>
          </div>
-         <CorporateVisualizer departments={departments} loading={loading} />
+         <CorporateVisualizer
+            departments={departments.map((department) => ({
+              ...department,
+              color: department.color ?? '#1e3a8a',
+              template_key: department.template_key ?? 'standard',
+            }))}
+            loading={loading}
+         />
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start pb-20">

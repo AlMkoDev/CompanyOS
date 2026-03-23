@@ -242,12 +242,12 @@ export default function ContractDetailPage() {
 
                   <h3 className="font-bold text-base mt-8">1. VARIABLE DEFINITIONS</h3>
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded grid grid-cols-2 gap-4">
-                    {Object.entries(contract.metadata || {}).map(([key, value]) => (
-                      <div key={key}>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase block">{key.replace(/_/g, ' ')}</span>
-                        <span className="font-bold">{value.toString()}</span>
-                      </div>
-                    ))}
+                      {Object.entries(contract.metadata || {}).map(([key, value]) => (
+                        <div key={key}>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">{key.replace(/_/g, ' ')}</span>
+                        <span className="font-bold">{value == null ? '-' : String(value)}</span>
+                        </div>
+                      ))}
                   </div>
 
                   <h3 className="font-bold text-base mt-8">2. STANDARD TERMS & CONDITIONS</h3>

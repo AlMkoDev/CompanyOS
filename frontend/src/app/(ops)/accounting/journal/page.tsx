@@ -74,8 +74,8 @@ export default function JournalEntryPage() {
     const newLines = [...lines];
     newLines[index] = { ...newLines[index], [field]: value };
     // If setting debit, clear credit and vice versa
-    if (field === 'debit' && value > 0) newLines[index].credit = 0;
-    if (field === 'credit' && value > 0) newLines[index].debit = 0;
+    if (field === 'debit' && typeof value === 'number' && value > 0) newLines[index].credit = 0;
+    if (field === 'credit' && typeof value === 'number' && value > 0) newLines[index].debit = 0;
     setLines(newLines);
   };
 

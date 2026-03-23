@@ -140,7 +140,7 @@ export default function NewTicketPage() {
 
              <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">Select Primary Asset</label>
-                <Select onValueChange={(v) => setFormData({ ...formData, asset_id: v })}>
+                <Select onValueChange={(v) => setFormData({ ...formData, asset_id: String(v) })}>
                   <SelectTrigger className="h-16 rounded-3xl border-slate-100 bg-white shadow-sm px-6 text-sm font-bold">
                     <SelectValue placeholder="Choose an asset from inventory..." />
                   </SelectTrigger>
@@ -169,7 +169,7 @@ export default function NewTicketPage() {
                     <AlertCircle size={14} />
                     Urgency Parameters
                   </div>
-                  <Select onValueChange={(v) => setFormData({ ...formData, priority: v })} defaultValue="P3">
+                  <Select onValueChange={(v) => setFormData({ ...formData, priority: String(v) })} defaultValue="P3">
                     <SelectTrigger className="h-16 rounded-3xl border-white/10 bg-white/5 shadow-inner px-6 text-sm font-black uppercase tracking-widest outline-none border-none">
                       <SelectValue placeholder="Priority" />
                     </SelectTrigger>
@@ -187,7 +187,7 @@ export default function NewTicketPage() {
                     <Layers size={14} />
                     Service Category
                   </div>
-                  <Select onValueChange={(v) => setFormData({ ...formData, category: v })} defaultValue="Hardware">
+                  <Select onValueChange={(v) => setFormData({ ...formData, category: String(v) })} defaultValue="Hardware">
                     <SelectTrigger className="h-16 rounded-3xl border-white/10 bg-white/5 shadow-inner px-6 text-sm font-black uppercase tracking-widest outline-none border-none">
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>

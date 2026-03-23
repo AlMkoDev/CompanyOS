@@ -130,6 +130,8 @@ export default function ComplianceDetailPage() {
     );
   }
 
+  const proofs = deadline.proofs ?? [];
+
   return (
     <div className="p-8 space-y-8 max-w-[1400px] mx-auto min-h-screen pb-20">
       {/* Header */}
@@ -207,7 +209,7 @@ export default function ComplianceDetailPage() {
           <div className="bg-white rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
             <div className="flex border-b border-slate-100 p-2 gap-2">
               <TabButton selected={activeTab === 'details'} onClick={() => setActiveTab('details')} icon={Info}>General</TabButton>
-              <TabButton selected={activeTab === 'proofs'} onClick={() => setActiveTab('proofs')} icon={FileText}>Proofs ({deadline.proofs?.length || 0})</TabButton>
+              <TabButton selected={activeTab === 'proofs'} onClick={() => setActiveTab('proofs')} icon={FileText}>Proofs ({proofs.length})</TabButton>
               <TabButton selected={activeTab === 'audit'} onClick={() => setActiveTab('audit')} icon={History}>Audit Trail</TabButton>
             </div>
 
@@ -263,13 +265,13 @@ export default function ComplianceDetailPage() {
                     exit={{ opacity: 0, y: -10 }}
                     className="space-y-4"
                   >
-                    {deadline.proofs?.length === 0 ? (
+                    {proofs.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-64 text-slate-300">
                         <Download size={48} className="mb-4 opacity-50" />
                         <p className="font-medium text-slate-400">No proof documents found.</p>
                       </div>
                     ) : (
-                      deadline.proofs.map((proof) => (
+                      proofs.map((proof) => (
                         <div 
                           key={proof.id}
                           className="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-slate-200 hover:border-brand-gold hover:shadow-lg transition-all group"

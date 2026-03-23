@@ -70,6 +70,17 @@ export default function FeedbackPortalPage() {
     );
   }
 
+  if (!request) {
+    return (
+      <div className="p-8 flex items-center justify-center h-full">
+        <div className="text-center space-y-3">
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Feedback Request Unavailable</h2>
+          <p className="text-slate-500 font-medium">This feedback request could not be loaded.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (submitted) {
     return (
       <div className="p-8 flex flex-col items-center justify-center h-full space-y-6 text-center max-w-md mx-auto">
@@ -78,7 +89,7 @@ export default function FeedbackPortalPage() {
         </div>
         <div className="space-y-2">
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Feedback Submitted</h2>
-          <p className="text-slate-500 font-medium">Your contribution to {request.review.employee.first_name}&apos;s growth has been securely recorded. All feedback is anonymized.</p>
+          <p className="text-slate-500 font-medium">Your contribution to {request?.review.employee.first_name ?? 'your colleague'}&apos;s growth has been securely recorded. All feedback is anonymized.</p>
         </div>
         <button 
           onClick={() => router.push('/hr/performance')}

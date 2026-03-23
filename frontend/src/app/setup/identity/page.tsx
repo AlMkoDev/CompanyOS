@@ -21,7 +21,7 @@ export default function IdentityStep() {
           // If setup is already complete but local cache was stale, auto-redirect to dashboard
           if (data.setup && (data.setup.is_complete || data.setup.current_step >= 4)) {
              if (user) {
-               setAuth({ ...user, company: data }, null);
+               setAuth({ ...user, company: data });
              }
              router.push('/dashboard');
              return;

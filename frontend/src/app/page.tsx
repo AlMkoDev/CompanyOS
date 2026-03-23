@@ -34,7 +34,7 @@ export default function RootPage() {
         if (
           setup &&
           (setup.is_complete ||
-            setup.current_step >= 4 ||
+            (setup.current_step ?? 0) >= 4 ||
             (setup.completed_steps && setup.completed_steps.length >= 4))
         ) {
           router.push('/dashboard');
@@ -51,13 +51,13 @@ export default function RootPage() {
         }
 
         const data = (await res.json()) as { user: BootstrapUser };
-        setAuth(data.user, null);
+        setAuth(data.user);
 
         const setup = data.user.company?.setup;
         if (
           setup &&
           (setup.is_complete ||
-            setup.current_step >= 4 ||
+            (setup.current_step ?? 0) >= 4 ||
             (setup.completed_steps && setup.completed_steps.length >= 4))
         ) {
           router.push('/dashboard');
