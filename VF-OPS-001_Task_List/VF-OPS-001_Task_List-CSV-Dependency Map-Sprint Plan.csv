@@ -1,0 +1,73 @@
+VF-OPS-001 — Sprint Plan;;;;;
+Sprint;Focus;Task ID;Title;Role;SP
+Sprint 0;Pre-sprint · Dependency contracts, shared model agreement, schema authoring;INF-03;Shared User Model contract;BE;2
+;;;Sprint total;;2
+;;;;;
+Sprint 1;Epic 1 + Epic 2 (BE-01/03) + Epic 4 (SEC-01/03/04/05) + OPS-01;DB-01;Prisma schema — base PPM models;DB;5
+;;DB-02;Prisma schema — premium models;DB;8
+;;DB-03;Seed script — initial data;DB;2
+;;INF-01;S3 configuration for project files;DEVOPS;2
+;;INF-02;Notification service integration;BE;3
+;;BE-01;Project CRUD endpoints;BE;5
+;;BE-03;Kanban state machine;BE;5
+;;SEC-01;API role guards;BE;5
+;;SEC-03;Audit log integrity enforcement;BE;2
+;;SEC-04;Data isolation — project visibility;BE;5
+;;SEC-05;OpenAPI spec generation;BE;5
+;;OPS-01;Feature flag setup;DEVOPS;2
+;;;Sprint total;;49
+;;;;;
+Sprint 2;Epic 2 (BE-02/04/05/06/08/09) + Epic 3 (FE-01/02/03/10) + SEC-02/06 + QA-01/02;BE-02;RAG calculation engine;BE;8
+;;BE-04;RAID log management;BE;5
+;;BE-05;Budget tracking service;BE;5
+;;BE-06;Resource assignment service;BE;3
+;;BE-07;File attachment service;BE;5
+;;BE-08;Audit logging interceptor;BE;5
+;;BE-09;Portfolio aggregation API;BE;5
+;;FE-01;Portfolio dashboard page;FE;8
+;;FE-02;Project workspace layout;FE;5
+;;FE-03;Kanban board component;FE;13
+;;FE-10;RBAC frontend guards;FE;5
+;;SEC-02;Budget data access control;BE;3
+;;SEC-06;Manual RAG override controls;BE+FE;3
+;;QA-01;Unit tests — RAG logic;QA/BE;5
+;;QA-02;Unit tests — Kanban state machine;QA/BE;3
+;;;Sprint total;;81
+;;;;;
+Sprint 3;Epic 2 (BE-10/16) + Epic 3 (FE-04/06/07/08/09/11) + QA-03/04/05;BE-10;Gantt data API;BE;8
+;;BE-11;Cross-project dependency engine;BE;8
+;;BE-16;Export service — PDF and CSV;BE;5
+;;FE-04;Gantt chart — static rendering;FE;21
+;;FE-06;RAID log data grid;FE;8
+;;FE-07;Budget chart component;FE;5
+;;FE-08;Project creation wizard;FE;8
+;;FE-09;Task detail modal;FE;5
+;;FE-11;File upload component;FE;3
+;;QA-03;Integration tests — core flows;QA/BE;8
+;;QA-04;Integration tests — RBAC flows;QA/BE;5
+;;QA-05;E2E test — Kanban workflow;QA;5
+;;;Sprint total;;89
+;;;;;
+Sprint 4;Epic 2 (BE-11/12/13/14/15/17) + Epic 3 (FE-05/12/13/15) + QA-06/07/08/09 + OPS-03;BE-12;Monte Carlo forecast service;BE;13
+;;BE-13;Gate review workflow;BE;8
+;;BE-14;Capacity planning service;BE;5
+;;BE-15;OKR alignment service;BE;5
+;;BE-17;Notification preferences service;BE;3
+;;FE-05;Gantt chart — drag-to-reschedule;FE;13
+;;FE-12;Capacity planning grid;FE;8
+;;FE-13;Dependency graph view;FE;13
+;;FE-15;Gate review panel;FE;5
+;;QA-06;E2E test — Gantt chart;QA;5
+;;QA-07;Security penetration test;QA/SEC;5
+;;QA-08;Performance testing;QA/DEVOPS;5
+;;QA-09;UAT — Project Managers;QA/PM;3
+;;OPS-03;Performance monitoring setup;DEVOPS;3
+;;;Sprint total;;94
+;;;;;
+Sprint 5;Epic 3 (FE-14/16/17) + Epic 6 (OPS-02/04/05) — Phase 1 rollout;FE-14;Public status page builder;FE;8
+;;FE-16;Velocity analytics dashboard;FE;8
+;;FE-17;Prioritisation scoring matrix;FE;8
+;;OPS-02;Production migration + rollback plan;DEVOPS;5
+;;OPS-04;User training programme;PM;3
+;;OPS-05;Phase 1 rollout — Engineering pilot;DEVOPS/PM;3
+;;;Sprint total;;35

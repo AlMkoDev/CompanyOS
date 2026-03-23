@@ -1,0 +1,8 @@
+.qoder/
+.vscode/
+gen.py
+task1.md
+task2.md
+task3.md
+temp_*.txt
+*.log

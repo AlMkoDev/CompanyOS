@@ -1,0 +1,9 @@
+VF-OPS-003 — Epic Summary;;;;;;
+Epic;Total Tasks;P0 Tasks;P1 Tasks;P2 Tasks;Total SP;Avg SP
+Epic 1: Foundation;7;4;3;0;26;3,7
+Epic 2: Backend;20;6;10;4;133;6,7
+Epic 3: Frontend;18;5;9;4;108;6
+Epic 4: Security;6;4;2;0;19;3,2
+Epic 5: QA & Testing;8;2;6;0;41;5,1
+Epic 6: Deployment;6;4;2;0;21;3,5
+TOTAL;65;25;32;8;348;5,4

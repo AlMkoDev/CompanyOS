@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: companyos-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: companyos
+    ports:
+      - "5432:5432"
+    volumes:
+      - companyos_db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: companyos-cache
+    restart: always
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: companyos-backend
+    environment:
+      DATABASE_URL: "postgresql://postgres:password@postgres:5432/companyos?schema=public"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: "your-super-secret-key"
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: companyos-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: "http://localhost:3001/api/v1"
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  companyos_db_data:

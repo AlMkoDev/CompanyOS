@@ -1,0 +1,76 @@
+VF-OPS-003 — Sprint Plan;;;;;
+Sprint;Focus;Task ID;Title;Role;SP
+Sprint 0;Pre-sprint · Multi-location decision, Prisma schema, approval matrix sign-off, API contracts;INF-03;Approval policy configuration service;BE;3
+;;;Sprint total;;3
+;;;;;
+Sprint 1;Epic 1 + Epic 2 (BE-01/02/03) + Epic 4 (SEC-01/02) + OPS-01;DB-01;Prisma schema — core supply chain models;DB;5
+;;DB-02;Prisma schema — premium & analytics models;DB;8
+;;DB-03;Seed script — initial data;DB;2
+;;INF-01;S3 configuration for PO documents;DEVOPS;2
+;;INF-02;Notification service integration;BE;3
+;;INF-04;OpenAPI spec for all endpoints;BE;3
+;;BE-01;Product & supplier CRUD;BE;5
+;;BE-02;Inventory ledger engine;BE;8
+;;BE-03;Stock level aggregation & caching;BE;5
+;;SEC-01;API role guards;BE;5
+;;SEC-02;Ledger immutability enforcement;BE;3
+;;OPS-01;Feature flag setup;DEVOPS;2
+;;;Sprint total;;51
+;;;;;
+Sprint 2;Epic 2 (BE-04–09) + Epic 3 (FE-01/02/07/08) + SEC-03/04/05/06 + QA-01/02;BE-04;Reorder alert service;BE;5
+;;BE-05;Procurement workflow — PR & approval chain;BE;8
+;;BE-06;Procurement workflow — PO generation & PDF;BE;8
+;;BE-07;Goods receipt & discrepancy handling;BE;8
+;;BE-08;Supplier performance scoring;BE;5
+;;BE-09;Audit logging interceptor;BE;3
+;;FE-01;Supply chain dashboard;FE;8
+;;FE-02;Inventory catalog;FE;5
+;;FE-04;Procurement queue — PR approvals;FE;5
+;;FE-07;Stock adjustment modal;FE;5
+;;FE-08;RBAC frontend guards;FE;5
+;;SEC-03;PO modification lock & amendment enforcement;BE;3
+;;SEC-04;Financial data masking;BE;3
+;;SEC-05;Supplier bank detail change controls;BE;3
+;;SEC-06;Audit log integrity;BE;2
+;;QA-01;Unit tests — inventory ledger math;QA/BE;5
+;;QA-02;Unit tests — procurement workflow;QA/BE;5
+;;;Sprint total;;86
+;;;;;
+Sprint 3;Epic 2 (BE-10–14,16,20) + Epic 3 (FE-03–06/09–12) + OPS-03/04 + QA-03–06;BE-10;PO amendment workflow;BE;8
+;;BE-11;Three-way matching engine;BE;8
+;;BE-12;Demand forecasting service;BE;13
+;;BE-14;Supplier risk register;BE;5
+;;BE-16;Stock valuation service;BE;8
+;;BE-20;Cycle count workflow;BE;5
+;;FE-03;Stock ledger history view;FE;5
+;;FE-05;PO manager;FE;5
+;;FE-06;Goods receipt wizard;FE;8
+;;FE-09;Supplier directory & scorecard;FE;8
+;;FE-10;Multi-location stock view;FE;8
+;;FE-11;PO amendment UI;FE;5
+;;FE-12;Three-way match panel;FE;5
+;;QA-03;Integration tests — full procurement flow;QA/BE;8
+;;QA-04;Security penetration test;QA/SEC;5
+;;QA-05;E2E test — goods receipt workflow;QA;5
+;;QA-06;E2E test — procurement approval chain;QA;5
+;;OPS-03;Stock take CSV import tool;BE;5
+;;OPS-04;Cron job monitoring;DEVOPS;3
+;;;Sprint total;;122
+;;;;;
+Sprint 4;Epic 2 (BE-15,17–19) + Epic 3 (FE-13–18) + QA-07–08 + Epic 6 (OPS-02/05/06);BE-13;ABC/XYZ classification engine;BE;5
+;;BE-15;RFQ management service;BE;8
+;;BE-17;COGS tracking & VF-OPS-001 integration;BE;5
+;;BE-18;Predictive stockout detection;BE;8
+;;BE-19;Spend analytics service;BE;5
+;;FE-13;Demand forecast & EOQ view;FE;8
+;;FE-14;Predictive stockout list;FE;5
+;;FE-15;ABC/XYZ matrix view;FE;5
+;;FE-16;Stock valuation reports;FE;8
+;;FE-17;Spend analytics dashboard;FE;5
+;;FE-18;RFQ management UI;FE;5
+;;QA-07;Performance testing;QA/DEVOPS;5
+;;QA-08;UAT — warehouse & procurement teams;QA/PM;3
+;;OPS-02;Production migration + rollback plan;DEVOPS;5
+;;OPS-05;User training programme;PM;3
+;;OPS-06;Phase 1 & 2 rollout — data import;DEVOPS/PM;3
+;;;Sprint total;;86

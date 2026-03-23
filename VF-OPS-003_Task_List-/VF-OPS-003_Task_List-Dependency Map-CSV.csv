@@ -1,0 +1,67 @@
+VF-OPS-003 — Dependency Map;;;;
+Task ID;Task Title;Depends On;Blocked By;Sprint
+INF-03;Approval policy configuration service;;;Sprint 0
+DB-01;Prisma schema — core supply chain models;;;Sprint 1
+INF-01;S3 configuration for PO documents;;;Sprint 1
+INF-02;Notification service integration;;;Sprint 1
+OPS-01;Feature flag setup;;;Sprint 1
+OPS-04;Cron job monitoring;;;Sprint 3
+DB-02;Prisma schema — premium & analytics models;DB-01;Blocked;Sprint 1
+DB-03;Seed script — initial data;DB-01;Blocked;Sprint 1
+INF-04;OpenAPI spec for all endpoints;BE-01;Blocked;Sprint 1
+BE-01;Product & supplier CRUD;DB-01;Blocked;Sprint 1
+BE-02;Inventory ledger engine;DB-01;Blocked;Sprint 1
+BE-03;Stock level aggregation & caching;BE-02;Blocked;Sprint 1
+SEC-01;API role guards;INF-04;Blocked;Sprint 1
+SEC-02;Ledger immutability enforcement;BE-02;Blocked;Sprint 1
+BE-04;Reorder alert service;BE-02,BE-03;Blocked;Sprint 2
+BE-05;Procurement workflow — PR & approval chain;INF-03,DB-01;Blocked;Sprint 2
+BE-06;Procurement workflow — PO generation & PDF;BE-05,INF-01,INF-02;Blocked;Sprint 2
+BE-07;Goods receipt & discrepancy handling;BE-02,BE-03;Blocked;Sprint 2
+BE-08;Supplier performance scoring;BE-07,DB-01;Blocked;Sprint 2
+BE-09;Audit logging interceptor;DB-01;Blocked;Sprint 2
+FE-01;Supply chain dashboard;BE-03,BE-04;Blocked;Sprint 2
+FE-02;Inventory catalog;BE-03;Blocked;Sprint 2
+FE-04;Procurement queue — PR approvals;BE-05;Blocked;Sprint 2
+FE-07;Stock adjustment modal;BE-02;Blocked;Sprint 2
+FE-08;RBAC frontend guards;INF-04;Blocked;Sprint 2
+SEC-03;PO modification lock & amendment enforcement;BE-06;Blocked;Sprint 2
+SEC-04;Financial data masking;SEC-01;Blocked;Sprint 2
+SEC-05;Supplier bank detail change controls;BE-01,BE-09;Blocked;Sprint 2
+SEC-06;Audit log integrity;BE-09;Blocked;Sprint 2
+QA-01;Unit tests — inventory ledger math;BE-02;Blocked;Sprint 2
+QA-02;Unit tests — procurement workflow;BE-05,BE-06;Blocked;Sprint 2
+BE-10;PO amendment workflow;BE-06,INF-03;Blocked;Sprint 3
+BE-11;Three-way matching engine;BE-06,BE-07;Blocked;Sprint 3
+BE-12;Demand forecasting service;BE-02,BE-03,DB-02;Blocked;Sprint 3
+BE-14;Supplier risk register;BE-08,DB-02;Blocked;Sprint 3
+BE-16;Stock valuation service;BE-02,BE-03;Blocked;Sprint 3
+BE-20;Cycle count workflow;BE-02,BE-13;Blocked;Sprint 3
+FE-03;Stock ledger history view;BE-02;Blocked;Sprint 3
+FE-05;PO manager;BE-06;Blocked;Sprint 3
+FE-06;Goods receipt wizard;BE-07;Blocked;Sprint 3
+FE-09;Supplier directory & scorecard;BE-08,BE-14;Blocked;Sprint 3
+FE-10;Multi-location stock view;BE-02,BE-03;Blocked;Sprint 3
+FE-11;PO amendment UI;BE-10;Blocked;Sprint 3
+FE-12;Three-way match panel;BE-11;Blocked;Sprint 3
+QA-03;Integration tests — full procurement flow;BE-02,BE-05,BE-06,BE-07;Blocked;Sprint 3
+QA-04;Security penetration test;SEC-01,SEC-02,SEC-03,SEC-04,SEC-05;Blocked;Sprint 3
+QA-05;E2E test — goods receipt workflow;FE-06,BE-07;Blocked;Sprint 3
+QA-06;E2E test — procurement approval chain;FE-04,BE-05;Blocked;Sprint 3
+OPS-03;Stock take CSV import tool;BE-02;Blocked;Sprint 3
+BE-13;ABC/XYZ classification engine;BE-02,BE-12;Blocked;Sprint 4
+BE-15;RFQ management service;BE-01,INF-02;Blocked;Sprint 4
+BE-17;COGS tracking & VF-OPS-001 integration;BE-02,BE-16;Blocked;Sprint 4
+BE-18;Predictive stockout detection;BE-12,BE-03;Blocked;Sprint 4
+BE-19;Spend analytics service;BE-06,BE-17;Blocked;Sprint 4
+FE-13;Demand forecast & EOQ view;BE-12;Blocked;Sprint 4
+FE-14;Predictive stockout list;BE-18;Blocked;Sprint 4
+FE-15;ABC/XYZ matrix view;BE-13;Blocked;Sprint 4
+FE-16;Stock valuation reports;BE-16;Blocked;Sprint 4
+FE-17;Spend analytics dashboard;BE-19;Blocked;Sprint 4
+FE-18;RFQ management UI;BE-15;Blocked;Sprint 4
+QA-07;Performance testing;BE-02,BE-03;Blocked;Sprint 4
+QA-08;UAT — warehouse & procurement teams;FE-01,FE-02,FE-04,FE-05,FE-06;Blocked;Sprint 4
+OPS-02;Production migration + rollback plan;QA-08;Blocked;Sprint 4
+OPS-05;User training programme;QA-08;Blocked;Sprint 4
+OPS-06;Phase 1 & 2 rollout — data import;OPS-02,OPS-05;Blocked;Sprint 4

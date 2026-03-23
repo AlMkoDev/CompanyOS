@@ -1,0 +1,18 @@
+VF-OPS-003 — Task Metrics Dashboard;;;;;;;;;;;
+;;;;;;;;;;;
+Total Tasks;;;Total Story Points;;;P0 Release Blockers;;;Sprints Planned;;
+65;;;348;;;25;;;5;;
+across all epics;;;estimated effort;;;must ship in v1;;;Sprint 0 to Sprint 4;;
+;;;;;;;;;;;
+Backend Tasks;;;Frontend Tasks;;;QA Tasks;;;Avg SP / Task;;
+33;;;18;;;8;;;5,4;;
+BE / DB / DEVOPS;;;FE role;;;testing & security;;;story point density;;
+;;;;;;;;;;;
+;;;;;;;;;;;
+Story Points by Epic;;;;Story Points by Sprint;;;;Tasks by Priority;;;
+Foundation;;26;;Sprint 0;;3;;P0 — Release Blocker;;25;
+Backend;;133;;Sprint 1;;51;;P1 — High;;32;
+Frontend;;108;;Sprint 2;;86;;P2 — Nice to Have;;8;
+Security;;19;;Sprint 3;;122;;;;;
+QA & Testing;;41;;Sprint 4;;86;;;;;
+Deployment;;21;;;;;;;;;
