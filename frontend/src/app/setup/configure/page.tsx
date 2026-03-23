@@ -4,6 +4,7 @@ import React from 'react';
 import { WizardHeader } from '@/components/wizard/WizardHeader';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentTemplate {
   name: string;
@@ -31,6 +32,7 @@ export default function ConfigureHub() {
     : ['fin', 'hr', 'ops']; // Fallback for dev convenience
   
   const completed = setup.completedDepartments;
+  const templateSelections = setup.templateSelections;
   const router = useRouter();
 
   const handleConfigure = (id: string) => {
@@ -59,6 +61,7 @@ export default function ConfigureHub() {
           {selectedDepts.map((id) => {
             const isDone = completed.includes(id);
             const template = templates[id] || { name: 'Custom', color: '#64748b' };
+            const hasQuickTemplate = Boolean(templateSelections[id] && departmentQuickStartTemplates[id]);
             
             return (
               <div 
@@ -76,6 +79,11 @@ export default function ConfigureHub() {
                     <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest">
                       {isDone ? '✅ Implementation Finalized' : '⚙️ Configuration Pending'}
                     </p>
+                    {hasQuickTemplate && (
+                      <p className="text-[11px] text-brand-gold mt-2 font-semibold uppercase tracking-wide">
+                        Quick template ready
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -85,7 +93,7 @@ export default function ConfigureHub() {
                       onClick={() => handleConfigure(id)}
                       className="px-6 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-black transition-all"
                     >
-                      Begin Wizard
+                      {hasQuickTemplate ? 'Review Template' : 'Begin Wizard'}
                     </button>
                   )}
                   {isDone && (

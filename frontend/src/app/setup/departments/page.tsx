@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { WizardHeader } from '@/components/wizard/WizardHeader';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 const templates = [
   { id: 'fin', name: 'Finance', icon: 'Wallet', desc: 'Accounting, Budgeting & P&L', color: 'bg-amber-600' },
@@ -19,7 +20,7 @@ const templates = [
 ];
 
 export default function DepartmentsStep() {
-  const { setup, setDepartments } = useAuthStore();
+  const { setup, setDepartments, setTemplatePreference } = useAuthStore();
   const [selected, setSelected] = useState<string[]>(setup.selectedDepartments || []);
   const router = useRouter();
 
@@ -27,6 +28,14 @@ export default function DepartmentsStep() {
     const next = selected.includes(id) ? selected.filter(i => i !== id) : [...selected, id];
     setSelected(next);
     setDepartments(next);
+
+    if (!selected.includes(id) && id !== 'cus' && setup.templateSelections[id] === undefined) {
+      setTemplatePreference(id, true);
+    }
+  };
+
+  const toggleTemplate = (id: string) => {
+    setTemplatePreference(id, !setup.templateSelections[id]);
   };
 
   const handleNext = async () => {
@@ -43,6 +52,9 @@ export default function DepartmentsStep() {
         <div className="text-center">
           <h2 className="text-3xl font-heading mb-2">Assemble Departments</h2>
           <p className="text-slate-500">Select the functional units that will make up your organization.</p>
+          <p className="text-sm text-slate-400 mt-2">
+            Standard departments can be preloaded with built-in templates for a faster setup.
+          </p>
           <div className="mt-4 inline-flex items-center gap-2 bg-brand-navy/5 px-4 py-1.5 rounded-full text-brand-navy font-bold text-sm">
             <span className="w-5 h-5 rounded-full bg-brand-navy text-white flex items-center justify-center text-[10px]">{selected.length}</span>
             Departments Selected
@@ -65,6 +77,30 @@ export default function DepartmentsStep() {
               </div>
               <h3 className="font-heading text-lg mb-1">{dept.name}</h3>
               <p className="text-slate-400 text-xs leading-relaxed">{dept.desc}</p>
+
+              {dept.id !== 'cus' && departmentQuickStartTemplates[dept.id] && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!selected.includes(dept.id)) {
+                        toggle(dept.id);
+                        return;
+                      }
+                      toggleTemplate(dept.id);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide transition-colors ${
+                      setup.templateSelections[dept.id]
+                        ? 'bg-brand-gold/15 text-brand-gold'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    <span className="text-sm">{setup.templateSelections[dept.id] ? '✓' : '+'}</span>
+                    {setup.templateSelections[dept.id] ? 'Quick Template On' : 'Use Quick Template'}
+                  </button>
+                </div>
+              )}
               
               {selected.includes(dept.id) && (
                 <div className="absolute top-4 right-4 text-brand-gold">

@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Plus, Trash2, Wallet, Users, Target, Activity, Settings, Zap } from 'lucide-react';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 const subSteps = [
   { id: 1, name: 'Identity', icon: Settings },
@@ -49,40 +50,6 @@ interface DepartmentTemplateResponse {
   workflows?: string[];
 }
 
-const templates: Record<string, { name: string, color: string, roles: Role[] }> = {
-  fin: { 
-    name: 'Finance', 
-    color: '#B8860B',
-    roles: [
-      { title: 'Chief Financial Officer', responsibilities: 'Strategic financial oversight and capital allocation.', reportsTo: 'CEO' },
-      { title: 'Head of Accounting', responsibilities: 'Financial reporting, audit compliance, and day-to-day bookkeeping.', reportsTo: 'CFO' }
-    ]
-  },
-  hr: { 
-    name: 'Human Resources', 
-    color: '#3B82F6',
-    roles: [
-      { title: 'HR Director', responsibilities: 'Talent strategy and organizational culture.', reportsTo: 'CEO' },
-      { title: 'Recruitment Manager', responsibilities: 'End-to-end hiring process and onboarding.', reportsTo: 'HR Director' }
-    ]
-  },
-  ops: { 
-    name: 'Operations', 
-    color: '#10B981',
-    roles: [
-      { title: 'Operations Manager', responsibilities: 'Optimizing internal processes and supply chain.', reportsTo: 'CEO' },
-      { title: 'Logistics Coordinator', responsibilities: 'Managing day-to-day distribution and inventory.', reportsTo: 'Operations Manager' }
-    ]
-  },
-  mkt: { 
-    name: 'Marketing', 
-    color: '#8B5CF6',
-    roles: [
-      { title: 'Marketing Lead', responsibilities: 'Brand growth and market positioning.', reportsTo: 'CEO' }
-    ]
-  },
-};
-
 export default function DepartmentWizard() {
   const [step, setStep] = useState(1);
   const [data, setData] = useState({ 
@@ -102,14 +69,51 @@ export default function DepartmentWizard() {
   const router = useRouter();
   const params = useParams();
   const templateKey = params?.id as string;
-  const { isAuthenticated, logout } = useAuthStore();
+  const { isAuthenticated, logout, setup } = useAuthStore();
+  const templateEnabled = Boolean(templateKey && setup.templateSelections[templateKey]);
+
+  const applyQuickTemplate = React.useCallback(() => {
+    const quickTemplate = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+
+    if (!quickTemplate || !templateEnabled) {
+      return false;
+    }
+
+    setData((prev) => ({
+      ...prev,
+      name: quickTemplate.name,
+      color: quickTemplate.color,
+      mandate: quickTemplate.mandate,
+      core_responsibilities: quickTemplate.coreResponsibilities,
+      deliverables: quickTemplate.deliverables,
+      kpis: quickTemplate.kpis,
+      roles: quickTemplate.roles,
+      budget: quickTemplate.budget,
+      workflows: quickTemplate.workflows,
+    }));
+
+    return true;
+  }, [templateEnabled, templateKey]);
 
   // Fetch existing data
   React.useEffect(() => {
+    if (!templateKey) {
+      setLoading(false);
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
     const fetchData = async () => {
-      if (!templateKey || !isAuthenticated) return;
+      const hasQuickTemplate = applyQuickTemplate();
       try {
-        const res = await apiFetch(`/departments/template/${templateKey}`);
+        const res = await apiFetch(`/departments/template/${templateKey}`, { signal: controller.signal });
         if (res.status === 401) {
           logout();
           return;
@@ -137,24 +141,34 @@ export default function DepartmentWizard() {
             } catch (je) {
               console.error('JSON Parse error:', je);
             }
-          } else if (templates[templateKey]) {
-            // Only fallback to template if we explicitly didn't find a record
-            setData(prev => ({
-              ...prev,
-              name: templates[templateKey].name,
-              color: templates[templateKey].color,
-              roles: templates[templateKey].roles || []
-            }));
+          } else if (!hasQuickTemplate) {
+            const quickTemplate = departmentQuickStartTemplates[templateKey];
+            if (quickTemplate) {
+              setData(prev => ({
+                ...prev,
+                name: quickTemplate.name,
+                color: quickTemplate.color,
+                roles: quickTemplate.roles,
+              }));
+            }
           }
         }
       } catch (err) {
-        console.error('Failed to fetch department:', err);
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.error('Failed to fetch department:', err);
+        }
       } finally {
+        clearTimeout(timeout);
         setLoading(false);
       }
     };
     fetchData();
-  }, [isAuthenticated, logout, templateKey]);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [applyQuickTemplate, isAuthenticated, logout, templateKey]);
 
   const saveData = async () => {
     if (!isAuthenticated) return;
@@ -230,6 +244,11 @@ export default function DepartmentWizard() {
         <div className="mb-10">
           <h1 className="text-xl font-heading text-brand-gold mb-1">Dept Wizard</h1>
           <p className="text-xs opacity-50 uppercase tracking-widest">{templateKey} Configuration</p>
+          {templateEnabled && (
+            <p className="mt-3 text-[11px] uppercase tracking-widest text-brand-gold/80">
+              Quick template loaded
+            </p>
+          )}
         </div>
 
         <nav className="flex-1 space-y-4">

@@ -30,9 +30,11 @@ interface AuthState {
   setup: {
     selectedDepartments: string[];
     completedDepartments: string[];
+    templateSelections: Record<string, boolean>;
   };
   setAuth: (user: User) => void;
   setDepartments: (depts: string[]) => void;
+  setTemplatePreference: (deptId: string, enabled: boolean) => void;
   markDeptComplete: (deptId: string) => void;
   logout: () => void;
 }
@@ -45,10 +47,27 @@ export const useAuthStore = create<AuthState>()(
       setup: {
         selectedDepartments: [],
         completedDepartments: [],
+        templateSelections: {},
       },
       setAuth: (user) => set({ user, isAuthenticated: true }),
-      setDepartments: (depts) => set((state) => ({ 
-        setup: { ...state.setup, selectedDepartments: depts } 
+      setDepartments: (depts) => set((state) => ({
+        setup: {
+          ...state.setup,
+          selectedDepartments: depts,
+          completedDepartments: state.setup.completedDepartments.filter((deptId) => depts.includes(deptId)),
+          templateSelections: Object.fromEntries(
+            Object.entries(state.setup.templateSelections).filter(([deptId]) => depts.includes(deptId)),
+          ),
+        }
+      })),
+      setTemplatePreference: (deptId, enabled) => set((state) => ({
+        setup: {
+          ...state.setup,
+          templateSelections: {
+            ...state.setup.templateSelections,
+            [deptId]: enabled,
+          },
+        },
       })),
       markDeptComplete: (deptId) => set((state) => ({
         setup: { 
@@ -59,7 +78,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ 
         user: null, 
         isAuthenticated: false,
-        setup: { selectedDepartments: [], completedDepartments: [] }
+        setup: { selectedDepartments: [], completedDepartments: [], templateSelections: {} }
       }),
     }),
     {
