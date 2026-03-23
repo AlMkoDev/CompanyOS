@@ -18,6 +18,16 @@ class DepartmentRoleDto {
   @IsString()
   @MaxLength(4000)
   summary?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  responsibilities?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  reportsTo?: string;
 }
 
 export class CreateDepartmentDto {
@@ -53,12 +63,14 @@ export class CreateDepartmentDto {
   mandate?: string;
 
   @IsOptional()
-  @IsArray()
-  core_responsibilities?: unknown[];
+  @IsString()
+  @MaxLength(12000)
+  core_responsibilities?: string;
 
   @IsOptional()
-  @IsArray()
-  deliverables?: unknown[];
+  @IsString()
+  @MaxLength(12000)
+  deliverables?: string;
 
   @IsOptional()
   @IsArray()

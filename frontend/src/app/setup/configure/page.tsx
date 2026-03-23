@@ -56,7 +56,7 @@ export default function ConfigureHub() {
       for (const id of selectedDepts) {
         const template = departmentQuickStartTemplates[id];
 
-        await apiFetch(`/departments/${id}/config`, {
+        const response = await apiFetch(`/departments/${id}/config`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -74,10 +74,15 @@ export default function ConfigureHub() {
           }),
         });
 
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || `Failed to apply ${template.name} template.`);
+        }
+
         markDeptComplete(id);
       }
 
-      await apiFetch('/company/setup', {
+      const companySetupResponse = await apiFetch('/company/setup', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -90,6 +95,11 @@ export default function ConfigureHub() {
           },
         }),
       });
+
+      if (!companySetupResponse.ok) {
+        const message = await companySetupResponse.text();
+        throw new Error(message || 'Failed to finalize company setup.');
+      }
 
       if (user && user.company) {
         setAuth({
@@ -108,7 +118,11 @@ export default function ConfigureHub() {
       router.push('/dashboard');
     } catch (error) {
       console.error('Failed to auto-apply quick templates:', error);
-      alert('Quick templates could not be applied automatically. Please review at least one department manually.');
+      alert(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Quick templates could not be applied automatically. Please review at least one department manually.',
+      );
     } finally {
       setAutoApplying(false);
     }

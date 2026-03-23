@@ -50,6 +50,17 @@ interface DepartmentTemplateResponse {
   workflows?: string[];
 }
 
+interface DepartmentConfigPayload {
+  template_key: string;
+  name: string;
+  color: string;
+  mandate: string;
+  core_responsibilities: string;
+  deliverables: string;
+  roles: Role[];
+  budget: string;
+}
+
 export default function DepartmentWizard() {
   const [step, setStep] = useState(1);
   const [data, setData] = useState({ 
@@ -172,32 +183,51 @@ export default function DepartmentWizard() {
 
   const saveData = async () => {
     if (!isAuthenticated) return;
+    const payload: DepartmentConfigPayload = {
+      template_key: templateKey,
+      name: data.name,
+      color: data.color,
+      mandate: data.mandate,
+      core_responsibilities: data.core_responsibilities,
+      deliverables: data.deliverables,
+      roles: data.roles,
+      budget: data.budget || '0',
+    };
+
     try {
       const res = await apiFetch(`/departments/${data.id || templateKey}/config`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...data,
-          template_key: templateKey,
-          budget: data.budget || '0'
-        })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         const saved = await res.json();
         if (!data.id) setData(prev => ({ ...prev, id: saved.id }));
+      } else {
+        const message = await res.text();
+        throw new Error(message || 'Failed to save department configuration.');
       }
     } catch (err) {
       console.error('Failed to save data:', err);
+      throw err;
     }
   };
 
   const { markDeptComplete } = useAuthStore();
   const handleFinish = async () => {
-    await saveData();
-    if (templateKey) markDeptComplete(templateKey);
-    router.push('/setup/configure');
+    try {
+      await saveData();
+      if (templateKey) markDeptComplete(templateKey);
+      router.push('/setup/configure');
+    } catch (error) {
+      alert(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Department configuration could not be saved.',
+      );
+    }
   };
 
   const addKPI = () => setData(prev => ({ ...prev, kpis: [...prev.kpis, { name: '', target: '', unit: '' }] }));
@@ -221,8 +251,16 @@ export default function DepartmentWizard() {
   };
 
   const nextStep = async () => {
-    await saveData();
-    setStep(s => s + 1);
+    try {
+      await saveData();
+      setStep(s => s + 1);
+    } catch (error) {
+      alert(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Department configuration could not be saved.',
+      );
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-heading text-2xl">Initializing Wizard...</div>;
