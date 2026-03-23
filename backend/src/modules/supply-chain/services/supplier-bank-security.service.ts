@@ -1,5 +1,5 @@
 import { Injectable, ForbiddenException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../../../prisma/prisma.service';
+import { PrismaService } from '../../../database/prisma.service';
 import { SupplyChainAuditService } from './supply-chain-audit.service';
 import { SupplyChainNotificationService } from '../supply-chain-notification.service';
 
