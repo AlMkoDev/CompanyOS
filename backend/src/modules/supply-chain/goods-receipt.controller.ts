@@ -12,7 +12,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt.strategy';
 import { SupplyChainRolesGuard } from './guards/supply-chain-roles.guard';
 import { GoodsReceiptService, CreateGoodsReceiptDto } from './goods-receipt.service';
 import { ResolveGoodsReceiptDto } from './dto/goods-receipt.dto';
