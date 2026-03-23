@@ -24,7 +24,20 @@ export default function RegisterPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to register account');
+        let message = 'Failed to register account';
+
+        try {
+          const payload = await res.json();
+          if (payload && typeof payload.message === 'string') {
+            message = payload.message;
+          } else if (payload && Array.isArray(payload.message) && payload.message.length > 0) {
+            message = payload.message.join(', ');
+          }
+        } catch {
+          // Fall back to the default message when the response is not JSON.
+        }
+
+        throw new Error(message);
       }
       
       // Auto-login after register
