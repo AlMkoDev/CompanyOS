@@ -1,0 +1,377 @@
+// Enums for Supply Chain
+enum SupplierStatus {
+  ACTIVE
+  SUSPENDED
+  BLACKLISTED
+}
+
+enum LedgerEntryType {
+  OPENING_BALANCE
+  PO_RECEIPT
+  RETURN_TO_SUPPLIER
+  STOCK_ADJUSTMENT_UP
+  STOCK_ADJUSTMENT_DOWN
+  TRANSFER_IN
+  TRANSFER_OUT
+  FULFILLMENT
+  CYCLE_COUNT
+  SCRAP
+}
+
+enum PRStatus {
+  DRAFT
+  PENDING_L1
+  PENDING_L2
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIAL
+  FULLY_RECEIVED
+  CANCELLED
+  CLOSED
+}
+
+enum GRStatus {
+  DRAFT
+  SUBMITTED
+  DISCREPANCY
+  COMPLETED
+}
+
+// DB-01 Models
+
+model Supplier {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  supplier_code   String
+  name            String
+  status          SupplierStatus @default(ACTIVE)
+  contact_info    Json?
+  bank_details    Json?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  products        SupplierProduct[]
+  purchase_orders OpsPurchaseOrder[]
+  risks           SupplierRisk[]
+
+  @@unique([company_id, supplier_code])
+}
+
+model Product {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  sku             String
+  name            String
+  description     String?
+  category        String?
+  unit_of_measure String
+  abc_class       String?        // A, B, C
+  xyz_class       String?        // X, Y, Z
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  suppliers       SupplierProduct[]
+  stock_levels    StockLevel[]
+  stock_ledger    StockLedger[]
+  pr_lines        PRLineItem[]
+  po_lines        POLineItem[]
+  gr_lines        GRLineItem[]
+  forecasts       DemandForecast[]
+  cycle_counts    CycleCount[]
+  cogs_records    COGSRecord[]
+
+  @@unique([company_id, sku])
+}
+
+model Location {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  name            String
+  address         String?
+  is_active       Boolean        @default(true)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  stock_levels    StockLevel[]
+  stock_ledger    StockLedger[]
+  goods_receipts  OpsGoodsReceipt[]
+  forecasts       DemandForecast[]
+  cycle_counts    CycleCount[]
+}
+
+model StockLevel {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  product_id      String   @db.Uuid
+  location_id     String   @db.Uuid
+  quantity        Decimal  @default(0) @db.Decimal(15, 2)
+  reorder_point   Decimal? @db.Decimal(15, 2)
+  eoq             Decimal? @db.Decimal(15, 2)
+  cache_updated_at DateTime @default(now())
+
+  company   Company   @relation(fields: [company_id], references: [id])
+  product   Product   @relation(fields: [product_id], references: [id])
+  location  Location  @relation(fields: [location_id], references: [id])
+
+  @@unique([company_id, product_id, location_id])
+}
+
+model StockLedger {
+  id              String          @id @default(uuid()) @db.Uuid
+  company_id      String          @db.Uuid
+  product_id      String          @db.Uuid
+  location_id     String          @db.Uuid
+  entry_type      LedgerEntryType
+  quantity_change Decimal         @db.Decimal(15, 2)
+  reference_id    String?         // ID of PO, GR, PR, etc.
+  reason_code     String?
+  user_id         String?         @db.Uuid
+  created_at      DateTime        @default(now())
+  // No update/delete endpoints by design!
+
+  company   Company   @relation(fields: [company_id], references: [id])
+  product   Product   @relation(fields: [product_id], references: [id])
+  location  Location  @relation(fields: [location_id], references: [id])
+}
+
+model PurchaseRequisition {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  pr_number       String
+  requester_id    String         @db.Uuid
+  status          PRStatus       @default(DRAFT)
+  justification   String?
+  department_id   String?        @db.Uuid
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company   Company      @relation(fields: [company_id], references: [id])
+  lines     PRLineItem[]
+  
+  @@unique([company_id, pr_number])
+}
+
+model PRLineItem {
+  id              String              @id @default(uuid()) @db.Uuid
+  pr_id           String              @db.Uuid
+  product_id      String              @db.Uuid
+  quantity        Decimal             @db.Decimal(15, 2)
+  estimated_cost  Decimal?            @db.Decimal(15, 2)
+  
+  pr        PurchaseRequisition @relation(fields: [pr_id], references: [id])
+  product   Product             @relation(fields: [product_id], references: [id])
+}
+
+model OpsPurchaseOrder {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  po_number       String
+  supplier_id     String         @db.Uuid
+  status          POStatus       @default(DRAFT)
+  pr_id           String?        @db.Uuid
+  pdf_url         String?
+  total_value     Decimal        @default(0) @db.Decimal(15, 2)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company           Company                  @relation(fields: [company_id], references: [id])
+  supplier          Supplier                 @relation(fields: [supplier_id], references: [id])
+  lines             POLineItem[]
+  goods_receipts    OpsGoodsReceipt[]
+  amendments        PurchaseOrderAmendment[]
+  supplier_invoices SupplierInvoice[]
+
+  @@unique([company_id, po_number])
+}
+
+model POLineItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  po_id           String           @db.Uuid
+  product_id      String           @db.Uuid
+  quantity        Decimal          @db.Decimal(15, 2)
+  unit_price      Decimal          @db.Decimal(15, 2)
+  received_qty    Decimal          @default(0) @db.Decimal(15, 2)
+  
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+  product   Product          @relation(fields: [product_id], references: [id])
+}
+
+model OpsGoodsReceipt {
+  id              String           @id @default(uuid()) @db.Uuid
+  company_id      String           @db.Uuid
+  gr_number       String
+  po_id           String           @db.Uuid
+  location_id     String           @db.Uuid
+  status          GRStatus         @default(DRAFT)
+  received_by     String?          @db.Uuid
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  company   Company          @relation(fields: [company_id], references: [id])
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+  location  Location         @relation(fields: [location_id], references: [id])
+  lines     GRLineItem[]
+
+  @@unique([company_id, gr_number])
+}
+
+model GRLineItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  gr_id           String           @db.Uuid
+  product_id      String           @db.Uuid
+  received_qty    Decimal          @db.Decimal(15, 2)
+  rejected_qty    Decimal          @default(0) @db.Decimal(15, 2)
+  rejection_reason String?
+
+  gr        OpsGoodsReceipt  @relation(fields: [gr_id], references: [id])
+  product   Product          @relation(fields: [product_id], references: [id])
+  supplier_rejections SupplierRejection[]
+}
+
+// DB-02 Models
+
+model SupplierRejection {
+  id              String      @id @default(uuid()) @db.Uuid
+  gr_line_id      String      @db.Uuid
+  reason          String
+  quantity        Decimal     @db.Decimal(15, 2)
+  created_at      DateTime    @default(now())
+
+  gr_line   GRLineItem  @relation(fields: [gr_line_id], references: [id])
+}
+
+model PurchaseOrderAmendment {
+  id              String           @id @default(uuid()) @db.Uuid
+  po_id           String           @db.Uuid
+  version         Int
+  changes_summary String?
+  status          String           @default("PENDING")
+  created_at      DateTime         @default(now())
+
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+}
+
+model SupplierProduct {
+  id              String      @id @default(uuid()) @db.Uuid
+  supplier_id     String      @db.Uuid
+  product_id      String      @db.Uuid
+  unit_cost       Decimal     @db.Decimal(15, 2)
+  lead_time_days  Int
+  is_preferred    Boolean     @default(false)
+  
+  supplier  Supplier    @relation(fields: [supplier_id], references: [id])
+  product   Product     @relation(fields: [product_id], references: [id])
+
+  @@unique([supplier_id, product_id])
+}
+
+model SupplierRisk {
+  id              String      @id @default(uuid()) @db.Uuid
+  supplier_id     String      @db.Uuid
+  risk_score      Int
+  category        String      // single_source, financial, quality
+  details         String?
+  created_at      DateTime    @default(now())
+
+  supplier  Supplier    @relation(fields: [supplier_id], references: [id])
+}
+
+model SupplierInvoice {
+  id              String           @id @default(uuid()) @db.Uuid
+  company_id      String           @db.Uuid
+  po_id           String           @db.Uuid
+  invoice_number  String
+  total_amount    Decimal          @db.Decimal(15, 2)
+  status          String           @default("PENDING_MATCH")
+  created_at      DateTime         @default(now())
+
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+}
+
+model UnmatchedReceipt {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  details         Json
+  status          String      @default("PENDING_FINANCE_APPROVAL")
+  created_at      DateTime    @default(now())
+}
+
+model DemandForecast {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_id      String      @db.Uuid
+  location_id     String      @db.Uuid
+  forecast_date   DateTime
+  predicted_qty   Decimal     @db.Decimal(15, 2)
+  window_days     Int         // 30, 60, 90
+  confidence      Float
+
+  product   Product     @relation(fields: [product_id], references: [id])
+  location  Location    @relation(fields: [location_id], references: [id])
+}
+
+model SeasonalAdjustment {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_category String
+  month           Int         // 1-12
+  multiplier      Float
+}
+
+model CycleCount {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_id      String      @db.Uuid
+  location_id     String      @db.Uuid
+  scheduled_date  DateTime
+  counted_qty     Decimal?    @db.Decimal(15, 2)
+  variance        Decimal?    @db.Decimal(15, 2)
+  status          String      @default("SCHEDULED")
+
+  product   Product     @relation(fields: [product_id], references: [id])
+  location  Location    @relation(fields: [location_id], references: [id])
+}
+
+model RFQ {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  description     String
+  status          String      @default("OPEN")
+  deadline        DateTime
+  created_at      DateTime    @default(now())
+
+  quotes    SupplierQuote[]
+}
+
+model SupplierQuote {
+  id              String      @id @default(uuid()) @db.Uuid
+  rfq_id          String      @db.Uuid
+  supplier_id     String      @db.Uuid
+  total_value     Decimal     @db.Decimal(15, 2)
+  lead_time_days  Int
+  is_selected     Boolean     @default(false)
+  created_at      DateTime    @default(now())
+
+  rfq       RFQ         @relation(fields: [rfq_id], references: [id])
+}
+
+model COGSRecord {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  product_id      String      @db.Uuid
+  project_id      String?     @db.Uuid
+  quantity        Decimal     @db.Decimal(15, 2)
+  unit_cost       Decimal     @db.Decimal(15, 2)
+  total_cost      Decimal     @db.Decimal(15, 2)
+  created_at      DateTime    @default(now())
+
+  product   Product     @relation(fields: [product_id], references: [id])
+}

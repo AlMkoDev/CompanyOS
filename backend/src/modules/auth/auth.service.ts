@@ -1,0 +1,502 @@
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../../database/prisma.service';
+import * as bcrypt from 'bcrypt';
+import { authenticator } from 'otplib';
+import * as QRCode from 'qrcode';
+import { getMfaIssuer, getRequiredMfaRoles } from '../../common/env';
+
+@Injectable()
+export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
+
+  private logSecurityEvent(event: string, details: Record<string, unknown>) {
+    this.logger.warn(JSON.stringify({ event, ...details }));
+  }
+
+  private getUserRoles(user: {
+    department_members: Array<{ role: { name: string } | null }>;
+  }) {
+    return user.department_members
+      .map((m) => m.role?.name)
+      .filter((role): role is string => Boolean(role));
+  }
+
+  private isMfaRequiredForRoles(roles: string[]) {
+    const requiredRoles = getRequiredMfaRoles();
+    return roles.some((role) => requiredRoles.includes(role.toLowerCase()));
+  }
+
+  private async buildMfaSetupPayload(email: string, secret: string) {
+    const serviceName = getMfaIssuer();
+    const otpauthUrl = authenticator.keyuri(email, serviceName, secret);
+    const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
+
+    return {
+      secret,
+      otpauthUrl,
+      qrCodeDataUrl,
+    };
+  }
+
+  private buildAccessTokenPayload(user: {
+    id: string;
+    email: string;
+    company_id: string;
+    department_members: Array<{ role: { name: string } | null }>;
+  }) {
+    const roles = this.getUserRoles(user);
+
+    return {
+      sub: user.id,
+      email: user.email,
+      companyId: user.company_id,
+      roles,
+    };
+  }
+
+  private buildUserResponse(user: {
+    id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    company: unknown;
+    department_members: Array<{ role: { name: string } | null }>;
+    mfa_enabled: boolean;
+  }) {
+    const roles = this.getUserRoles(user);
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      company: user.company,
+      roles,
+      mfaEnabled: user.mfa_enabled,
+    };
+  }
+
+  async register(data: any) {
+    const { email, password, companyName, firstName, lastName } = data;
+
+    // Check if user exists
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (existingUser) {
+      throw new ConflictException('User already exists');
+    }
+
+    const salt = await bcrypt.genSalt(12);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    // Create Company and Super Admin in a transaction
+    return this.prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: { name: companyName },
+      });
+
+      const user = await tx.user.create({
+        data: {
+          email,
+          password_hash: passwordHash,
+          first_name: firstName,
+          last_name: lastName,
+          company_id: company.id,
+        },
+      });
+
+      // Initialize company setup tracking
+      await tx.companySetup.create({
+        data: { company_id: company.id },
+      });
+
+      // Add user to a system "Super Admin" role for this company
+      const role = await tx.role.create({
+        data: {
+          company_id: company.id,
+          name: 'Super Admin',
+          level: 1,
+          is_system: true,
+        },
+      });
+
+      await tx.departmentMember.create({
+        data: {
+          user_id: user.id,
+          department_id: (
+            await tx.department.create({
+              data: {
+                company_id: company.id,
+                name: 'Administration',
+                template_key: 'administration',
+              },
+            })
+          ).id,
+          role_id: role.id,
+          is_head: true,
+        },
+      });
+
+      return { user, company };
+    });
+  }
+
+  async getCurrentUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        company: { include: { setup: true } },
+        department_members: { include: { role: true } },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    return {
+      user: this.buildUserResponse(user),
+    };
+  }
+
+  async login(email: string, pass: string, context?: { ipAddress?: string; userAgent?: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        company: { include: { setup: true } },
+        department_members: { include: { role: true } },
+      },
+    });
+
+    if (!user || !(await bcrypt.compare(pass, user.password_hash))) {
+      this.logSecurityEvent('auth.login.failed', {
+        email: email.toLowerCase(),
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_credentials',
+      });
+      throw new UnauthorizedException();
+    }
+
+    const roles = this.getUserRoles(user);
+
+    if (user.mfa_enabled) {
+      if (!user.mfa_secret) {
+        this.logSecurityEvent('auth.login.failed', {
+          userId: user.id,
+          email: user.email.toLowerCase(),
+          ipAddress: context?.ipAddress,
+          userAgent: context?.userAgent,
+          reason: 'mfa_enabled_without_secret',
+        });
+        throw new UnauthorizedException('MFA is enabled but not configured correctly for this account.');
+      }
+
+      const mfaToken = await this.jwtService.signAsync(
+        {
+          sub: user.id,
+          purpose: 'mfa-login',
+        },
+        { expiresIn: '5m' },
+      );
+
+      return {
+        mfaRequired: true,
+        mfaToken,
+        user: this.buildUserResponse(user),
+      };
+    }
+
+    if (this.isMfaRequiredForRoles(roles)) {
+      const mfaSetupToken = await this.jwtService.signAsync(
+        {
+          sub: user.id,
+          purpose: 'mfa-setup',
+        },
+        { expiresIn: '10m' },
+      );
+
+      return {
+        mfaSetupRequired: true,
+        mfaSetupToken,
+        user: this.buildUserResponse(user),
+      };
+    }
+
+    return {
+      access_token: await this.jwtService.signAsync(this.buildAccessTokenPayload(user)),
+      user: this.buildUserResponse(user),
+    };
+  }
+
+  async generateMfaSecret(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const secret = authenticator.generateSecret();
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        mfa_secret: secret,
+        mfa_enabled: false,
+      },
+    });
+
+    return this.buildMfaSetupPayload(user.email, secret);
+  }
+
+  async verifyMfaCode(userId: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.mfa_secret) {
+      throw new BadRequestException('MFA has not been set up for this account.');
+    }
+
+    const isValid = authenticator.verify({
+      token: code,
+      secret: user.mfa_secret,
+    });
+
+    if (!isValid) {
+      this.logSecurityEvent('auth.mfa.verify.failed', {
+        userId,
+        reason: 'invalid_code',
+      });
+      throw new UnauthorizedException('Invalid MFA code.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfa_enabled: true },
+    });
+
+    return { success: true };
+  }
+
+  async verifyLoginMfaCode(
+    token: string,
+    code: string,
+    context?: { ipAddress?: string; userAgent?: string },
+  ) {
+    let payload: { sub: string; purpose?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync(token);
+    } catch {
+      this.logSecurityEvent('auth.mfa.login.failed', {
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_or_expired_token',
+      });
+      throw new UnauthorizedException('Invalid or expired MFA token.');
+    }
+
+    if (payload.purpose !== 'mfa-login') {
+      this.logSecurityEvent('auth.mfa.login.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_token_purpose',
+      });
+      throw new UnauthorizedException('Invalid MFA token purpose.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        company: { include: { setup: true } },
+        department_members: { include: { role: true } },
+      },
+    });
+
+    if (!user || !user.mfa_enabled || !user.mfa_secret) {
+      this.logSecurityEvent('auth.mfa.login.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'mfa_not_available',
+      });
+      throw new UnauthorizedException('MFA is not available for this account.');
+    }
+
+    const isValid = authenticator.verify({
+      token: code,
+      secret: user.mfa_secret,
+    });
+
+    if (!isValid) {
+      this.logSecurityEvent('auth.mfa.login.failed', {
+        userId: user.id,
+        email: user.email.toLowerCase(),
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_code',
+      });
+      throw new UnauthorizedException('Invalid MFA code.');
+    }
+
+    return {
+      access_token: await this.jwtService.signAsync(this.buildAccessTokenPayload(user)),
+      user: this.buildUserResponse(user),
+    };
+  }
+
+  async generateLoginMfaSetup(token: string, context?: { ipAddress?: string; userAgent?: string }) {
+    let payload: { sub: string; purpose?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync(token);
+    } catch {
+      this.logSecurityEvent('auth.mfa.setup.failed', {
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_or_expired_token',
+      });
+      throw new UnauthorizedException('Invalid or expired MFA setup token.');
+    }
+
+    if (payload.purpose !== 'mfa-setup') {
+      this.logSecurityEvent('auth.mfa.setup.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_token_purpose',
+      });
+      throw new UnauthorizedException('Invalid MFA setup token purpose.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        department_members: { include: { role: true } },
+      },
+    });
+
+    if (!user) {
+      this.logSecurityEvent('auth.mfa.setup.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'user_not_found',
+      });
+      throw new UnauthorizedException();
+    }
+
+    if (!this.isMfaRequiredForRoles(this.getUserRoles(user))) {
+      this.logSecurityEvent('auth.mfa.setup.failed', {
+        userId: user.id,
+        email: user.email.toLowerCase(),
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'setup_not_required',
+      });
+      throw new BadRequestException('MFA setup is not required for this account.');
+    }
+
+    const secret = authenticator.generateSecret();
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        mfa_secret: secret,
+        mfa_enabled: false,
+      },
+    });
+
+    return this.buildMfaSetupPayload(user.email, secret);
+  }
+
+  async verifyLoginMfaSetup(
+    token: string,
+    code: string,
+    context?: { ipAddress?: string; userAgent?: string },
+  ) {
+    let payload: { sub: string; purpose?: string };
+
+    try {
+      payload = await this.jwtService.verifyAsync(token);
+    } catch {
+      this.logSecurityEvent('auth.mfa.setup.verify.failed', {
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_or_expired_token',
+      });
+      throw new UnauthorizedException('Invalid or expired MFA setup token.');
+    }
+
+    if (payload.purpose !== 'mfa-setup') {
+      this.logSecurityEvent('auth.mfa.setup.verify.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_token_purpose',
+      });
+      throw new UnauthorizedException('Invalid MFA setup token purpose.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: {
+        company: { include: { setup: true } },
+        department_members: { include: { role: true } },
+      },
+    });
+
+    if (!user || !user.mfa_secret) {
+      this.logSecurityEvent('auth.mfa.setup.verify.failed', {
+        userId: payload.sub,
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'mfa_setup_unavailable',
+      });
+      throw new UnauthorizedException('MFA setup is not available for this account.');
+    }
+
+    const isValid = authenticator.verify({
+      token: code,
+      secret: user.mfa_secret,
+    });
+
+    if (!isValid) {
+      this.logSecurityEvent('auth.mfa.setup.verify.failed', {
+        userId: user.id,
+        email: user.email.toLowerCase(),
+        ipAddress: context?.ipAddress,
+        userAgent: context?.userAgent,
+        reason: 'invalid_code',
+      });
+      throw new UnauthorizedException('Invalid MFA code.');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { mfa_enabled: true },
+    });
+
+    return {
+      access_token: await this.jwtService.signAsync(this.buildAccessTokenPayload(user)),
+      user: this.buildUserResponse({ ...user, mfa_enabled: true }),
+    };
+  }
+}

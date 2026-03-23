@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+test_output
+*.log
+prisma_error.txt
+prisma_errors.txt
+prisma_seed_err.log
+seed_out.txt
+
+# Keep environment variables out of version control
+.env*
+
+/generated/prisma

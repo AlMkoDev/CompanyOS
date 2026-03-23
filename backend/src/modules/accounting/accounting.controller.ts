@@ -1,0 +1,85 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
+import { AccountingService } from './accounting.service';
+import { JwtAuthGuard } from '../auth/jwt.strategy';
+import {
+  ClosePeriodDto,
+  CreateAccountDto,
+  CreateJournalEntryDto,
+  ImportBankStatementDto,
+} from './dto/accounting.dto';
+
+@Controller('accounting')
+@UseGuards(JwtAuthGuard)
+export class AccountingController {
+  constructor(private readonly accountingService: AccountingService) {}
+
+  @Post('accounts')
+  async createAccount(@Req() req: any, @Body() data: CreateAccountDto) {
+    return this.accountingService.createAccount(req.user.companyId, data);
+  }
+
+  @Get('accounts')
+  async getAccounts(@Req() req: any) {
+    return this.accountingService.getAccounts(req.user.companyId);
+  }
+
+  @Post('journal-entries')
+  async createJournalEntry(@Req() req: any, @Body() data: CreateJournalEntryDto) {
+    return this.accountingService.createJournalEntry(req.user.companyId, data);
+  }
+
+  @Post('journal-entries/:id/post')
+  async postJournalEntry(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.postJournalEntry(req.user.companyId, id);
+  }
+
+  @Get('trial-balance')
+  async getTrialBalance(@Req() req: any) {
+    return this.accountingService.getTrialBalance(req.user.companyId);
+  }
+
+  @Post('journal-entries/:id/reverse')
+  async reverseJournalEntry(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.reverseJournalEntry(req.user.companyId, id);
+  }
+
+  @Get('reports/pnl')
+  async getPnL(
+    @Req() req: any,
+    @Query('fromDate') fromDate: string,
+    @Query('toDate') toDate: string,
+  ) {
+    return this.accountingService.getPnL(
+      req.user.companyId,
+      new Date(fromDate),
+      new Date(toDate),
+    );
+  }
+
+  @Post('periods/close')
+  async closePeriod(
+    @Req() req: any,
+    @Body() body: ClosePeriodDto,
+  ) {
+    return this.accountingService.closePeriod(
+      req.user.companyId,
+      body.year,
+      body.month,
+      req.user.userId,
+    );
+  }
+
+  @Post('bank-statements/import')
+  async importBankStatement(@Req() req: any, @Body() data: ImportBankStatementDto) {
+    return this.accountingService.importBankStatement(req.user.companyId, data);
+  }
+}

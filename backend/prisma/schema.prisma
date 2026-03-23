@@ -1,0 +1,3163 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id              String   @id @default(uuid()) @db.Uuid
+  name            String
+  logo_url        String?
+  brand_colors    Json? // { primary: string, secondary: string, accent: string }
+  tagline         String?
+  contact_details Json? // { email: string, phone: string, address: string }
+  industry        String?
+  description     String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  // Relations
+  users                User[]
+  departments          Department[]
+  setup                CompanySetup?
+  tasks                Task[]
+  documents            Document[]
+  activity_logs        ActivityLog[]
+  roles                Role[]
+  permissions          Permission[]
+  sops                 SOP[]
+  gap_statuses         GapStatus[]
+  kpis                 KPI[]
+  nativeModules        NativeModule[]
+  platformTasks        PlatformTask[]
+  roadmapTasks         RoadmapTask[]
+  glaccounts           GLAccount[]
+  journalEntries       JournalEntry[]
+  accountingPeriods    AccountingPeriod[]
+  bankStatements       BankStatement[]
+  trialBalances        TrialBalance[]
+  vendors              Vendor[]
+  purchaseOrders       PurchaseOrder[]
+  invoices             Invoice[]
+  goodsReceipts        GoodsReceipt[]
+  paymentRuns          PaymentRun[]
+  vendorStatements     VendorStatement[]
+  customers            Customer[]
+  arinvoices           ARInvoice[]
+  payments             Payment[]
+  creditMemos          CreditMemo[]
+  collectionCases      CollectionCase[]
+  cashForecasts        CashForecast[]
+  scenarioAssumptions  ScenarioAssumption[]
+  salaryRecords        SalaryRecord[]
+  payrollRuns          PayrollRun[]
+  bankPaymentFiles     BankPaymentFile[]
+  positions            Position[]
+  employees            Employee[]
+  jobRequisitions      JobRequisition[]
+  reviewCycles         ReviewCycle[]
+  reviews              Review[]
+  ratingScales         RatingScale[]
+  courses              Course[]
+  trainingPlans        TrainingPlan[]
+  hrtickets            HRTicket[]
+  surveys              Survey[]
+  deimetrics           DEIMetric[]
+  projects             Project[]
+  resources            Resource[]
+  ncrs                 NCR[]
+  auditChecklists      AuditChecklist[]
+  auditFindings        AuditFinding[]
+  products             Product[]
+  assets               Asset[]
+  hseincidents         HSEIncident[]
+  riskAssessments      RiskAssessment[]
+  environmentalPermits EnvironmentalPermit[]
+  improvementIdeas     ImprovementIdea[]
+  initiatives          Initiative[]
+  processMaps          ProcessMap[]
+  campaigns            Campaign[]
+  editorialCalendars   EditorialCalendar[]
+  utmtags              UTMTag[]
+  brandAssets          BrandAsset[]
+  assetCollections     AssetCollection[]
+  crmcontacts          CRMContact[]
+  crmaccounts          CRMAccount[]
+  deals                Deal[]
+  activities           Activity[]
+  contractTemplates    ContractTemplate[]
+  contracts            Contract[]
+  complianceDeadlines  ComplianceDeadline[]
+  dataProcessors       DataProcessor[]
+  dsrrequests          DSRRequest[]
+  ittickets            ITTicket[]
+  itassets             ITAsset[]
+  changerequests       ChangeRequest[]
+  knowledgearticles    KnowledgeArticle[]
+  okrcycles            OKRCycle[]
+  kpisnapshots         KPISnapshot[]
+  folders              Folder[]
+  retentionPolicies    RetentionPolicy[]
+  spendRecords         SpendRecord[]
+  travelRequests       TravelRequest[]
+  expenseClaims        ExpenseClaim[]
+  vehicles             Vehicle[]
+  suppliers            Supplier[]
+  opsPurchaseOrders    OpsPurchaseOrder[]
+  poAmendments         POAmendment[]
+  poAmendmentAudits    POAmendmentAudit[]
+  opsGoodsReceipts     OpsGoodsReceipt[]
+  purchaseRequisitions PurchaseRequisition[]
+  approvalPolicies     ApprovalPolicy[]
+  locations            Location[]
+  stockLevels          StockLevel[]
+  stockLedgers         StockLedger[]
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  password_hash String
+  first_name    String
+  last_name     String
+  avatar_url    String?
+  mfa_enabled   Boolean  @default(false)
+  mfa_secret    String?
+  status        String   @default("active") // active, inactive, pending
+  company_id    String   @db.Uuid
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  company            Company            @relation(fields: [company_id], references: [id])
+  department_members DepartmentMember[]
+  tasks_assigned     Task[]             @relation("AssignedTasks")
+  tasks_created      Task[]             @relation("CreatedTasks")
+  activity_logs      ActivityLog[]
+  bank_change_requests_made BankChangeRequest[] @relation("BankChangeRequester")
+  bank_change_requests_approved BankChangeRequest[] @relation("BankChangeApprover")
+}
+
+model Department {
+  id           String  @id @default(uuid()) @db.Uuid
+  company_id   String  @db.Uuid
+  template_key String? // e.g., 'fin', 'hr', 'ops'
+  name         String
+
+  description           String?
+  icon                  String?
+  color                 String?
+  mandate               Json? // { mission: string, objectives: string[], scope: string }
+  core_responsibilities String?
+  deliverables          String?
+  roles                 Json? // Array of Role objects
+  operational_routines  Json? // Daily/Weekly/Monthly routines
+  data_pack             Json? // Systems and data assets
+  activities            Json? // Detailed sub-sections and activities
+  communication_lines   Json? // Information flows between roles
+  budget_allocation     Decimal? @db.Decimal(15, 2)
+  status                String   @default("active")
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  // Relations
+  company            Company             @relation(fields: [company_id], references: [id])
+  members            DepartmentMember[]
+  tasks              Task[]
+  documents          Document[]
+  sops               SOP[]
+  gap_statuses       GapStatus[]
+  kpis               KPI[]
+  nativeModules      NativeModule[]
+  employees          Employee[]
+  positions          Position[]
+  jobRequisitions    JobRequisition[]
+  employment_history EmploymentHistory[]
+
+  @@unique([company_id, template_key], name: "companyId_templateKey")
+}
+
+model DepartmentMember {
+  id            String   @id @default(uuid()) @db.Uuid
+  user_id       String   @db.Uuid
+  department_id String   @db.Uuid
+  role_id       String?  @db.Uuid
+  is_head       Boolean  @default(false)
+  joined_at     DateTime @default(now())
+
+  // Relations
+  user       User       @relation(fields: [user_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+  role       Role?      @relation(fields: [role_id], references: [id])
+
+  @@unique([user_id, department_id])
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  name        String
+  description String?
+  level       Int // 1: Super Admin, 2: Dept Admin, 3: Manager, 4: Contributor, 5: Viewer
+  is_system   Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  company            Company            @relation(fields: [company_id], references: [id])
+  permissions        RolePermission[]
+  department_members DepartmentMember[]
+}
+
+model Permission {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  action     String // e.g., "create", "read", "update", "delete"
+  resource   String // e.g., "tasks", "documents", "users"
+  effect     String   @default("allow") // allow or deny
+  created_at DateTime @default(now())
+
+  // Relations
+  company Company          @relation(fields: [company_id], references: [id])
+  roles   RolePermission[]
+}
+
+model RolePermission {
+  role_id       String @db.Uuid
+  permission_id String @db.Uuid
+
+  // Relations
+  role       Role       @relation(fields: [role_id], references: [id])
+  permission Permission @relation(fields: [permission_id], references: [id])
+
+  @@id([role_id, permission_id])
+}
+
+model Task {
+  id            String    @id @default(uuid()) @db.Uuid
+  company_id    String    @db.Uuid
+  department_id String    @db.Uuid
+  title         String
+  task_code     String? // e.g., "F-K01", "H-W03"
+  task_category String? // kpi_config, operation_workflow, gap_closure, module_build, platform, roadmap
+  description   String?
+  status        String    @default("open") // open, in-progress, review, done
+  priority      String    @default("medium") // low, medium, high, critical
+  creator_id    String    @db.Uuid
+  assignee_id   String?   @db.Uuid
+  due_date      DateTime?
+  attachments   Json? // Array of file URLs/references
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  company    Company    @relation(fields: [company_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+  creator    User       @relation("CreatedTasks", fields: [creator_id], references: [id])
+  assignee   User?      @relation("AssignedTasks", fields: [assignee_id], references: [id])
+
+  @@unique([company_id, task_code])
+}
+
+model Document {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  department_id  String?  @db.Uuid
+  folder_id      String?  @db.Uuid
+  retention_id   String?  @db.Uuid
+  name           String
+  file_url       String
+  file_type      String
+  size_bytes     Int
+  status         String   @default("draft") // draft, published, archived
+  classification String   @default("internal") // internal, confidential, secret
+  tags           String[]
+  version        Int      @default(1)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  // Relations
+  company          Company           @relation(fields: [company_id], references: [id])
+  department       Department?       @relation(fields: [department_id], references: [id])
+  folder           Folder?           @relation(fields: [folder_id], references: [id])
+  retention_policy RetentionPolicy?  @relation(fields: [retention_id], references: [id])
+  versions         DocumentVersion[]
+  legal_holds      LegalHold[]
+}
+
+model ActivityLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  user_id       String?  @db.Uuid
+  action        String
+  resource_type String
+  resource_id   String?
+  details       Json?
+  ip_address    String?
+  user_agent    String?
+  created_at    DateTime @default(now())
+
+  // Relations
+  company Company @relation(fields: [company_id], references: [id])
+  user    User?   @relation(fields: [user_id], references: [id])
+}
+
+model CompanySetup {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @unique @db.Uuid
+  current_step    Int      @default(1)
+  is_complete     Boolean  @default(false)
+  steps_config    Json? // Tracks progress per step
+  completed_steps Int[]    @default([])
+  updated_at      DateTime @updatedAt
+
+  // Relations
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model KPI {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  department_id String   @db.Uuid
+  name          String
+  description   String?
+  formula       String? // How it's calculated
+  data_source   String? // Where the data comes from
+  owner_role    String? // The role responsible for this KPI
+  frequency     String   @default("monthly") // daily, weekly, monthly, quarterly
+  unit          String // percentage, currency, count, etc.
+  kpi_code      String?
+  target        Decimal? @db.Decimal(15, 2)
+  current_value Decimal? @db.Decimal(15, 2)
+  status        String   @default("on-track") // on-track, at-risk, off-track
+  last_updated  DateTime @default(now())
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  company    Company    @relation(fields: [company_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+
+  @@unique([company_id, kpi_code])
+}
+
+model SOP {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  department_id     String   @db.Uuid
+  title             String
+  purpose           String?
+  scope             String?
+  trigger           String?
+  raci              Json? // { responsible: string[], accountable: string[], consulted: string[], informed: string[] }
+  procedure         Json? // Array of steps: { step: number, action: string, role: string, system: string }
+  approval_matrix   Json? // { thresholds: any[], escalations: any[] }
+  output_standard   String?
+  systems_used      String[]
+  exceptions        Json? // Array of items: { condition: string, response: string }
+  related_documents Json? // Links to policy, systems guides, etc.
+  status            String   @default("draft") // draft, active, archived
+  version           Int      @default(1)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relations
+  company    Company    @relation(fields: [company_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+}
+
+model GapStatus {
+  id            String    @id @default(uuid()) @db.Uuid
+  company_id    String    @db.Uuid
+  department_id String    @db.Uuid
+  gap_type      String // Process, Technology, Data
+  gap_code      String? // e.g., "F-G01"
+  item_name     String
+  description   String?
+  priority      String    @default("medium") // critical, high, medium, low
+  status        String    @default("identified") // identified, in-progress, closed
+  owner_id      String?   @db.Uuid
+  target_date   DateTime?
+  closed_at     DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  company    Company    @relation(fields: [company_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+}
+
+model NativeModule {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  module_code   String // e.g., "VF-FIN-001"
+  name          String
+  department_id String   @db.Uuid
+  priority      String // P0, P1, P2, P3
+  build_time    String? // e.g., "8-10 weeks"
+  status        String   @default("planned") // planned, in-progress, completed
+  phase         Int      @default(1)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  company    Company    @relation(fields: [company_id], references: [id])
+  department Department @relation(fields: [department_id], references: [id])
+
+  @@unique([company_id, module_code])
+}
+
+model PlatformTask {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  task_code  String // e.g., "P-01", "G-01"
+  title      String
+  category   String // infrastructure, governance
+  priority   String   @default("medium")
+  status     String   @default("pending")
+  owner      String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  company Company @relation(fields: [company_id], references: [id])
+
+  @@unique([company_id, task_code])
+}
+
+model RoadmapTask {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  phase        Int
+  sprint       String?
+  story_id     String // e.g., "INF-001"
+  title        String
+  module       String?
+  points       Int      @default(0)
+  dependencies String[]
+  status       String   @default("todo")
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  company Company @relation(fields: [company_id], references: [id])
+
+  @@unique([company_id, story_id])
+}
+
+// VF-FIN-001: Core Accounting
+model GLAccount {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  code       String // e.g., "1000", "5000"
+  name       String
+  type       String // asset, liability, equity, revenue, expense
+  parent_id  String?  @db.Uuid
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  company       Company       @relation(fields: [company_id], references: [id])
+  journal_lines JournalLine[]
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  entry_date  DateTime
+  description String?
+  reference   String?
+  status      String   @default("draft") // draft, posted, reversed
+  period_id   String?  @db.Uuid
+  created_by  String?  @db.Uuid
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  company Company           @relation(fields: [company_id], references: [id])
+  lines   JournalLine[]
+  period  AccountingPeriod? @relation(fields: [period_id], references: [id])
+}
+
+model JournalLine {
+  id         String  @id @default(uuid()) @db.Uuid
+  entry_id   String  @db.Uuid
+  account_id String  @db.Uuid
+  debit      Decimal @default(0) @db.Decimal(15, 2)
+  credit     Decimal @default(0) @db.Decimal(15, 2)
+  narration  String?
+
+  entry   JournalEntry @relation(fields: [entry_id], references: [id])
+  account GLAccount    @relation(fields: [account_id], references: [id])
+}
+
+model AccountingPeriod {
+  id         String    @id @default(uuid()) @db.Uuid
+  company_id String    @db.Uuid
+  year       Int
+  month      Int
+  status     String    @default("open") // open, closed
+  closed_at  DateTime?
+  closed_by  String?   @db.Uuid
+  created_at DateTime  @default(now())
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  journal_entries JournalEntry[]
+
+  @@unique([company_id, year, month])
+}
+
+model BankStatement {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  account_id      String?  @db.Uuid
+  statement_date  DateTime
+  opening_balance Decimal  @db.Decimal(15, 2)
+  closing_balance Decimal  @db.Decimal(15, 2)
+  file_url        String?
+  created_at      DateTime @default(now())
+
+  company Company             @relation(fields: [company_id], references: [id])
+  lines   BankStatementLine[]
+}
+
+model BankStatementLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  statement_id String   @db.Uuid
+  date         DateTime
+  description  String
+  amount       Decimal  @db.Decimal(15, 2)
+  balance      Decimal  @db.Decimal(15, 2)
+  reference    String?
+
+  statement BankStatement @relation(fields: [statement_id], references: [id])
+}
+
+model TrialBalance {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  period_id    String   @db.Uuid
+  generated_at DateTime @default(now())
+  data         Json
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-FIN-002: Accounts Payable
+model Vendor {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  name            String
+  registration_no String?
+  tax_pin         String?
+  bank_details    Json? // { account_name, account_number, bank_name, branch_code, swift }
+  payment_terms   String?
+  status          String   @default("active")
+  tier            String? // e.g., Preferred, Standard
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  company         Company           @relation(fields: [company_id], references: [id])
+  purchase_orders PurchaseOrder[]
+  invoices        Invoice[]
+  statements      VendorStatement[]
+}
+
+model PurchaseOrder {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  vendor_id   String   @db.Uuid
+  raised_by   String?  @db.Uuid
+  status      String   @default("draft") // draft, approved, received, cancelled
+  items       Json // Array of items
+  total       Decimal  @db.Decimal(15, 2)
+  approved_by String?  @db.Uuid
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  company        Company        @relation(fields: [company_id], references: [id])
+  vendor         Vendor         @relation(fields: [vendor_id], references: [id])
+  invoices       Invoice[]
+  goods_receipts GoodsReceipt[]
+}
+
+model Invoice {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  vendor_id    String   @db.Uuid
+  po_id        String?  @db.Uuid
+  invoice_no   String
+  invoice_date DateTime
+  due_date     DateTime
+  amount       Decimal  @db.Decimal(15, 2)
+  status       String   @default("pending") // pending, matched, approved, paid
+  ocr_data     Json?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  company Company        @relation(fields: [company_id], references: [id])
+  vendor  Vendor         @relation(fields: [vendor_id], references: [id])
+  po      PurchaseOrder? @relation(fields: [po_id], references: [id])
+
+  payment_run_id String?     @db.Uuid
+  payment_run    PaymentRun? @relation(fields: [payment_run_id], references: [id])
+}
+
+model GoodsReceipt {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  po_id          String   @db.Uuid
+  received_by    String?  @db.Uuid
+  received_date  DateTime
+  items_received Json
+  created_at     DateTime @default(now())
+
+  company Company       @relation(fields: [company_id], references: [id])
+  po      PurchaseOrder @relation(fields: [po_id], references: [id])
+}
+
+model PaymentRun {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  run_date      DateTime
+  total_amount  Decimal  @db.Decimal(15, 2)
+  bank_file_url String?
+  status        String   @default("draft") // draft, approved, completed
+  approved_by   String?  @db.Uuid
+  created_at    DateTime @default(now())
+
+  company  Company   @relation(fields: [company_id], references: [id])
+  invoices Invoice[]
+}
+
+model VendorStatement {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  vendor_id  String   @db.Uuid
+  period     String
+  balance    Decimal  @db.Decimal(15, 2)
+  file_url   String?
+  created_at DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+  vendor  Vendor  @relation(fields: [vendor_id], references: [id])
+}
+
+// VF-FIN-003: Accounts Receivable
+model Customer {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  name          String
+  tax_pin       String?
+  contact       Json? // { email, phone, address }
+  credit_limit  Decimal? @db.Decimal(15, 2)
+  payment_terms String?
+  status        String   @default("active")
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  company  Company     @relation(fields: [company_id], references: [id])
+  invoices ARInvoice[]
+}
+
+model ARInvoice {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  customer_id  String   @db.Uuid
+  invoice_no   String
+  invoice_date DateTime
+  due_date     DateTime
+  amount       Decimal  @db.Decimal(15, 2)
+  paid_amount  Decimal  @default(0) @db.Decimal(15, 2)
+  status       String   @default("draft") // draft, sent, partially_paid, paid, overdue
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  company          Company          @relation(fields: [company_id], references: [id])
+  customer         Customer         @relation(fields: [customer_id], references: [id])
+  payments         Payment[]
+  collection_cases CollectionCase[]
+}
+
+model Payment {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  invoice_id   String   @db.Uuid
+  amount       Decimal  @db.Decimal(15, 2)
+  payment_date DateTime
+  method       String
+  reference    String?
+  recorded_by  String?  @db.Uuid
+  created_at   DateTime @default(now())
+
+  company Company   @relation(fields: [company_id], references: [id])
+  invoice ARInvoice @relation(fields: [invoice_id], references: [id])
+}
+
+model CreditMemo {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  customer_id String   @db.Uuid
+  invoice_id  String?  @db.Uuid
+  amount      Decimal  @db.Decimal(15, 2)
+  reason      String?
+  issued_date DateTime
+  created_at  DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model CollectionCase {
+  id               String    @id @default(uuid()) @db.Uuid
+  company_id       String    @db.Uuid
+  invoice_id       String    @db.Uuid
+  assigned_to      String?   @db.Uuid
+  escalation_level Int       @default(1)
+  last_action_date DateTime?
+  notes            String?
+  created_at       DateTime  @default(now())
+
+  company Company   @relation(fields: [company_id], references: [id])
+  invoice ARInvoice @relation(fields: [invoice_id], references: [id])
+}
+
+// VF-FIN-004: Cash Flow
+model CashForecast {
+  id            String    @id @default(uuid()) @db.Uuid
+  company_id    String    @db.Uuid
+  period_start  DateTime
+  created_by    String?   @db.Uuid
+  signed_off_by String?   @db.Uuid
+  signed_off_at DateTime?
+  status        String    @default("draft") // draft, signed_off
+  created_at    DateTime  @default(now())
+
+  company Company        @relation(fields: [company_id], references: [id])
+  weeks   ForecastWeek[]
+}
+
+model ForecastWeek {
+  id              String   @id @default(uuid()) @db.Uuid
+  forecast_id     String   @db.Uuid
+  week_no         Int
+  week_start      DateTime
+  opening_balance Decimal  @db.Decimal(15, 2)
+  inflows         Json?
+  outflows        Json?
+  closing_balance Decimal  @db.Decimal(15, 2)
+
+  forecast CashForecast @relation(fields: [forecast_id], references: [id])
+  items    CashItem[]
+}
+
+model CashItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  week_id     String  @db.Uuid
+  category    String
+  description String?
+  amount      Decimal @db.Decimal(15, 2)
+  source      String  @default("manual") // auto, manual
+  scenario    String  @default("base") // base, best, worst
+
+  week ForecastWeek @relation(fields: [week_id], references: [id])
+}
+
+model ScenarioAssumption {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  forecast_id String   @db.Uuid
+  name        String // base, best, worst
+  assumptions Json?
+  created_at  DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-FIN-005: Payroll
+model JurisdictionConfig {
+  id           String  @id @default(uuid()) @db.Uuid
+  country_code String  @unique // e.g. 'KE', 'ZA', 'ZW'
+  name         String
+  tax_bands    Json?
+  active       Boolean @default(true)
+}
+
+model SalaryRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  employee_id    String   @db.Uuid
+  basic_salary   Decimal  @db.Decimal(15, 2)
+  allowances     Json?
+  effective_date DateTime
+  created_by     String?  @db.Uuid
+  created_at     DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model PayrollRun {
+  id           String    @id @default(uuid()) @db.Uuid
+  company_id   String    @db.Uuid
+  period_month Int
+  period_year  Int
+  jurisdiction String // 'KE', 'ZA', 'ZW'
+  status       String    @default("draft") // draft, calculated, approved, paid
+  approved_by  String?   @db.Uuid
+  run_date     DateTime?
+  created_at   DateTime  @default(now())
+
+  company  Company   @relation(fields: [company_id], references: [id])
+  payslips Payslip[]
+}
+
+model Payslip {
+  id          String  @id @default(uuid()) @db.Uuid
+  run_id      String  @db.Uuid
+  employee_id String  @db.Uuid
+  gross_pay   Decimal @db.Decimal(15, 2)
+  net_pay     Decimal @db.Decimal(15, 2)
+  pdf_url     String?
+
+  payroll_run PayrollRun           @relation(fields: [run_id], references: [id])
+  deductions  StatutoryDeduction[]
+}
+
+model StatutoryDeduction {
+  id          String    @id @default(uuid()) @db.Uuid
+  payslip_id  String    @db.Uuid
+  type        String // e.g. paye, nssf, uif, etc.
+  amount      Decimal   @db.Decimal(15, 2)
+  remitted_at DateTime?
+
+  payslip Payslip @relation(fields: [payslip_id], references: [id])
+}
+
+model BankPaymentFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  run_id       String   @db.Uuid
+  file_url     String?
+  generated_at DateTime @default(now())
+  record_count Int
+  total_amount Decimal  @db.Decimal(15, 2)
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-HR-001: HRIS Core
+model Employee {
+  id               String    @id @default(uuid()) @db.Uuid
+  emp_no           String    @unique
+  first_name       String
+  last_name        String
+  email            String    @unique
+  phone            String?
+  national_id      String?
+  kra_pin          String?
+  status           String    @default("active") // active, probation, terminated
+  hire_date        DateTime
+  termination_date DateTime?
+  company_id       String    @db.Uuid
+  department_id    String?   @db.Uuid
+  position_id      String?   @db.Uuid
+  manager_id       String?   @db.Uuid
+  employment_type  String    @default("full-time") // full-time, part-time, contract
+  salary_grade     String?
+  avatar_url       String?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  company            Company             @relation(fields: [company_id], references: [id])
+  department         Department?         @relation(fields: [department_id], references: [id])
+  documents          EmployeeDocument[]
+  employment_history EmploymentHistory[]
+  onboarding         OnboardingPlan?
+  offboarding        OffboardingPlan?
+  reviews            Review[]            @relation("EmployeeReviews")
+  managed_reviews    Review[]            @relation("ManagerReviews")
+  goals              Goal[]
+  pips               PIP[]
+  provided_feedback  FeedbackRequest[]   @relation("FeedbackProvider")
+  objectives         Objective[]         @relation("ObjectiveOwner")
+  enrolments         Enrolment[]
+  certificates       Certificate[]
+  surveys            SurveyResponse[]
+  er_cases           ERCase[]
+  manager            Employee?           @relation("ManagerReports", fields: [manager_id], references: [id])
+  reports            Employee[]          @relation("ManagerReports")
+  position           Position?           @relation(fields: [position_id], references: [id])
+  contracts          Contract[]
+  contractApprovals  ContractApproval[]
+  auditLogs          AuditLog[]
+
+  // Compliance relations
+  assignedComplianceDeadlines ComplianceDeadline[]   @relation("ComplianceAssignee")
+  createdComplianceDeadlines  ComplianceDeadline[]   @relation("ComplianceCreator")
+  complianceAssignments       ComplianceAssignment[] @relation("ComplianceAssignmentUser")
+  complianceProofs            ComplianceProof[]      @relation("ComplianceProofUploader")
+  complianceAuditLogs         ComplianceAuditLog[]   @relation("ComplianceAuditLogUser")
+
+  // IT relations
+  raised_tickets        ITTicket[]            @relation("RaisedTickets")
+  assigned_tickets      ITTicket[]            @relation("AssignedTickets")
+  it_assets             ITAsset[]
+  change_requests       ChangeRequest[]
+  knowledge_articles    KnowledgeArticle[]
+  ops_received_receipts OpsGoodsReceipt[]     @relation("Receiver")
+  ops_requisitions      PurchaseRequisition[] @relation("Requester")
+
+  // Project relations
+  owned_projects         Project[]            @relation("ProjectOwner")
+  assigned_project_tasks ProjectTask[]        @relation("TaskAssignee")
+  raid_items             RAIDItem[]           @relation("RAIDOwner")
+  resource_assignments   ResourceAssignment[] @relation("ResourceAssignee")
+  user_skills            UserSkill[]          @relation("UserSkills")
+  capacities             Capacity[]           @relation("CapacityRecords")
+  project_audit_logs     ProjectAuditLog[]    @relation("ProjectAuditLogs")
+}
+
+model Position {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  department_id   String   @db.Uuid
+  title           String
+  level           Int
+  reports_to_id   String?  @db.Uuid
+  headcount       Int      @default(1)
+  job_description String?
+  created_at      DateTime @default(now())
+
+  company            Company             @relation(fields: [company_id], references: [id])
+  department         Department          @relation(fields: [department_id], references: [id])
+  employees          Employee[]
+  reports_to         Position?           @relation("PositionHierarchy", fields: [reports_to_id], references: [id])
+  direct_reports     Position[]          @relation("PositionHierarchy")
+  employment_history EmploymentHistory[]
+}
+
+model EmploymentHistory {
+  id            String    @id @default(uuid()) @db.Uuid
+  employee_id   String    @db.Uuid
+  department_id String?   @db.Uuid
+  position_id   String?   @db.Uuid
+  start_date    DateTime
+  end_date      DateTime?
+  change_reason String?
+
+  employee   Employee    @relation(fields: [employee_id], references: [id])
+  department Department? @relation(fields: [department_id], references: [id])
+  position   Position?   @relation(fields: [position_id], references: [id])
+}
+
+model EmployeeDocument {
+  id          String    @id @default(uuid()) @db.Uuid
+  employee_id String    @db.Uuid
+  doc_type    String // contract, id, certificate, kra, nssf, nhif
+  file_url    String
+  file_name   String    @default("document")
+  expiry_date DateTime?
+  verified    Boolean   @default(false)
+  created_at  DateTime  @default(now())
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+model OrgNode {
+  id          String  @id @default(uuid()) @db.Uuid
+  company_id  String  @db.Uuid
+  employee_id String  @db.Uuid
+  parent_id   String? @db.Uuid
+  depth       Int
+
+  @@unique([company_id, employee_id])
+}
+
+// VF-HR-002: ATS
+model JobRequisition {
+  id                String    @id @default(uuid()) @db.Uuid
+  title             String
+  company_id        String    @db.Uuid
+  department_id     String    @db.Uuid
+  position_id       String    @db.Uuid
+  raised_by         String?   @db.Uuid
+  approved_by       String?   @db.Uuid
+  status            String    @default("pending") // pending, approved, open, closed
+  target_hire_date  DateTime?
+  headcount         Int       @default(1)
+  description       String?
+  requirements      String?
+  hiring_manager_id String?   @db.Uuid
+  created_at        DateTime  @default(now())
+
+  company      Company       @relation(fields: [company_id], references: [id])
+  department   Department    @relation(fields: [department_id], references: [id])
+  applications Application[]
+}
+
+model Candidate {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  email        String   @unique
+  phone        String?
+  linkedin_url String?
+  source       String?
+  cv_url       String?
+  created_at   DateTime @default(now())
+
+  applications Application[]
+}
+
+model Application {
+  id             String   @id @default(uuid()) @db.Uuid
+  requisition_id String   @db.Uuid
+  candidate_id   String   @db.Uuid
+  stage          String   @default("applied") // applied, screened, interview1, interview2, offer, hired, rejected
+  notes          String?
+  rating         Int?
+  applied_at     DateTime @default(now())
+
+  requisition JobRequisition @relation(fields: [requisition_id], references: [id])
+  candidate   Candidate      @relation(fields: [candidate_id], references: [id])
+  interviews  Interview[]
+  offers      Offer[]
+}
+
+model Interview {
+  id             String     @id @default(uuid()) @db.Uuid
+  application_id String     @db.Uuid
+  scheduled_at   DateTime
+  interviewer_id String?    @db.Uuid
+  type           String // screening, technical, cultural, final
+  location       String?
+  duration       Int? // in minutes
+  scorecard      Scorecard?
+
+  application Application @relation(fields: [application_id], references: [id])
+}
+
+model Scorecard {
+  id             String  @id @default(uuid()) @db.Uuid
+  interview_id   String  @unique @db.Uuid
+  scores         Json
+  recommendation String? // strong_hire, hire, reconsider, reject
+  submitted_by   String  @db.Uuid
+
+  interview Interview @relation(fields: [interview_id], references: [id])
+}
+
+model Offer {
+  id             String    @id @default(uuid()) @db.Uuid
+  application_id String    @db.Uuid
+  salary         Decimal   @db.Decimal(15, 2)
+  start_date     DateTime
+  status         String    @default("draft") // draft, sent, accepted, rejected
+  sent_at        DateTime?
+
+  application Application @relation(fields: [application_id], references: [id])
+}
+
+// VF-HR-003: Onboarding & Offboarding
+model OnboardingPlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  employee_id String   @unique @db.Uuid
+  start_date  DateTime
+  buddy_id    String?  @db.Uuid
+  status      String   @default("started")
+
+  employee   Employee         @relation(fields: [employee_id], references: [id])
+  tasks      OnboardingTask[]
+  milestones Milestone[]
+}
+
+model OnboardingTask {
+  id            String    @id @default(uuid()) @db.Uuid
+  plan_id       String    @db.Uuid
+  title         String
+  assignee_dept String?
+  assignee_id   String?   @db.Uuid
+  due_date      DateTime?
+  status        String    @default("pending")
+  category      String?
+
+  plan OnboardingPlan @relation(fields: [plan_id], references: [id])
+}
+
+model Milestone {
+  id           String    @id @default(uuid()) @db.Uuid
+  plan_id      String    @db.Uuid
+  type         String // 30day, 60day, 90day
+  due_date     DateTime
+  completed_at DateTime?
+  notes        String?
+
+  plan OnboardingPlan @relation(fields: [plan_id], references: [id])
+}
+
+model ExitInterview {
+  id             String   @id @default(uuid()) @db.Uuid
+  employee_id    String   @db.Uuid
+  conducted_by   String?  @db.Uuid
+  interview_date DateTime
+  answers        Json
+  nps_score      Int?
+}
+
+model OffboardingPlan {
+  id                         String    @id @default(uuid()) @db.Uuid
+  employee_id                String    @unique @db.Uuid
+  last_day                   DateTime
+  it_deprovisioned_at        DateTime?
+  final_payroll_processed_at DateTime?
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+// VF-HR-004: Performance
+model ReviewCycle {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  name       String
+  period     String
+  start_date DateTime
+  end_date   DateTime
+  status     String   @default("setup") // setup, self_assessment, manager_review, 360, calibration, complete
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  company Company  @relation(fields: [company_id], references: [id])
+  reviews Review[]
+}
+
+model Review {
+  id                 String   @id @default(uuid()) @db.Uuid
+  cycle_id           String   @db.Uuid
+  company_id         String   @db.Uuid
+  employee_id        String   @db.Uuid
+  manager_id         String   @db.Uuid
+  self_assessment    Json?
+  manager_assessment Json?
+  final_rating       String? // 1 to 5 or text code
+  status             String   @default("draft") // draft, self_assessment_done, manager_review_done, calibrated, signed_off
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  cycle    ReviewCycle       @relation(fields: [cycle_id], references: [id])
+  company  Company           @relation(fields: [company_id], references: [id])
+  employee Employee          @relation(name: "EmployeeReviews", fields: [employee_id], references: [id])
+  manager  Employee          @relation(name: "ManagerReviews", fields: [manager_id], references: [id])
+  feedback FeedbackRequest[]
+  goals    Goal[]            @relation("ReviewGoals")
+}
+
+model FeedbackRequest {
+  id           String    @id @default(uuid()) @db.Uuid
+  review_id    String    @db.Uuid
+  provider_id  String    @db.Uuid // The person giving feedback
+  status       String    @default("pending") // pending, submitted, cancelled
+  is_anonymous Boolean   @default(true)
+  submitted_at DateTime?
+  answers      Json?
+
+  review   Review   @relation(fields: [review_id], references: [id])
+  provider Employee @relation(name: "FeedbackProvider", fields: [provider_id], references: [id])
+}
+
+model Goal {
+  id          String  @id @default(uuid()) @db.Uuid
+  employee_id String  @db.Uuid
+  review_id   String? @db.Uuid
+  title       String
+  description String?
+  target      String?
+  status      String  @default("not-started")
+  progress    Int     @default(0)
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+  review   Review?  @relation(name: "ReviewGoals", fields: [review_id], references: [id])
+}
+
+model PIP {
+  id             String   @id @default(uuid()) @db.Uuid
+  employee_id    String   @db.Uuid
+  start_date     DateTime
+  end_date       DateTime
+  goals          Json
+  check_in_dates Json
+  status         String   @default("active") // active, completed, failed
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+model RatingScale {
+  id          String  @id @default(uuid()) @db.Uuid
+  company_id  String  @db.Uuid
+  label       String
+  score       Int
+  description String?
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-HR-005: LMS
+model Course {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  title         String
+  description   String?
+  category      String?
+  content_url   String?
+  duration_mins Int?
+  is_mandatory  Boolean  @default(false)
+  created_at    DateTime @default(now())
+
+  company    Company     @relation(fields: [company_id], references: [id])
+  enrolments Enrolment[]
+}
+
+model Enrolment {
+  id           String    @id @default(uuid()) @db.Uuid
+  course_id    String    @db.Uuid
+  employee_id  String    @db.Uuid
+  enrolled_at  DateTime  @default(now())
+  completed_at DateTime?
+  score        Int?
+  status       String    @default("enrolled") // enrolled, in-progress, completed, failed
+
+  course   Course   @relation(fields: [course_id], references: [id])
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+model Completion {
+  id              String   @id @default(uuid()) @db.Uuid
+  employee_id     String   @db.Uuid
+  course_id       String   @db.Uuid
+  completed_at    DateTime
+  certificate_url String?
+}
+
+model Certificate {
+  id          String    @id @default(uuid()) @db.Uuid
+  employee_id String    @db.Uuid
+  course_id   String?   @db.Uuid
+  title       String
+  issued_at   DateTime
+  expiry_date DateTime?
+  file_url    String
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+model TrainingPlan {
+  id            String  @id @default(uuid()) @db.Uuid
+  company_id    String  @db.Uuid
+  department_id String  @db.Uuid
+  name          String
+  year          Int
+  budget        Decimal @db.Decimal(15, 2)
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-HR-006: ER & Engagement
+model HRTicket {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  raised_by   String   @db.Uuid
+  category    String // payroll, leave, benefit, general
+  subject     String
+  description String
+  status      String   @default("new")
+  priority    String   @default("medium")
+  created_at  DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model ERCase {
+  id          String   @id @default(uuid()) @db.Uuid
+  employee_id String   @db.Uuid
+  manager_id  String?  @db.Uuid
+  hr_owner_id String?  @db.Uuid
+  category    String // disciplinary, grievance, performance, medical
+  title       String
+  description String
+  timeline    Json // Array of events
+  status      String   @default("open")
+  created_at  DateTime @default(now())
+
+  employee Employee @relation(fields: [employee_id], references: [id])
+}
+
+model Survey {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  title       String
+  description String?
+  questions   Json
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  company   Company          @relation(fields: [company_id], references: [id])
+  responses SurveyResponse[]
+}
+
+model SurveyResponse {
+  id           String   @id @default(uuid()) @db.Uuid
+  survey_id    String   @db.Uuid
+  employee_id  String?  @db.Uuid
+  answers      Json
+  submitted_at DateTime @default(now())
+
+  survey   Survey    @relation(fields: [survey_id], references: [id])
+  employee Employee? @relation(fields: [employee_id], references: [id])
+}
+
+model DEIMetric {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  category   String // gender, ethnicity, age, disability
+  data       Json
+  as_of_date DateTime
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-OPS-001: Projects
+// Project models moved to premium section (line 2408+)
+// Original simple definitions removed to avoid duplicates
+
+model Resource {
+  id             String  @id @default(uuid()) @db.Uuid
+  company_id     String  @db.Uuid
+  name           String
+  capacity_hours Int
+  cost_per_hour  Decimal @db.Decimal(15, 2)
+  type           String  @default("human") // human, equipment, facility
+  email          String?
+  role           String?
+
+  company  Company   @relation(fields: [company_id], references: [id])
+  projects Project[]
+}
+
+// VF-OPS-002: QA & NCR
+model NCR {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  ncr_no      String   @unique
+  description String
+  raised_by   String   @db.Uuid
+  raised_at   DateTime @default(now())
+  status      String   @default("identified") // identified, RCA, CAR_open, closed
+  area        String?
+  severity    String   @default("medium")
+
+  company            Company            @relation(fields: [company_id], references: [id])
+  rca                RootCauseAnalysis?
+  corrective_actions CorrectiveAction[]
+}
+
+model CorrectiveAction {
+  id          String    @id @default(uuid()) @db.Uuid
+  ncr_id      String?   @db.Uuid
+  finding_id  String?   @db.Uuid
+  description String
+  assignee_id String?   @db.Uuid
+  due_date    DateTime?
+  status      String    @default("open")
+  verified_at DateTime?
+
+  ncr           NCR?          @relation(fields: [ncr_id], references: [id])
+  audit_finding AuditFinding? @relation(fields: [finding_id], references: [id])
+}
+
+model RootCauseAnalysis {
+  id               String @id @default(uuid()) @db.Uuid
+  ncr_id           String @unique @db.Uuid
+  five_whys        Json
+  final_root_cause String
+  conducted_by     String @db.Uuid
+
+  ncr NCR @relation(fields: [ncr_id], references: [id])
+}
+
+model AuditChecklist {
+  id         String @id @default(uuid()) @db.Uuid
+  company_id String @db.Uuid
+  name       String
+  category   String // quality, HSE, compliance
+  items      Json
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model AuditFinding {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  audit_id    String?
+  description String
+  severity    String // major, minor, observation
+  status      String   @default("open")
+  created_at  DateTime @default(now())
+
+  company            Company            @relation(fields: [company_id], references: [id])
+  corrective_actions CorrectiveAction[]
+}
+
+// VF-OPS-003: Supply Chain
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// VF-OPS-004: Facilities & HSE
+model Asset {
+  id                    String    @id @default(uuid()) @db.Uuid
+  company_id            String    @db.Uuid
+  name                  String
+  serial_no             String?
+  category              String // building, equipment, vehicle, IT
+  location              String?
+  purchase_date         DateTime?
+  last_maintenance_date DateTime?
+  status                String    @default("active")
+
+  company              Company              @relation(fields: [company_id], references: [id])
+  maintenance_requests MaintenanceRequest[]
+}
+
+model MaintenanceRequest {
+  id           String    @id @default(uuid()) @db.Uuid
+  asset_id     String    @db.Uuid
+  raised_by    String    @db.Uuid
+  description  String
+  priority     String    @default("medium")
+  status       String    @default("open")
+  completed_at DateTime?
+
+  asset Asset @relation(fields: [asset_id], references: [id])
+}
+
+model HSEIncident {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  type        String // near-miss, injury, environmental, property-damage
+  description String
+  location    String
+  severity    String   @default("low")
+  reported_at DateTime @default(now())
+  status      String   @default("reported")
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model RiskAssessment {
+  id          String    @id @default(uuid()) @db.Uuid
+  company_id  String    @db.Uuid
+  area        String
+  hazard      String
+  risk_level  String
+  mitigation  String
+  reviewed_at DateTime?
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model EnvironmentalPermit {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  name        String
+  issuer      String
+  expiry_date DateTime
+  file_url    String?
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-OPS-005: Process Improvement
+model ImprovementIdea {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  raised_by         String   @db.Uuid
+  title             String
+  description       String
+  impact_score      Int // 1-10
+  effort_score      Int // 1-10
+  status            String   @default("backlog") // backlog, research, implementation, done
+  estimated_savings Decimal? @db.Decimal(15, 2)
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model Initiative {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  title       String
+  description String?
+  owner_id    String   @db.Uuid
+  start_date  DateTime
+  target_date DateTime
+  status      String   @default("active")
+  progress    Int      @default(0)
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model ProcessMap {
+  id            String  @id @default(uuid()) @db.Uuid
+  company_id    String  @db.Uuid
+  department_id String  @db.Uuid
+  title         String
+  file_url      String? // URL to LucidChart/Visio/Image
+  status        String  @default("draft")
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-MKT-001: Content & Campaign
+model Campaign {
+  id         String    @id @default(uuid()) @db.Uuid
+  company_id String    @db.Uuid
+  name       String
+  goal       String?
+  start_date DateTime
+  end_date   DateTime?
+  budget     Decimal?  @db.Decimal(15, 2)
+  status     String    @default("planned") // planned, active, completed
+
+  company        Company        @relation(fields: [company_id], references: [id])
+  content_pieces ContentPiece[]
+}
+
+model ContentPiece {
+  id           String    @id @default(uuid()) @db.Uuid
+  campaign_id  String?   @db.Uuid
+  title        String
+  type         String // blog, social, video, email, whitepaper
+  status       String    @default("draft") // draft, review, approved, published
+  publish_date DateTime?
+  author_id    String?   @db.Uuid
+
+  campaign Campaign? @relation(fields: [campaign_id], references: [id])
+}
+
+model EditorialCalendar {
+  id         String @id @default(uuid()) @db.Uuid
+  company_id String @db.Uuid
+  year       Int
+  month      Int
+  entries    Json
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model UTMTag {
+  id            String @id @default(uuid()) @db.Uuid
+  company_id    String @db.Uuid
+  source        String
+  medium        String
+  campaign_name String
+  full_url      String
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-MKT-002: DAM
+model BrandAsset {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  name       String
+  category   String // logo, image, video, document, font
+  tags       String[]
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  company  Company        @relation(fields: [company_id], references: [id])
+  versions AssetVersion[]
+}
+
+model AssetVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  asset_id   String   @db.Uuid
+  version_no Int
+  file_url   String
+  created_at DateTime @default(now())
+  created_by String?  @db.Uuid
+
+  asset BrandAsset @relation(fields: [asset_id], references: [id])
+}
+
+model AssetCollection {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  name        String
+  description String?
+  asset_ids   String[] @db.Uuid
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-SAL-001: CRM Core
+model CRMContact {
+  id         String  @id @default(uuid()) @db.Uuid
+  company_id String  @db.Uuid
+  account_id String? @db.Uuid
+  first_name String
+  last_name  String
+  email      String?
+  phone      String?
+  job_title  String?
+  status     String  @default("active")
+
+  company    Company     @relation(fields: [company_id], references: [id])
+  account    CRMAccount? @relation(fields: [account_id], references: [id])
+  deals      Deal[]
+  activities Activity[]
+}
+
+model CRMAccount {
+  id           String  @id @default(uuid()) @db.Uuid
+  company_id   String  @db.Uuid
+  name         String
+  industry     String?
+  website      String?
+  status       String  @default("active")
+  health_score Int? // 0-100
+
+  company  Company      @relation(fields: [company_id], references: [id])
+  contacts CRMContact[]
+  deals    Deal[]
+
+  health_history AccountHealth[]
+  renewals       RenewalOpportunity[]
+}
+
+model Deal {
+  id          String    @id @default(uuid()) @db.Uuid
+  company_id  String    @db.Uuid
+  account_id  String    @db.Uuid
+  contact_id  String?   @db.Uuid
+  title       String
+  value       Decimal   @db.Decimal(15, 2)
+  stage       String // qualification, discovery, proposal, negotiation, closed_won, closed_lost
+  probability Int       @default(10)
+  close_date  DateTime?
+
+  company    Company     @relation(fields: [company_id], references: [id])
+  account    CRMAccount  @relation(fields: [account_id], references: [id])
+  contact    CRMContact? @relation(fields: [contact_id], references: [id])
+  activities Activity[]
+}
+
+model Activity {
+  id           String    @id @default(uuid()) @db.Uuid
+  company_id   String    @db.Uuid
+  deal_id      String?   @db.Uuid
+  contact_id   String?   @db.Uuid
+  type         String // call, email, meeting, note
+  subject      String
+  description  String?
+  due_date     DateTime?
+  completed_at DateTime?
+
+  company Company     @relation(fields: [company_id], references: [id])
+  deal    Deal?       @relation(fields: [deal_id], references: [id])
+  contact CRMContact? @relation(fields: [contact_id], references: [id])
+}
+
+// VF-SAL-003: Account Management
+model AccountHealth {
+  id          String   @id @default(uuid()) @db.Uuid
+  account_id  String   @db.Uuid
+  score       Int
+  metrics     Json // { usage, support_tickets, sentiment }
+  measured_at DateTime @default(now())
+
+  account CRMAccount @relation(fields: [account_id], references: [id])
+}
+
+model RenewalOpportunity {
+  id           String   @id @default(uuid()) @db.Uuid
+  account_id   String   @db.Uuid
+  renewal_date DateTime
+  value        Decimal  @db.Decimal(15, 2)
+  status       String   @default("open")
+
+  account CRMAccount @relation(fields: [account_id], references: [id])
+}
+
+// VF-LEG-001: CLM
+model ContractTemplate {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  title      String
+  category   String // employment, vendor, sales, NDA
+  content    String   @db.Text
+  variables  Json? // Expected input fields
+  isActive   Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  company   Company    @relation(fields: [company_id], references: [id])
+  contracts Contract[]
+}
+
+model Contract {
+  id          String    @id @default(uuid()) @db.Uuid
+  company_id  String    @db.Uuid
+  owner_id    String?   @db.Uuid
+  template_id String?   @db.Uuid
+  title       String
+  party_name  String
+  category    String
+  status      String    @default("draft") // draft, sent, approved, signed, expired
+  value       Decimal?  @db.Decimal(15, 2)
+  start_date  DateTime
+  end_date    DateTime?
+  file_url    String?
+  metadata    Json?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  company    Company            @relation(fields: [company_id], references: [id])
+  owner      Employee?          @relation(fields: [owner_id], references: [id])
+  template   ContractTemplate?  @relation(fields: [template_id], references: [id])
+  approvals  ContractApproval[]
+  signatures Signature[]
+  auditLogs  AuditLog[]
+}
+
+model ContractApproval {
+  id          String    @id @default(uuid()) @db.Uuid
+  contract_id String    @db.Uuid
+  approver_id String    @db.Uuid
+  step        Int       @default(1)
+  status      String    @default("pending") // pending, approved, rejected
+  comment     String?
+  decided_at  DateTime?
+
+  contract Contract @relation(fields: [contract_id], references: [id])
+  approver Employee @relation(fields: [approver_id], references: [id])
+}
+
+model Signature {
+  id           String    @id @default(uuid()) @db.Uuid
+  contract_id  String    @db.Uuid
+  signer_name  String
+  signer_email String
+  signed_at    DateTime?
+  ip_address   String?
+  user_agent   String?
+
+  contract Contract @relation(fields: [contract_id], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  contract_id String?  @db.Uuid
+  user_id     String   @db.Uuid
+  action      String // create, update, delete, sign, approve
+  details     String?  @db.Text
+  created_at  DateTime @default(now())
+
+  contract Contract? @relation(fields: [contract_id], references: [id])
+  user     Employee  @relation(fields: [user_id], references: [id])
+}
+
+// VF-LEG-002: Compliance
+model ComplianceDeadline {
+  id              String    @id @default(uuid()) @db.Uuid
+  company_id      String    @db.Uuid
+  title           String
+  description     String?   @db.Text
+  category        String // tax, labour, bbbbee, industry_specific, environmental, health_safety
+  sub_category    String?
+  due_date        DateTime
+  recurrence_type String? // once, monthly, quarterly, yearly, biannually
+  next_occurrence DateTime?
+  status          String    @default("pending") // pending, filed, overdue, cancelled
+  proof_url       String?
+  reference_no    String?
+  notes           String?   @db.Text
+  filing_date     DateTime?
+  assigned_to     String?   @db.Uuid
+  created_by      String?   @db.Uuid
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  company     Company                @relation(fields: [company_id], references: [id])
+  assignee    Employee?              @relation("ComplianceAssignee", fields: [assigned_to], references: [id])
+  creator     Employee?              @relation("ComplianceCreator", fields: [created_by], references: [id])
+  assignments ComplianceAssignment[]
+  proofs      ComplianceProof[]
+  audit_logs  ComplianceAuditLog[]
+}
+
+model ComplianceAssignment {
+  id          String   @id @default(uuid()) @db.Uuid
+  deadline_id String   @db.Uuid
+  user_id     String   @db.Uuid
+  role        String   @default("owner") // owner, contributor, viewer
+  assigned_at DateTime @default(now())
+  assigned_by String?  @db.Uuid
+
+  deadline ComplianceDeadline @relation(fields: [deadline_id], references: [id], onDelete: Cascade)
+  user     Employee           @relation("ComplianceAssignmentUser", fields: [user_id], references: [id])
+}
+
+model ComplianceProof {
+  id          String   @id @default(uuid()) @db.Uuid
+  deadline_id String   @db.Uuid
+  file_name   String
+  file_url    String
+  file_type   String // pdf, png, jpg
+  file_size   Int // bytes
+  uploaded_by String   @db.Uuid
+  uploaded_at DateTime @default(now())
+  ip_address  String?
+
+  deadline ComplianceDeadline @relation(fields: [deadline_id], references: [id], onDelete: Cascade)
+  uploader Employee           @relation("ComplianceProofUploader", fields: [uploaded_by], references: [id])
+}
+
+model ComplianceAuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  deadline_id String?  @db.Uuid
+  user_id     String   @db.Uuid
+  action      String // create, update, file, upload_proof, mark_overdue, delete
+  details     String?  @db.Text
+  metadata    Json?
+  ip_address  String?
+  created_at  DateTime @default(now())
+
+  deadline ComplianceDeadline? @relation(fields: [deadline_id], references: [id])
+  user     Employee            @relation("ComplianceAuditLogUser", fields: [user_id], references: [id])
+}
+
+// VF-LEG-003: Data Privacy
+model DataProcessor {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  name       String
+  purpose    String
+  data_types String[]
+  location   String
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model DSRRequest {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  requester_name  String
+  requester_email String
+  type            String // access, deletion, rectification
+  status          String   @default("open")
+  due_date        DateTime
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-IT-001: ITSM
+model ITTicket {
+  id             String    @id @default(uuid()) @db.Uuid
+  company_id     String    @db.Uuid
+  raised_by_id   String    @db.Uuid
+  subject        String
+  description    String
+  priority       String    @default("P3") // P1, P2, P3, P4
+  status         String    @default("open") // open, in_progress, pending, resolved, closed
+  category       String?
+  sla_deadline   DateTime?
+  resolved_at    DateTime?
+  assigned_to_id String?   @db.Uuid
+  asset_id       String?   @db.Uuid
+  change_id      String?   @db.Uuid
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  company     Company           @relation(fields: [company_id], references: [id])
+  raised_by   Employee          @relation(name: "RaisedTickets", fields: [raised_by_id], references: [id])
+  assigned_to Employee?         @relation(name: "AssignedTickets", fields: [assigned_to_id], references: [id])
+  asset       ITAsset?          @relation(fields: [asset_id], references: [id])
+  change      ChangeRequest?    @relation(fields: [change_id], references: [id])
+  major_log   MajorIncidentLog?
+}
+
+model ITAsset {
+  id              String    @id @default(uuid()) @db.Uuid
+  company_id      String    @db.Uuid
+  asset_tag       String    @unique
+  name            String
+  type            String // laptop, server, software_license
+  assigned_to_id  String?   @db.Uuid
+  status          String    @default("active")
+  serial_no       String?
+  model           String?
+  purchase_date   DateTime?
+  warranty_expiry DateTime?
+  specs           Json? // { cpu, ram, storage }
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  company     Company    @relation(fields: [company_id], references: [id])
+  assigned_to Employee?  @relation(fields: [assigned_to_id], references: [id])
+  tickets     ITTicket[]
+}
+
+model ChangeRequest {
+  id             String    @id @default(uuid()) @db.Uuid
+  company_id     String    @db.Uuid
+  raised_by_id   String    @db.Uuid
+  title          String
+  description    String
+  reason         String
+  impact         String
+  risk           String
+  status         String    @default("draft") // draft, pending_cab, approved, rejected, implemented, closed
+  cab_notes      String?
+  implemented_at DateTime?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  company   Company    @relation(fields: [company_id], references: [id])
+  raised_by Employee   @relation(fields: [raised_by_id], references: [id])
+  tickets   ITTicket[]
+}
+
+model KnowledgeArticle {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  author_id  String   @db.Uuid
+  title      String
+  content    String   @db.Text
+  category   String
+  tags       String[]
+  views      Int      @default(0)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  company Company  @relation(fields: [company_id], references: [id])
+  author  Employee @relation(fields: [author_id], references: [id])
+}
+
+model MajorIncidentLog {
+  id              String    @id @default(uuid()) @db.Uuid
+  ticket_id       String    @unique @db.Uuid
+  rca             String?
+  impact_summary  String?
+  prevention_plan String?
+  detected_at     DateTime
+  resolved_at     DateTime?
+  mttr_seconds    Int?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  ticket ITTicket @relation(fields: [ticket_id], references: [id])
+}
+
+// VF-STR-001: OKRs
+model OKRCycle {
+  id         String   @id @default(uuid()) @db.Uuid
+  company_id String   @db.Uuid
+  name       String
+  start_date DateTime
+  end_date   DateTime
+  status     String   @default("draft") // draft, active, complete
+
+  company    Company     @relation(fields: [company_id], references: [id])
+  objectives Objective[]
+}
+
+model Objective {
+  id            String  @id @default(uuid()) @db.Uuid
+  cycle_id      String  @db.Uuid
+  department_id String? @db.Uuid
+  owner_id      String? @db.Uuid
+  parent_id     String? @db.Uuid
+  title         String
+  description   String?
+  progress      Int     @default(0)
+
+  cycle       OKRCycle    @relation(fields: [cycle_id], references: [id])
+  owner       Employee?   @relation("ObjectiveOwner", fields: [owner_id], references: [id])
+  parent      Objective?  @relation("ObjectiveCascade", fields: [parent_id], references: [id])
+  children    Objective[] @relation("ObjectiveCascade")
+  key_results KeyResult[]
+}
+
+model KeyResult {
+  id            String    @id @default(uuid()) @db.Uuid
+  objective_id  String    @db.Uuid
+  title         String
+  unit          String    @default("percentage") // percentage, currency, count
+  initial_value Decimal   @db.Decimal(15, 2)
+  target_value  Decimal   @db.Decimal(15, 2)
+  current_value Decimal   @db.Decimal(15, 2)
+  target_date   DateTime?
+  status        String    @default("on-track")
+
+  objective Objective @relation(fields: [objective_id], references: [id])
+  check_ins CheckIn[]
+}
+
+model CheckIn {
+  id         String   @id @default(uuid()) @db.Uuid
+  kr_id      String   @db.Uuid
+  value      Decimal  @db.Decimal(15, 2)
+  confidence Int // 1-10
+  comment    String?
+  created_at DateTime @default(now())
+
+  key_result KeyResult @relation(fields: [kr_id], references: [id])
+}
+
+// VF-STR-002: BI
+model KPISnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  company_id  String   @db.Uuid
+  kpi_id      String   @db.Uuid
+  value       Decimal  @db.Decimal(15, 2)
+  recorded_at DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-ADM-001: DMS Improvements
+model Folder {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  name           String
+  parent_id      String?  @db.Uuid
+  security_level String   @default("public")
+  metadata       Json?
+  created_at     DateTime @default(now())
+
+  company   Company    @relation(fields: [company_id], references: [id])
+  parent    Folder?    @relation("FolderHierarchy", fields: [parent_id], references: [id])
+  children  Folder[]   @relation("FolderHierarchy")
+  documents Document[]
+}
+
+model DocumentVersion {
+  id         String   @id @default(uuid()) @db.Uuid
+  doc_id     String   @db.Uuid
+  version_no Int
+  file_url   String
+  change_log String?
+  created_at DateTime @default(now())
+  created_by String   @db.Uuid
+
+  document Document @relation(fields: [doc_id], references: [id])
+}
+
+model RetentionPolicy {
+  id             String @id @default(uuid()) @db.Uuid
+  company_id     String @db.Uuid
+  name           String
+  duration_years Int
+  trigger_event  String @default("creation") // creation, last_access
+  category       String
+
+  company   Company    @relation(fields: [company_id], references: [id])
+  documents Document[]
+}
+
+model LegalHold {
+  id         String   @id @default(uuid()) @db.Uuid
+  doc_id     String   @db.Uuid
+  reason     String
+  active     Boolean  @default(true)
+  placed_by  String   @db.Uuid
+  created_at DateTime @default(now())
+
+  document Document @relation(fields: [doc_id], references: [id])
+}
+
+// VF-ADM-002: Procurement & PO
+
+
+model SpendRecord {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  department_id String   @db.Uuid
+  amount        Decimal  @db.Decimal(15, 2)
+  category      String
+  recorded_at   DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-ADM-003: Travel & Expense
+model TravelRequest {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  employee_id    String   @db.Uuid
+  destination    String
+  purpose        String
+  start_date     DateTime
+  end_date       DateTime
+  status         String   @default("pending") // pending, approved, rejected, completed
+  estimated_cost Decimal? @db.Decimal(15, 2)
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+model ExpenseClaim {
+  id          String  @id @default(uuid()) @db.Uuid
+  company_id  String  @db.Uuid
+  employee_id String  @db.Uuid
+  amount      Decimal @db.Decimal(15, 2)
+  description String
+  status      String  @default("submitted") // submitted, approved, paid
+  receipt_url String?
+
+  company Company @relation(fields: [company_id], references: [id])
+}
+
+// VF-ADM-004: Fleet
+model Vehicle {
+  id         String @id @default(uuid()) @db.Uuid
+  company_id String @db.Uuid
+  reg_no     String @unique
+  make       String
+  model      String
+  type       String // truck, car, van, ag-equipment
+  status     String @default("available") // available, booked, maintenance
+
+  company     Company        @relation(fields: [company_id], references: [id])
+  bookings    FleetBooking[]
+  fuelRecords FuelRecord[]
+}
+
+model FleetBooking {
+  id         String   @id @default(uuid()) @db.Uuid
+  vehicle_id String   @db.Uuid
+  driver_id  String   @db.Uuid
+  start_at   DateTime
+  end_at     DateTime
+  purpose    String?
+
+  vehicle Vehicle @relation(fields: [vehicle_id], references: [id])
+}
+
+model FuelRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  vehicle_id String   @db.Uuid
+  date       DateTime
+  liters     Decimal  @db.Decimal(10, 2)
+  amount     Decimal  @db.Decimal(15, 2)
+  odometer   Int
+
+  vehicle Vehicle @relation(fields: [vehicle_id], references: [id])
+}
+
+// ============================================================================
+// VF-OPS-001 — Project & Portfolio Management Module
+// Complete Prisma Schema (Base + Premium Models)
+// ============================================================================
+// Implements: DB-01 (Base PPM), DB-02 (Premium PPM)
+// Sprint 1 Foundation - All models for Tier 1-5 capabilities
+// ============================================================================
+
+// ----------------------------
+// ENUMS (All PPM Enumerations)
+// ----------------------------
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum RAGStatus {
+  GREEN
+  AMBER
+  RED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RAIDType {
+  RISK
+  ACTION
+  ISSUE
+  DECISION
+}
+
+enum DependencyType {
+  FINISH_TO_START // FTS - Most common
+  START_TO_START // STS
+  FINISH_TO_FINISH // FTF
+}
+
+enum GateStatus {
+  PENDING
+  PASSED
+  FAILED
+  WAIVED
+}
+
+enum DecisionStatus {
+  PROPOSED
+  APPROVED
+  SUPERSEDED
+}
+
+enum InsightType {
+  PATTERN_MATCH
+  ESTIMATION_DRIFT
+  RESOURCE_RISK
+  SCHEDULE_RISK
+  QUALITY_RISK
+}
+
+enum LessonCategory {
+  PROCESS
+  TECHNICAL
+  PEOPLE
+  RISK
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  PRACTITIONER
+  EXPERT
+  LEAD
+}
+
+// ----------------------------
+// CORE PROJECT MODELS (DB-01)
+// ----------------------------
+
+model Project {
+  id          String        @id @default(uuid()) @db.Uuid
+  company_id  String        @db.Uuid
+  name        String
+  description String?       @db.Text
+  start_date  DateTime
+  end_date    DateTime?
+  status      ProjectStatus @default(PLANNED)
+  rag_status  RAGStatus     @default(GREEN)
+  owner_id    String?       @db.Uuid
+
+  // Financial tracking
+  budget_allocated    Decimal? @db.Decimal(15, 2)
+  budget_spent        Decimal? @db.Decimal(15, 2)
+  budget_variance_pct Decimal? @db.Decimal(5, 2) // Percentage variance
+
+  // Health metrics (Tier 5)
+  health_score Int? // 0-100 composite score
+
+  // Timestamps
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  company           Company              @relation(fields: [company_id], references: [id])
+  owner             Employee?            @relation("ProjectOwner", fields: [owner_id], references: [id])
+  tasks             ProjectTask[]
+  raid_items        RAIDItem[]
+  budgets           ProjectBudget[]
+  assignments       ResourceAssignment[]
+  milestones        ProjectMilestone[]
+  phases            ProjectPhase[]
+  baselines         ProjectBaseline[]
+  gates             GateReview[]
+  decisions         DecisionRecord[]
+  dependencies_from ProjectDependency[]  @relation("FromProject")
+  dependencies_to   ProjectDependency[]  @relation("ToProject")
+  forecasts         ProjectForecast[]
+  insights          ProjectInsight[]
+  lessons           Lesson[]
+  audit_logs        ProjectAuditLog[]
+  resource          Resource?            @relation(fields: [resourceId], references: [id])
+  resourceId        String?              @db.Uuid
+  sprintRecords     SprintRecord[]
+
+  @@index([company_id])
+  @@index([rag_status])
+  @@index([owner_id])
+}
+
+model ProjectTask {
+  id           String     @id @default(uuid()) @db.Uuid
+  project_id   String     @db.Uuid
+  title        String
+  description  String?    @db.Text
+  assignee_id  String?    @db.Uuid
+  due_date     DateTime?
+  status       TaskStatus @default(TODO)
+  priority     Priority   @default(MEDIUM)
+  completed_at DateTime?
+  blocked_by   String?    @db.Text // Reason if BLOCKED
+
+  // Cycle time tracking (for Monte Carlo)
+  started_at      DateTime?
+  cycle_time_days Int?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project  Project   @relation(fields: [project_id], references: [id])
+  assignee Employee? @relation("TaskAssignee", fields: [assignee_id], references: [id])
+
+  @@index([project_id])
+  @@index([assignee_id])
+  @@index([status])
+}
+
+model RAIDItem {
+  id          String    @id @default(uuid()) @db.Uuid
+  project_id  String    @db.Uuid
+  type        RAIDType
+  title       String
+  description String    @db.Text
+  mitigation  String?   @db.Text
+  owner_id    String?   @db.Uuid
+  status      String    @default("OPEN") // OPEN, MITIGATED, CLOSED
+  severity    Priority
+  logged_date DateTime  @default(now()) // For Gantt flag positioning
+  closed_at   DateTime?
+
+  // Decision-specific fields (T4.2)
+  options_considered Json? // Array of {option, pros, cons}
+  rationale          String?   @db.Text
+  approved_by_id     String?   @db.Uuid
+  approved_at        DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project   @relation(fields: [project_id], references: [id])
+  owner   Employee? @relation("RAIDOwner", fields: [owner_id], references: [id])
+
+  @@index([project_id])
+  @@index([type])
+  @@index([severity])
+}
+
+model ProjectBudget {
+  id              String   @id @default(uuid()) @db.Uuid
+  project_id      String   @db.Uuid
+  total_allocated Decimal  @db.Decimal(15, 2)
+  actual_spent    Decimal  @db.Decimal(15, 2)
+  variance        Decimal  @db.Decimal(15, 2)
+  variance_pct    Decimal  @db.Decimal(5, 2)
+  last_updated    DateTime @default(now())
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model ResourceAssignment {
+  id                 String    @id @default(uuid()) @db.Uuid
+  project_id         String    @db.Uuid
+  user_id            String    @db.Uuid
+  role               String // PM, TEAM_MEMBER, CONTRIBUTOR, VIEWER
+  allocation_percent Int       @default(100) // 0-100%
+  allocated_hours    Int // Total hours allocated
+  start_date         DateTime
+  end_date           DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project  @relation(fields: [project_id], references: [id])
+  user    Employee @relation("ResourceAssignee", fields: [user_id], references: [id])
+
+  @@index([project_id])
+  @@index([user_id])
+}
+
+// ----------------------------
+// PREMIUM MODELS (DB-02)
+// ----------------------------
+
+// Tier 1: Strategic Planning Layer
+
+model ProjectMilestone {
+  id            String    @id @default(uuid()) @db.Uuid
+  project_id    String    @db.Uuid
+  title         String
+  target_date   DateTime
+  achieved_date DateTime?
+  description   String?   @db.Text
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([target_date])
+}
+
+model ProjectPhase {
+  id         String    @id @default(uuid()) @db.Uuid
+  project_id String    @db.Uuid
+  name       String
+  start_date DateTime
+  end_date   DateTime?
+  status     String    @default("PLANNED") // PLANNED, ACTIVE, COMPLETED
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model ProjectBaseline {
+  id             String   @id @default(uuid()) @db.Uuid
+  project_id     String   @db.Uuid
+  baseline_name  String // "Initial Plan", "Q2 Rebaseline", etc.
+  snapshot_data  Json // Full project state snapshot
+  approved_at    DateTime
+  approved_by_id String   @db.Uuid
+
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model ProjectDependency {
+  id              String         @id @default(uuid()) @db.Uuid
+  from_project_id String         @db.Uuid // Upstream project
+  to_project_id   String         @db.Uuid // Downstream project
+  dependency_type DependencyType
+  lag_days        Int            @default(0)
+  description     String?        @db.Text
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  from_project Project @relation("FromProject", fields: [from_project_id], references: [id])
+  to_project   Project @relation("ToProject", fields: [to_project_id], references: [id])
+
+  @@unique([from_project_id, to_project_id]) // Prevent duplicates
+  @@index([from_project_id])
+  @@index([to_project_id])
+}
+
+// Tier 3: Delivery Intelligence
+
+model SprintRecord {
+  id               String   @id @default(uuid()) @db.Uuid
+  project_id       String   @db.Uuid
+  sprint_number    Int
+  planned_points   Int
+  completed_points Int
+  start_date       DateTime
+  end_date         DateTime
+
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([sprint_number])
+}
+
+model CycleTimeLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  task_id      String   @db.Uuid
+  started_at   DateTime
+  completed_at DateTime
+  cycle_days   Int
+
+  created_at DateTime @default(now())
+
+  // Relations
+  // Note: Can't link to ProjectTask directly to avoid circular dependency
+
+  @@index([task_id])
+  @@index([cycle_days])
+}
+
+model ProjectForecast {
+  id               String   @id @default(uuid()) @db.Uuid
+  project_id       String   @db.Uuid
+  forecast_date    DateTime @default(now())
+  p50_date         DateTime // 50% confidence delivery date
+  p85_date         DateTime // 85% confidence delivery date
+  p95_date         DateTime // 95% confidence delivery date
+  confidence_level String // LOW, MEDIUM, HIGH (based on data sufficiency)
+  simulations_run  Int      @default(10000)
+
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+model ProjectInsight {
+  id                 String      @id @default(uuid()) @db.Uuid
+  project_id         String      @db.Uuid
+  insight_type       InsightType
+  confidence         Float // 0.0-1.0
+  description        String      @db.Text
+  detected_at        DateTime    @default(now())
+  acknowledged       Boolean     @default(false)
+  acknowledged_by_id String?     @db.Uuid
+  acknowledged_at    DateTime?
+
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([insight_type])
+}
+
+// Tier 4: Stakeholder Engagement
+
+model GateReview {
+  id                 String     @id @default(uuid()) @db.Uuid
+  project_id         String     @db.Uuid
+  gate_name          String // "Discovery Complete", "Design Approved", "Ready to Launch"
+  gate_order         Int // Sequential order
+  entry_criteria     Json // Array of criteria strings
+  exit_criteria      Json // Array of criteria strings
+  required_approvers Json // Array of userIds
+  status             GateStatus @default(PENDING)
+  outcome            String?    @db.Text
+  outcome_date       DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([gate_order])
+}
+
+model DecisionRecord {
+  id                 String         @id @default(uuid()) @db.Uuid
+  project_id         String         @db.Uuid
+  title              String
+  context            String         @db.Text
+  options_considered Json // Array of {option, pros, cons}
+  chosen_option      String         @db.Text
+  rationale          String         @db.Text
+  approved_by_id     String?        @db.Uuid
+  approved_at        DateTime?
+  status             DecisionStatus @default(PROPOSED)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+}
+
+// Tier 2: Resource Intelligence
+
+model UserSkill {
+  id                 String           @id @default(uuid()) @db.Uuid
+  user_id            String           @db.Uuid
+  skill_name         String
+  proficiency        ProficiencyLevel
+  years_experience   Int?
+  certified          Boolean          @default(false)
+  certification_name String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  user Employee @relation("UserSkills", fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([skill_name])
+}
+
+model Capacity {
+  id              String   @id @default(uuid()) @db.Uuid
+  user_id         String   @db.Uuid
+  week_start      DateTime
+  available_hours Int
+  allocated_hours Int
+  overallocated   Boolean  @default(false)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  user Employee @relation("CapacityRecords", fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([week_start])
+}
+
+// Tier 5: Intelligence & Automation
+
+model Lesson {
+  id             String         @id @default(uuid()) @db.Uuid
+  project_id     String         @db.Uuid
+  category       LessonCategory
+  title          String
+  description    String         @db.Text
+  recommendation String         @db.Text
+  raid_item_id   String?        @db.Uuid // Link back to RAID if applicable
+  milestone_id   String?        @db.Uuid // Link to milestone if applicable
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [project_id], references: [id])
+
+  @@index([project_id])
+  @@index([category])
+}
+
+model ProjectAuditLog {
+  id             String  @id @default(uuid()) @db.Uuid
+  project_id     String  @db.Uuid
+  user_id        String  @db.Uuid
+  action         String // CREATE, UPDATE, STATE_CHANGE, BUDGET_UPDATE, etc.
+  previous_value Json?
+  new_value      Json?
+  ip_address     String?
+  user_agent     String?
+
+  created_at DateTime @default(now())
+
+  // Relations
+  project Project  @relation(fields: [project_id], references: [id])
+  user    Employee @relation("ProjectAuditLogs", fields: [user_id], references: [id])
+
+  @@index([project_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([created_at])
+}
+
+// VF-OPS-003: Supply Chain & Inventory Management
+model ApprovalPolicy {
+  id                 String  @id @default(uuid()) @db.Uuid
+  company_id         String  @db.Uuid
+  product_category   String
+  auto_approve_limit Decimal @db.Decimal(15, 2)
+  l1_threshold       Decimal @db.Decimal(15, 2)
+  l2_threshold       Decimal @db.Decimal(15, 2)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  company Company @relation(fields: [company_id], references: [id])
+
+  @@unique([company_id, product_category])
+}
+
+// Enums for Supply Chain
+enum SupplierStatus {
+  ACTIVE
+  SUSPENDED
+  BLACKLISTED
+}
+
+enum LedgerEntryType {
+  OPENING_BALANCE
+  PO_RECEIPT
+  RETURN_TO_SUPPLIER
+  STOCK_ADJUSTMENT_UP
+  STOCK_ADJUSTMENT_DOWN
+  TRANSFER_IN
+  TRANSFER_OUT
+  FULFILLMENT
+  CYCLE_COUNT
+  SCRAP
+}
+
+enum PRStatus {
+  DRAFT
+  PENDING_L1
+  PENDING_L2
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIAL
+  FULLY_RECEIVED
+  CANCELLED
+  CLOSED
+}
+
+enum AmendmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  APPLIED
+  CANCELLED
+}
+
+enum GRStatus {
+  DRAFT
+  SUBMITTED
+  DISCREPANCY
+  COMPLETED
+}
+
+// DB-01 Models
+
+model Supplier {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  supplier_code   String
+  name            String
+  status          SupplierStatus @default(ACTIVE)
+  contact_info    Json?
+  bank_details    Json?
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  products        SupplierProduct[]
+  purchase_orders OpsPurchaseOrder[]
+  risks           SupplierRisk[]
+  bank_change_requests BankChangeRequest[]
+
+  @@unique([company_id, supplier_code])
+}
+
+model Product {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  sku             String
+  name            String
+  description     String?
+  category        String?
+  unit_of_measure String
+  abc_class       String?        // A, B, C
+  xyz_class       String?        // X, Y, Z
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  suppliers       SupplierProduct[]
+  stock_levels    StockLevel[]
+  stock_ledger    StockLedger[]
+  pr_lines        PRLineItem[]
+  po_lines        POLineItem[]
+  gr_lines        GRLineItem[]
+  forecasts       DemandForecast[]
+  cycle_counts    CycleCount[]
+  cogs_records    COGSRecord[]
+
+  @@unique([company_id, sku])
+}
+
+model Location {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  name            String
+  address         String?
+  is_active       Boolean        @default(true)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company         Company        @relation(fields: [company_id], references: [id])
+  stock_levels    StockLevel[]
+  stock_ledger    StockLedger[]
+  goods_receipts  OpsGoodsReceipt[]
+  forecasts       DemandForecast[]
+  cycle_counts    CycleCount[]
+}
+
+model StockLevel {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  product_id      String   @db.Uuid
+  location_id     String   @db.Uuid
+  quantity        Decimal  @default(0) @db.Decimal(15, 2)
+  reorder_point   Decimal? @db.Decimal(15, 2)
+  eoq             Decimal? @db.Decimal(15, 2)
+  cache_updated_at DateTime @default(now())
+
+  company   Company   @relation(fields: [company_id], references: [id])
+  product   Product   @relation(fields: [product_id], references: [id])
+  location  Location  @relation(fields: [location_id], references: [id])
+
+  @@unique([company_id, product_id, location_id])
+}
+
+model StockLedger {
+  id              String          @id @default(uuid()) @db.Uuid
+  company_id      String          @db.Uuid
+  product_id      String          @db.Uuid
+  location_id     String          @db.Uuid
+  entry_type      LedgerEntryType
+  quantity_change Decimal         @db.Decimal(15, 2)
+  reference_id    String?         // ID of PO, GR, PR, etc.
+  reason_code     String?
+  user_id         String?         @db.Uuid
+  created_at      DateTime        @default(now())
+  // No update/delete endpoints by design!
+
+  company   Company   @relation(fields: [company_id], references: [id])
+  product   Product   @relation(fields: [product_id], references: [id])
+  location  Location  @relation(fields: [location_id], references: [id])
+}
+
+model PurchaseRequisition {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  pr_number       String
+  requester_id    String         @db.Uuid
+  status          PRStatus       @default(DRAFT)
+  justification   String?
+  department_id   String?        @db.Uuid
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company   Company      @relation(fields: [company_id], references: [id])
+  requester Employee     @relation("Requester", fields: [requester_id], references: [id])
+  lines     PRLineItem[]
+  purchase_orders OpsPurchaseOrder[]
+  
+  @@unique([company_id, pr_number])
+}
+
+model PRLineItem {
+  id              String              @id @default(uuid()) @db.Uuid
+  pr_id           String              @db.Uuid
+  product_id      String              @db.Uuid
+  quantity        Decimal             @db.Decimal(15, 2)
+  estimated_cost  Decimal?            @db.Decimal(15, 2)
+  
+  pr        PurchaseRequisition @relation(fields: [pr_id], references: [id])
+  product   Product             @relation(fields: [product_id], references: [id])
+}
+
+model OpsPurchaseOrder {
+  id              String         @id @default(uuid()) @db.Uuid
+  company_id      String         @db.Uuid
+  po_number       String
+  supplier_id     String         @db.Uuid
+  status          POStatus       @default(DRAFT)
+  pr_id           String?        @db.Uuid
+  pdf_url         String?
+  total_value     Decimal        @default(0) @db.Decimal(15, 2)
+  amendment_count Int            @default(0)
+  last_amended_at DateTime?
+  is_amended      Boolean        @default(false)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  company           Company             @relation(fields: [company_id], references: [id])
+  supplier          Supplier            @relation(fields: [supplier_id], references: [id])
+  purchase_requisition PurchaseRequisition? @relation(fields: [pr_id], references: [id])
+  lines             POLineItem[]
+  goods_receipts    OpsGoodsReceipt[]
+  amendments        POAmendment[]
+  supplier_invoices SupplierInvoice[]
+
+  @@unique([company_id, po_number])
+}
+
+model POLineItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  po_id           String           @db.Uuid
+  product_id      String           @db.Uuid
+  quantity        Decimal          @db.Decimal(15, 2)
+  unit_price      Decimal          @db.Decimal(15, 2)
+  received_qty    Decimal          @default(0) @db.Decimal(15, 2)
+  
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+  product   Product          @relation(fields: [product_id], references: [id])
+}
+
+model OpsGoodsReceipt {
+  id              String           @id @default(uuid()) @db.Uuid
+  company_id      String           @db.Uuid
+  gr_number       String
+  po_id           String           @db.Uuid
+  location_id     String           @db.Uuid
+  status          GRStatus         @default(DRAFT)
+  received_by     String?          @db.Uuid
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  company   Company          @relation(fields: [company_id], references: [id])
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+  location  Location         @relation(fields: [location_id], references: [id])
+  receiver  Employee?        @relation("Receiver", fields: [received_by], references: [id])
+  lines     GRLineItem[]
+
+  @@unique([company_id, gr_number])
+}
+
+model GRLineItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  gr_id           String           @db.Uuid
+  product_id      String           @db.Uuid
+  received_qty    Decimal          @db.Decimal(15, 2)
+  rejected_qty    Decimal          @default(0) @db.Decimal(15, 2)
+  rejection_reason String?
+
+  gr        OpsGoodsReceipt  @relation(fields: [gr_id], references: [id])
+  product   Product          @relation(fields: [product_id], references: [id])
+  supplier_rejections SupplierRejection[]
+}
+
+// DB-02 Models
+
+model SupplierRejection {
+  id              String      @id @default(uuid()) @db.Uuid
+  gr_line_id      String      @db.Uuid
+  reason          String
+  quantity        Decimal     @db.Decimal(15, 2)
+  created_at      DateTime    @default(now())
+
+  gr_line   GRLineItem  @relation(fields: [gr_line_id], references: [id])
+}
+
+model POAmendment {
+  id                    String          @id @default(uuid()) @db.Uuid
+  company_id            String          @db.Uuid
+  amendment_number      String          @unique
+  original_po_id        String          @db.Uuid
+  requested_by          String
+  reason                String
+  justification         String
+  urgency               String          @default("MEDIUM")
+  status                AmendmentStatus @default(PENDING)
+  original_total        Decimal         @db.Decimal(15, 2)
+  amended_total         Decimal         @db.Decimal(15, 2)
+  changes               Json
+  approved_by           String?
+  approved_at           DateTime?
+  approval_comments     String?
+  applied_by            String?
+  applied_at            DateTime?
+  cancelled_by          String?
+  cancelled_at          DateTime?
+  cancellation_reason   String?
+  created_at            DateTime        @default(now())
+  updated_at            DateTime        @updatedAt
+
+  company     Company          @relation(fields: [company_id], references: [id])
+  original_po OpsPurchaseOrder @relation(fields: [original_po_id], references: [id])
+  audit_logs  POAmendmentAudit[]
+
+  @@index([company_id])
+  @@index([original_po_id])
+  @@index([status])
+}
+
+model POAmendmentAudit {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  amendment_id String   @db.Uuid
+  action       String
+  performed_by String
+  description  String
+  metadata     Json?
+  created_at   DateTime @default(now())
+
+  company   Company     @relation(fields: [company_id], references: [id])
+  amendment POAmendment @relation(fields: [amendment_id], references: [id], onDelete: Cascade)
+
+  @@index([company_id])
+  @@index([amendment_id])
+  @@index([created_at])
+}
+
+model SupplierProduct {
+  id              String      @id @default(uuid()) @db.Uuid
+  supplier_id     String      @db.Uuid
+  product_id      String      @db.Uuid
+  unit_cost       Decimal     @db.Decimal(15, 2)
+  lead_time_days  Int
+  is_preferred    Boolean     @default(false)
+  
+  supplier  Supplier    @relation(fields: [supplier_id], references: [id])
+  product   Product     @relation(fields: [product_id], references: [id])
+
+  @@unique([supplier_id, product_id])
+}
+
+model SupplierRisk {
+  id              String      @id @default(uuid()) @db.Uuid
+  supplier_id     String      @db.Uuid
+  risk_score      Int
+  category        String      // single_source, financial, quality
+  details         String?
+  created_at      DateTime    @default(now())
+
+  supplier  Supplier    @relation(fields: [supplier_id], references: [id])
+}
+
+model SupplierInvoice {
+  id              String           @id @default(uuid()) @db.Uuid
+  company_id      String           @db.Uuid
+  po_id           String           @db.Uuid
+  invoice_number  String
+  total_amount    Decimal          @db.Decimal(15, 2)
+  status          String           @default("PENDING_MATCH")
+  created_at      DateTime         @default(now())
+
+  po        OpsPurchaseOrder @relation(fields: [po_id], references: [id])
+}
+
+model UnmatchedReceipt {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  details         Json
+  status          String      @default("PENDING_FINANCE_APPROVAL")
+  created_at      DateTime    @default(now())
+}
+
+model DemandForecast {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_id      String      @db.Uuid
+  location_id     String      @db.Uuid
+  forecast_date   DateTime
+  predicted_qty   Decimal     @db.Decimal(15, 2)
+  window_days     Int         // 30, 60, 90
+  confidence      Float
+
+  product   Product     @relation(fields: [product_id], references: [id])
+  location  Location    @relation(fields: [location_id], references: [id])
+}
+
+model SeasonalAdjustment {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_category String
+  month           Int         // 1-12
+  multiplier      Float
+}
+
+model CycleCount {
+  id              String      @id @default(uuid()) @db.Uuid
+  product_id      String      @db.Uuid
+  location_id     String      @db.Uuid
+  scheduled_date  DateTime
+  counted_qty     Decimal?    @db.Decimal(15, 2)
+  variance        Decimal?    @db.Decimal(15, 2)
+  status          String      @default("SCHEDULED")
+
+  product   Product     @relation(fields: [product_id], references: [id])
+  location  Location    @relation(fields: [location_id], references: [id])
+}
+
+model RFQ {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  description     String
+  status          String      @default("OPEN")
+  deadline        DateTime
+  created_at      DateTime    @default(now())
+
+  quotes    SupplierQuote[]
+}
+
+model SupplierQuote {
+  id              String      @id @default(uuid()) @db.Uuid
+  rfq_id          String      @db.Uuid
+  supplier_id     String      @db.Uuid
+  total_value     Decimal     @db.Decimal(15, 2)
+  lead_time_days  Int
+  is_selected     Boolean     @default(false)
+  created_at      DateTime    @default(now())
+
+  rfq       RFQ         @relation(fields: [rfq_id], references: [id])
+}
+
+model COGSRecord {
+  id              String      @id @default(uuid()) @db.Uuid
+  company_id      String      @db.Uuid
+  product_id      String      @db.Uuid
+  project_id      String?     @db.Uuid
+  quantity        Decimal     @db.Decimal(15, 2)
+  unit_cost       Decimal     @db.Decimal(15, 2)
+  total_cost      Decimal     @db.Decimal(15, 2)
+  created_at      DateTime    @default(now())
+
+  product   Product     @relation(fields: [product_id], references: [id])
+}
+// Bank Detail Change Control Models
+model BankChangeRequest {
+  id                    String                    @id @default(uuid()) @db.Uuid
+  supplier_id           String                    @db.Uuid
+  current_bank_details  Json?
+  proposed_bank_details Json
+  requester_id          String                    @db.Uuid
+  justification         String
+  status                BankChangeRequestStatus   @default(PENDING)
+  approver_id           String?                   @db.Uuid
+  approval_comments     String?
+  created_at            DateTime                  @default(now())
+  updated_at            DateTime                  @updatedAt
+
+  supplier    Supplier  @relation(fields: [supplier_id], references: [id])
+  requester   User      @relation("BankChangeRequester", fields: [requester_id], references: [id])
+  approver    User?     @relation("BankChangeApprover", fields: [approver_id], references: [id])
+
+  @@index([supplier_id])
+  @@index([status])
+  @@index([created_at])
+}
+
+enum BankChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}

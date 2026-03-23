@@ -1,0 +1,516 @@
+// ============================================================================
+// VF-OPS-001 — Project & Portfolio Management Module
+// Complete Prisma Schema (Base + Premium Models)
+// ============================================================================
+// Implements: DB-01 (Base PPM), DB-02 (Premium PPM)
+// Sprint 1 Foundation - All models for Tier 1-5 capabilities
+// ============================================================================
+
+// ----------------------------
+// ENUMS (All PPM Enumerations)
+// ----------------------------
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum RAGStatus {
+  GREEN
+  AMBER
+  RED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RAIDType {
+  RISK
+  ACTION
+  ISSUE
+  DECISION
+}
+
+enum DependencyType {
+  FINISH_TO_START    // FTS - Most common
+  START_TO_START     // STS
+  FINISH_TO_FINISH   // FTF
+}
+
+enum GateStatus {
+  PENDING
+  PASSED
+  FAILED
+  WAIVED
+}
+
+enum DecisionStatus {
+  PROPOSED
+  APPROVED
+  SUPERSEDED
+}
+
+enum InsightType {
+  PATTERN_MATCH
+  ESTIMATION_DRIFT
+  RESOURCE_RISK
+  SCHEDULE_RISK
+  QUALITY_RISK
+}
+
+enum LessonCategory {
+  PROCESS
+  TECHNICAL
+  PEOPLE
+  RISK
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  PRACTITIONER
+  EXPERT
+  LEAD
+}
+
+// ----------------------------
+// CORE PROJECT MODELS (DB-01)
+// ----------------------------
+
+model Project {
+  id                  String             @id @default(uuid()) @db.Uuid
+  company_id          String             @db.Uuid
+  name                String
+  description         String?            @db.Text
+  start_date          DateTime
+  end_date            DateTime?
+  status              ProjectStatus      @default(PLANNED)
+  rag_status          RAGStatus          @default(GREEN)
+  owner_id            String?            @db.Uuid
+  
+  // Financial tracking
+  budget_allocated    Decimal?           @db.Decimal(15, 2)
+  budget_spent        Decimal?           @db.Decimal(15, 2)
+  budget_variance_pct Decimal?           @db.Decimal(5, 2) // Percentage variance
+  
+  // Health metrics (Tier 5)
+  health_score        Int?               // 0-100 composite score
+  
+  // Timestamps
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+  
+  // Relations
+  company             Company                @relation(fields: [company_id], references: [id])
+  owner               Employee?              @relation("ProjectOwner", fields: [owner_id], references: [id])
+  tasks               ProjectTask[]
+  raid_items          RAIDItem[]
+  budgets             ProjectBudget[]
+  assignments         ResourceAssignment[]
+  milestones          Milestone[]
+  phases              ProjectPhase[]
+  baselines           ProjectBaseline[]
+  gates               GateReview[]
+  decisions           DecisionRecord[]
+  dependencies_from   ProjectDependency[]    @relation("FromProject")
+  dependencies_to     ProjectDependency[]    @relation("ToProject")
+  forecasts           ProjectForecast[]
+  insights            ProjectInsight[]
+  lessons             Lesson[]
+  audit_logs          ProjectAuditLog[]
+  
+  @@index([company_id])
+  @@index([rag_status])
+  @@index([owner_id])
+}
+
+model ProjectTask {
+  id            String       @id @default(uuid()) @db.Uuid
+  project_id    String       @db.Uuid
+  title         String
+  description   String?      @db.Text
+  assignee_id   String?      @db.Uuid
+  due_date      DateTime?
+  status        TaskStatus   @default(TODO)
+  priority      Priority     @default(MEDIUM)
+  completed_at  DateTime?
+  blocked_by    String?      @db.Text // Reason if BLOCKED
+  
+  // Cycle time tracking (for Monte Carlo)
+  started_at    DateTime?
+  cycle_time_days Int?
+  
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+  
+  // Relations
+  project       Project      @relation(fields: [project_id], references: [id])
+  assignee      Employee?    @relation("TaskAssignee", fields: [assignee_id], references: [id])
+  
+  @@index([project_id])
+  @@index([assignee_id])
+  @@index([status])
+}
+
+model RAIDItem {
+  id            String     @id @default(uuid()) @db.Uuid
+  project_id    String     @db.Uuid
+  type          RAIDType
+  title         String
+  description   String     @db.Text
+  mitigation    String?    @db.Text
+  owner_id      String?    @db.Uuid
+  status        String     @default("OPEN") // OPEN, MITIGATED, CLOSED
+  severity      Priority
+  logged_date   DateTime   @default(now()) // For Gantt flag positioning
+  closed_at     DateTime?
+  
+  // Decision-specific fields (T4.2)
+  options_considered Json? // Array of {option, pros, cons}
+  rationale         String? @db.Text
+  approved_by_id    String? @db.Uuid
+  approved_at       DateTime?
+  
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+  
+  // Relations
+  project     Project    @relation(fields: [project_id], references: [id])
+  owner       Employee?  @relation("RAIDOwner", fields: [owner_id], references: [id])
+  
+  @@index([project_id])
+  @@index([type])
+  @@index([severity])
+}
+
+model ProjectBudget {
+  id              String   @id @default(uuid()) @db.Uuid
+  project_id      String   @db.Uuid
+  total_allocated Decimal  @db.Decimal(15, 2)
+  actual_spent    Decimal  @db.Decimal(15, 2)
+  variance        Decimal  @db.Decimal(15, 2)
+  variance_pct    Decimal  @db.Decimal(5, 2)
+  last_updated    DateTime @default(now())
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  // Relations
+  project     Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+}
+
+model ResourceAssignment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  project_id         String   @db.Uuid
+  user_id            String   @db.Uuid
+  role               String   // PM, TEAM_MEMBER, CONTRIBUTOR, VIEWER
+  allocation_percent Int      @default(100) // 0-100%
+  allocated_hours    Int      // Total hours allocated
+  start_date         DateTime
+  end_date           DateTime?
+  
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  user      Employee @relation("ResourceAssignee", fields: [user_id], references: [id])
+  
+  @@index([project_id])
+  @@index([user_id])
+}
+
+// ----------------------------
+// PREMIUM MODELS (DB-02)
+// ----------------------------
+
+// Tier 1: Strategic Planning Layer
+
+model Milestone {
+  id            String   @id @default(uuid()) @db.Uuid
+  project_id    String   @db.Uuid
+  title         String
+  target_date   DateTime
+  achieved_date DateTime?
+  description   String?  @db.Text
+  
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+  @@index([target_date])
+}
+
+model ProjectPhase {
+  id          String   @id @default(uuid()) @db.Uuid
+  project_id  String   @db.Uuid
+  name        String
+  start_date  DateTime
+  end_date    DateTime?
+  status      String   @default("PLANNED") // PLANNED, ACTIVE, COMPLETED
+  
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+}
+
+model ProjectBaseline {
+  id              String   @id @default(uuid()) @db.Uuid
+  project_id      String   @db.Uuid
+  baseline_name   String   // "Initial Plan", "Q2 Rebaseline", etc.
+  snapshot_data   Json     // Full project state snapshot
+  approved_at     DateTime
+  approved_by_id  String   @db.Uuid
+  
+  created_at      DateTime @default(now())
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+}
+
+model ProjectDependency {
+  id                String         @id @default(uuid()) @db.Uuid
+  from_project_id   String         @db.Uuid // Upstream project
+  to_project_id     String         @db.Uuid // Downstream project
+  dependency_type   DependencyType
+  lag_days          Int            @default(0)
+  description       String?        @db.Text
+  
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+  
+  // Relations
+  from_project  Project  @relation("FromProject", fields: [from_project_id], references: [id])
+  to_project    Project  @relation("ToProject", fields: [to_project_id], references: [id])
+  
+  @@index([from_project_id])
+  @@index([to_project_id])
+  @@unique([from_project_id, to_project_id]) // Prevent duplicates
+}
+
+// Tier 3: Delivery Intelligence
+
+model SprintRecord {
+  id              String   @id @default(uuid()) @db.Uuid
+  project_id      String   @db.Uuid
+  sprint_number   Int
+  planned_points  Int
+  completed_points Int
+  start_date      DateTime
+  end_date        DateTime
+  
+  created_at      DateTime @default(now())
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+  @@index([sprint_number])
+}
+
+model CycleTimeLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  task_id     String   @db.Uuid
+  started_at  DateTime
+  completed_at DateTime
+  cycle_days  Int
+  
+  created_at  DateTime @default(now())
+  
+  // Relations
+  // Note: Can't link to ProjectTask directly to avoid circular dependency
+  
+  @@index([task_id])
+  @@index([cycle_days])
+}
+
+model ProjectForecast {
+  id              String   @id @default(uuid()) @db.Uuid
+  project_id      String   @db.Uuid
+  forecast_date   DateTime @default(now())
+  p50_date        DateTime // 50% confidence delivery date
+  p85_date        DateTime // 85% confidence delivery date
+  p95_date        DateTime // 95% confidence delivery date
+  confidence_level String  // LOW, MEDIUM, HIGH (based on data sufficiency)
+  simulations_run Int      @default(10000)
+  
+  created_at      DateTime @default(now())
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+}
+
+model ProjectInsight {
+  id            String      @id @default(uuid()) @db.Uuid
+  project_id    String      @db.Uuid
+  insight_type  InsightType
+  confidence    Float       // 0.0-1.0
+  description   String      @db.Text
+  detected_at   DateTime    @default(now())
+  acknowledged  Boolean     @default(false)
+  acknowledged_by_id String? @db.Uuid
+  acknowledged_at DateTime?
+  
+  created_at    DateTime    @default(now())
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+  @@index([insight_type])
+}
+
+// Tier 4: Stakeholder Engagement
+
+model GateReview {
+  id              String     @id @default(uuid()) @db.Uuid
+  project_id      String     @db.Uuid
+  gate_name       String     // "Discovery Complete", "Design Approved", "Ready to Launch"
+  gate_order      Int        // Sequential order
+  entry_criteria  Json       // Array of criteria strings
+  exit_criteria   Json       // Array of criteria strings
+  required_approvers Json   // Array of userIds
+  status          GateStatus @default(PENDING)
+  outcome         String?    @db.Text
+  outcome_date    DateTime?
+  
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+  @@index([gate_order])
+}
+
+model DecisionRecord {
+  id                String         @id @default(uuid()) @db.Uuid
+  project_id        String         @db.Uuid
+  title             String
+  context           String         @db.Text
+  options_considered Json          // Array of {option, pros, cons}
+  chosen_option     String         @db.Text
+  rationale         String         @db.Text
+  approved_by_id    String?        @db.Uuid
+  approved_at       DateTime?
+  status            DecisionStatus @default(PROPOSED)
+  
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+}
+
+// Tier 2: Resource Intelligence
+
+model UserSkill {
+  id              String           @id @default(uuid()) @db.Uuid
+  user_id         String           @db.Uuid
+  skill_name      String
+  proficiency     ProficiencyLevel
+  years_experience Int?
+  certified       Boolean          @default(false)
+  certification_name String?
+  
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  
+  // Relations
+  user      Employee @relation("UserSkills", fields: [user_id], references: [id])
+  
+  @@index([user_id])
+  @@index([skill_name])
+}
+
+model Capacity {
+  id              String   @id @default(uuid()) @db.Uuid
+  user_id         String   @db.Uuid
+  week_start      DateTime
+  available_hours Int
+  allocated_hours Int
+  overallocated   Boolean  @default(false)
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  // Relations
+  user      Employee @relation("CapacityRecords", fields: [user_id], references: [id])
+  
+  @@index([user_id])
+  @@index([week_start])
+}
+
+// Tier 5: Intelligence & Automation
+
+model Lesson {
+  id              String         @id @default(uuid()) @db.Uuid
+  project_id      String         @db.Uuid
+  category        LessonCategory
+  title           String
+  description     String         @db.Text
+  recommendation  String         @db.Text
+  raid_item_id    String?        @db.Uuid // Link back to RAID if applicable
+  milestone_id    String?        @db.Uuid // Link to milestone if applicable
+  
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  
+  @@index([project_id])
+  @@index([category])
+}
+
+model ProjectAuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  project_id    String   @db.Uuid
+  user_id       String   @db.Uuid
+  action        String   // CREATE, UPDATE, STATE_CHANGE, BUDGET_UPDATE, etc.
+  previous_value Json?
+  new_value     Json?
+  ip_address    String?
+  user_agent    String?
+  
+  created_at    DateTime @default(now())
+  
+  // Relations
+  project   Project  @relation(fields: [project_id], references: [id])
+  user      Employee @relation("ProjectAuditLogs", fields: [user_id], references: [id])
+  
+  @@index([project_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([created_at])
+}

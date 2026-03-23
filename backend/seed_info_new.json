@@ -1,0 +1,17 @@
+{
+  "companyId": "00000000-0000-0000-0000-000000000000",
+  "employees": [
+    {
+      "id": "49874dfe-4655-41b7-8d0d-5eb5c9693e36",
+      "name": "Sarah"
+    },
+    {
+      "id": "1805c64c-f3e1-4684-9ee8-b14d12eaeceb",
+      "name": "Michael"
+    },
+    {
+      "id": "e5724606-c6ac-4de0-9f96-48e9187f8ab0",
+      "name": "Dwight"
+    }
+  ]
+}
