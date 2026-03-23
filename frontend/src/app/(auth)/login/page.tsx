@@ -48,6 +48,22 @@ interface MfaSetupRequiredResponse {
   user: LoginUser;
 }
 
+async function extractErrorMessage(res: Response, fallback: string) {
+  try {
+    const payload = await res.json();
+    if (payload && typeof payload.message === 'string') {
+      return payload.message;
+    }
+    if (payload && Array.isArray(payload.message) && payload.message.length > 0) {
+      return payload.message.join(', ');
+    }
+  } catch {
+    // Fall back to the default when the response is not JSON.
+  }
+
+  return fallback;
+}
+
 export default function LoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [mfaCode, setMfaCode] = useState('');
@@ -89,7 +105,7 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Invalid credentials');
+        throw new Error(await extractErrorMessage(res, 'Invalid credentials'));
       }
 
       const data = (await res.json()) as AuthSuccessResponse | MfaChallengeResponse | MfaSetupRequiredResponse;
@@ -114,7 +130,12 @@ export default function LoginPage() {
         });
 
         if (!setupRes.ok) {
-          throw new Error('MFA is required for this account, but setup could not be started.');
+          throw new Error(
+            await extractErrorMessage(
+              setupRes,
+              'MFA is required for this account, but setup could not be started.',
+            ),
+          );
         }
 
         const setupData = (await setupRes.json()) as MfaSetupResponse;
@@ -150,7 +171,7 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Invalid MFA code');
+        throw new Error(await extractErrorMessage(res, 'Invalid MFA code'));
       }
 
       const data = (await res.json()) as AuthSuccessResponse;
@@ -182,7 +203,7 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
-        throw new Error('Invalid MFA code');
+        throw new Error(await extractErrorMessage(res, 'Invalid MFA code'));
       }
 
       const data = (await res.json()) as AuthSuccessResponse;
