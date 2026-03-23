@@ -2,7 +2,7 @@ import { Controller, Get, Post, Param, Body, UseGuards, Query } from '@nestjs/co
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ReorderAlertService, ReorderAlert } from './reorder-alert.service';
 import { SupplyChainRolesGuard } from './guards/supply-chain-roles.guard';
-import { User } from '../common/decorators/user.decorator';
+import { User } from '../../common/decorators/user.decorator';
 
 @ApiTags('Supply Chain - Reorder Alerts')
 @ApiBearerAuth()
