@@ -12,7 +12,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../../auth/jwt.strategy';
+import { JwtAuthGuard } from '../../auth/jwt.strategy';
 import { SupplyChainRolesGuard } from '../guards/supply-chain-roles.guard';
 import { SupplierBankSecurityService, BankDetails } from '../services/supplier-bank-security.service';
 

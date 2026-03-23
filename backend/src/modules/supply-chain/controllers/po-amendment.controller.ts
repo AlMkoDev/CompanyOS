@@ -12,7 +12,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../../auth/jwt.strategy';
+import { JwtAuthGuard } from '../../auth/jwt.strategy';
 import { SupplyChainRolesGuard } from '../guards/supply-chain-roles.guard';
 import { POModificationLockGuard } from '../guards/po-modification-lock.guard';
 import { POAmendmentService, CreateAmendmentDto, ApproveAmendmentDto } from '../services/po-amendment.service';
