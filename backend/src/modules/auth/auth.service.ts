@@ -8,13 +8,17 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../database/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 import { getMfaIssuer, getRequiredMfaRoles } from '../../common/env';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private authenticatorPromise?: Promise<{
+    generateSecret: () => string;
+    keyuri: (user: string, service: string, secret: string) => string;
+    verify: (options: { token: string; secret: string }) => boolean;
+  }>;
 
   constructor(
     private prisma: PrismaService,
@@ -23,6 +27,14 @@ export class AuthService {
 
   private logSecurityEvent(event: string, details: Record<string, unknown>) {
     this.logger.warn(JSON.stringify({ event, ...details }));
+  }
+
+  private async getAuthenticator() {
+    if (!this.authenticatorPromise) {
+      this.authenticatorPromise = import('otplib').then((module) => module.authenticator);
+    }
+
+    return this.authenticatorPromise;
   }
 
   private getUserRoles(user: {
@@ -40,6 +52,7 @@ export class AuthService {
 
   private async buildMfaSetupPayload(email: string, secret: string) {
     const serviceName = getMfaIssuer();
+    const authenticator = await this.getAuthenticator();
     const otpauthUrl = authenticator.keyuri(email, serviceName, secret);
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
 
@@ -251,6 +264,7 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    const authenticator = await this.getAuthenticator();
     const secret = authenticator.generateSecret();
 
     await this.prisma.user.update({
@@ -273,6 +287,7 @@ export class AuthService {
       throw new BadRequestException('MFA has not been set up for this account.');
     }
 
+    const authenticator = await this.getAuthenticator();
     const isValid = authenticator.verify({
       token: code,
       secret: user.mfa_secret,
@@ -340,6 +355,7 @@ export class AuthService {
       throw new UnauthorizedException('MFA is not available for this account.');
     }
 
+    const authenticator = await this.getAuthenticator();
     const isValid = authenticator.verify({
       token: code,
       secret: user.mfa_secret,
@@ -414,6 +430,7 @@ export class AuthService {
       throw new BadRequestException('MFA setup is not required for this account.');
     }
 
+    const authenticator = await this.getAuthenticator();
     const secret = authenticator.generateSecret();
 
     await this.prisma.user.update({
@@ -473,6 +490,7 @@ export class AuthService {
       throw new UnauthorizedException('MFA setup is not available for this account.');
     }
 
+    const authenticator = await this.getAuthenticator();
     const isValid = authenticator.verify({
       token: code,
       secret: user.mfa_secret,
