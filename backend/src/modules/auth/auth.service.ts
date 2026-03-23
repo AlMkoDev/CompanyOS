@@ -32,7 +32,21 @@ export class AuthService {
 
   private async getAuthenticator() {
     if (!this.authenticatorPromise) {
-      this.authenticatorPromise = import('otplib').then((module) => module.authenticator);
+      this.authenticatorPromise = import('otplib').then((module) => {
+        const authenticator =
+          module.authenticator ??
+          (module as { default?: { authenticator?: unknown } }).default?.authenticator;
+
+        if (!authenticator) {
+          throw new Error('Failed to load otplib authenticator export.');
+        }
+
+        return authenticator as {
+          generateSecret: () => string;
+          keyuri: (user: string, service: string, secret: string) => string;
+          verify: (options: { token: string; secret: string }) => boolean;
+        };
+      });
     }
 
     return this.authenticatorPromise;
