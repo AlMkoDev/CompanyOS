@@ -1,0 +1,279 @@
+"use client";
+
+import React from 'react';
+import { apiFetch, apiUrl } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import { 
+  PieChart, 
+  FileText, 
+  Columns, 
+  Download, 
+  ChevronLeft,
+  Calendar
+} from 'lucide-react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+
+import { Suspense } from 'react';
+
+type ReportType = 'pnl' | 'bs' | 'tb';
+
+interface ProfitAndLossReport {
+  totalRevenue?: number;
+  totalExpense?: number;
+  netProfit?: number;
+}
+
+interface TrialBalanceRow {
+  code: string;
+  name: string;
+  debit: number;
+  credit: number;
+}
+
+interface TabButtonProps {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+}
+
+interface ReportHeaderProps {
+  title: string;
+}
+
+interface PnLViewProps {
+  data: ProfitAndLossReport;
+}
+
+interface TrialBalanceViewProps {
+  data: TrialBalanceRow[];
+}
+
+interface FinancialRowProps {
+  label: string;
+  value?: number;
+  indent?: boolean;
+}
+
+function ReportsContent() {
+  const searchParams = useSearchParams();
+  const initialType = (searchParams.get('type') as ReportType | null) || 'pnl';
+  
+  const { isAuthenticated } = useAuthStore();
+  const [reportType, setReportType] = React.useState(initialType);
+  const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  const fetchReport = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      let url = '';
+      if (reportType === 'pnl') {
+        url = apiUrl('/accounting/reports/pnl?fromDate=2026-01-01&toDate=2026-12-31');
+      } else if (reportType === 'bs') {
+        url = apiUrl('/accounting/trial-balance');
+      } else {
+        url = apiUrl('/accounting/trial-balance');
+      }
+
+      const path = url.replace(/^https?:\/\/[^/]+/, '');
+      const res = await apiFetch(path);
+      if (res.ok) setData(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch report:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportType]);
+
+  React.useEffect(() => {
+    if (isAuthenticated) fetchReport();
+  }, [fetchReport, isAuthenticated]);
+
+  return (
+    <div className="p-6 md:p-10 flex flex-col gap-8">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <Link href="/accounting" className="p-2 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition-all text-slate-500">
+            <ChevronLeft size={20} />
+          </Link>
+          <div>
+            <h1 className="text-3xl font-heading text-brand-navy font-bold">Financial Reporting</h1>
+            <p className="text-slate-500 text-sm">Real-time financial performance indicators.</p>
+          </div>
+        </div>
+        <button className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:scale-105 transition-all">
+          <Download size={18} />
+          Export PDF
+        </button>
+      </div>
+
+      {/* Report Switcher */}
+      <div className="flex bg-slate-100 p-1.5 rounded-2xl self-start">
+        <TabButton 
+          active={reportType === 'pnl'} 
+          onClick={() => setReportType('pnl')} 
+          icon={<FileText size={16} />} 
+          label="Profit & Loss" 
+        />
+        <TabButton 
+          active={reportType === 'bs'} 
+          onClick={() => setReportType('bs')} 
+          icon={<PieChart size={16} />} 
+          label="Balance Sheet" 
+        />
+        <TabButton 
+          active={reportType === 'tb'} 
+          onClick={() => setReportType('tb')} 
+          icon={<Columns size={16} />} 
+          label="Trial Balance" 
+        />
+      </div>
+
+      <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl p-10 min-h-[600px]">
+        {loading ? (
+          <div className="flex items-center justify-center h-full text-slate-400 font-heading text-lg">
+            Generating Report Intelligence...
+          </div>
+        ) : (
+          <div className="animate-in fade-in duration-500">
+            <ReportHeader title={reportType === 'pnl' ? 'Income Statement (P&L)' : reportType === 'bs' ? 'Balance Sheet' : 'Trial Balance'} />
+            
+            {reportType === 'pnl' && data && !Array.isArray(data) && <PnLView data={data} />}
+            {reportType === 'tb' && Array.isArray(data) && <TrialBalanceView data={data} />}
+            {reportType === 'bs' && Array.isArray(data) && <TrialBalanceView data={data} />} {/* Placeholder for BS */}
+            
+            {!data && <div className="text-center py-20 text-slate-400 italic">No data available for the selected period.</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center animate-pulse text-slate-400">Loading Report Configuration...</div>}>
+      <ReportsContent />
+    </Suspense>
+  );
+}
+
+function TabButton({ active, onClick, icon, label }: TabButtonProps) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex items-center gap-2 px-6 py-2.5 rounded-xl transition-all font-bold text-sm ${
+        active ? 'bg-white text-brand-navy shadow-sm' : 'text-slate-500 hover:text-brand-navy'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function ReportHeader({ title }: ReportHeaderProps) {
+  return (
+    <div className="border-b-2 border-slate-50 pb-8 mb-10 flex justify-between items-end">
+      <div>
+        <h2 className="text-4xl font-heading text-brand-navy mb-2">{title}</h2>
+        <div className="flex items-center gap-2 text-slate-400 font-bold text-[10px] tracking-[0.2em] uppercase">
+          <Calendar size={12} className="text-brand-gold" />
+          Period: Jan 01, 2026 — Dec 31, 2026
+        </div>
+      </div>
+      <div className="text-right">
+        <div className="text-xs font-black text-slate-300 uppercase tracking-widest mb-1">Company OS</div>
+        <div className="text-xs font-bold text-brand-navy">Verdant Fields AgriTech</div>
+      </div>
+    </div>
+  );
+}
+
+function PnLView({ data }: PnLViewProps) {
+  return (
+    <div className="max-w-3xl mx-auto space-y-12">
+      <div>
+         <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Revenue</h3>
+         <FinancialRow label="Sales Revenue" value={data.totalRevenue} />
+         <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
+            <span>Total Revenue</span>
+            <span>R {data.totalRevenue?.toLocaleString()}</span>
+         </div>
+      </div>
+
+      <div>
+         <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Operating Expenses</h3>
+         <FinancialRow label="Operational Costs" value={data.totalExpense} indent />
+         <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
+            <span>Total Expenses</span>
+            <span>(R {data.totalExpense?.toLocaleString()})</span>
+         </div>
+      </div>
+
+      <div className="bg-brand-gold/10 p-8 rounded-3xl border border-brand-gold/20 flex justify-between items-center">
+         <div>
+            <span className="text-xs font-black text-brand-gold uppercase tracking-widest block mb-1">Bottom Line</span>
+            <h3 className="text-3xl font-heading text-brand-navy">Net Operating Income</h3>
+         </div>
+         <div className="text-4xl font-heading text-brand-navy font-bold">
+            R {data.netProfit?.toLocaleString()}
+         </div>
+      </div>
+    </div>
+  );
+}
+
+function TrialBalanceView({ data }: TrialBalanceViewProps) {
+  return (
+    <div className="space-y-6">
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+            <th className="py-4 px-4 w-1/2">General Ledger Account</th>
+            <th className="py-4 px-4 text-right">Debit Balance</th>
+            <th className="py-4 px-4 text-right">Credit Balance</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          {data.map((row, i) => (
+            <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+              <td className="py-4 px-4">
+                <div className="font-bold text-slate-700">{row.name}</div>
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{row.code}</div>
+              </td>
+              <td className="py-4 px-4 text-right font-mono text-sm text-slate-600">
+                {row.debit > 0 ? `R ${row.debit.toLocaleString()}` : '—'}
+              </td>
+              <td className="py-4 px-4 text-right font-mono text-sm text-slate-600">
+                {row.credit > 0 ? `R ${row.credit.toLocaleString()}` : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+           <tr className="bg-slate-50/50 font-heading text-lg">
+              <td className="py-6 px-4 text-brand-navy font-bold">Totals</td>
+              <td className="py-6 px-4 text-right text-brand-navy font-bold">
+                R {data.reduce((sum, row) => sum + row.debit, 0).toLocaleString()}
+              </td>
+              <td className="py-6 px-4 text-right text-brand-navy font-bold">
+                R {data.reduce((sum, row) => sum + row.credit, 0).toLocaleString()}
+              </td>
+           </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+function FinancialRow({ label, value, indent = false }: FinancialRowProps) {
+  return (
+    <div className={`flex justify-between py-3 ${indent ? 'pl-8' : ''} text-slate-600 font-medium`}>
+      <span>{label}</span>
+      <span className="font-mono">R {value?.toLocaleString() || '0'}</span>
+    </div>
+  );
+}
