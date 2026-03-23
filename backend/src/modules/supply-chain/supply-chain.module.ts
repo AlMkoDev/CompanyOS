@@ -111,9 +111,12 @@ export class SupplyChainModule {
     consumer
       .apply(LedgerAuditMiddleware)
       .forRoutes(
-        { path: 'supply-chain/inventory/ledger*', method: RequestMethod.ALL },
-        { path: 'supply-chain/inventory/movements/*', method: RequestMethod.ALL },
-        { path: 'supply-chain/ledger-audit*', method: RequestMethod.ALL },
+        { path: 'supply-chain/inventory/ledger', method: RequestMethod.ALL },
+        { path: 'supply-chain/inventory/ledger/*path', method: RequestMethod.ALL },
+        { path: 'supply-chain/inventory/movements', method: RequestMethod.ALL },
+        { path: 'supply-chain/inventory/movements/*path', method: RequestMethod.ALL },
+        { path: 'supply-chain/ledger-audit', method: RequestMethod.ALL },
+        { path: 'supply-chain/ledger-audit/*path', method: RequestMethod.ALL },
       );
   }
 }
