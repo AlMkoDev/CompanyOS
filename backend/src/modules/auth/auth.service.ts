@@ -18,7 +18,7 @@ export class AuthService {
   private authenticatorPromise?: Promise<{
     generateSecret: () => string;
     keyuri: (user: string, service: string, secret: string) => string;
-    verify: (options: { token: string; secret: string }) => boolean;
+    verify: (options: { token: string; secret: string }) => Promise<boolean>;
   }>;
 
   constructor(
@@ -33,18 +33,27 @@ export class AuthService {
   private async getAuthenticator() {
     if (!this.authenticatorPromise) {
       this.authenticatorPromise = import('otplib').then((module) => {
-        const authenticator =
-          module.authenticator ??
-          (module as { default?: { authenticator?: unknown } }).default?.authenticator;
+        const generateSecret = module.generateSecret;
+        const generateURI = module.generateURI;
+        const verify = module.verify;
 
-        if (!authenticator) {
-          throw new Error('Failed to load otplib authenticator export.');
+        if (!generateSecret || !generateURI || !verify) {
+          throw new Error('Failed to load otplib functional exports.');
         }
 
-        return authenticator as {
-          generateSecret: () => string;
-          keyuri: (user: string, service: string, secret: string) => string;
-          verify: (options: { token: string; secret: string }) => boolean;
+        return {
+          generateSecret: () => generateSecret(),
+          keyuri: (user: string, service: string, secret: string) =>
+            generateURI({
+              issuer: service,
+              label: user,
+              secret,
+            }),
+          verify: ({ token, secret }) =>
+            verify({
+              token,
+              secret,
+            }),
         };
       });
     }
@@ -326,7 +335,7 @@ export class AuthService {
     }
 
     const authenticator = await this.getAuthenticator();
-    const isValid = authenticator.verify({
+    const isValid = await authenticator.verify({
       token: code,
       secret: user.mfa_secret,
     });
@@ -394,7 +403,7 @@ export class AuthService {
     }
 
     const authenticator = await this.getAuthenticator();
-    const isValid = authenticator.verify({
+    const isValid = await authenticator.verify({
       token: code,
       secret: user.mfa_secret,
     });
@@ -529,7 +538,7 @@ export class AuthService {
     }
 
     const authenticator = await this.getAuthenticator();
-    const isValid = authenticator.verify({
+    const isValid = await authenticator.verify({
       token: code,
       secret: user.mfa_secret,
     });
