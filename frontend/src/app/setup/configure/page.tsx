@@ -4,6 +4,7 @@ import React from 'react';
 import { WizardHeader } from '@/components/wizard/WizardHeader';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { apiFetch } from '@/lib/api';
 import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentTemplate {
@@ -26,7 +27,7 @@ const templates: Record<string, DepartmentTemplate> = {
 };
 
 export default function ConfigureHub() {
-  const { setup } = useAuthStore();
+  const { setup, user, setAuth, markDeptComplete } = useAuthStore();
   const selectedDepts = setup.selectedDepartments.length > 0 
     ? setup.selectedDepartments 
     : ['fin', 'hr', 'ops']; // Fallback for dev convenience
@@ -34,12 +35,91 @@ export default function ConfigureHub() {
   const completed = setup.completedDepartments;
   const templateSelections = setup.templateSelections;
   const router = useRouter();
+  const [autoApplying, setAutoApplying] = React.useState(false);
 
   const handleConfigure = (id: string) => {
     router.push(`/setup/configure/${id}`);
   };
 
+  const selectedQuickTemplateDepts = selectedDepts.filter((id) => templateSelections[id] && departmentQuickStartTemplates[id]);
+  const allSelectedUseQuickTemplates =
+    selectedDepts.length > 0 && selectedQuickTemplateDepts.length === selectedDepts.length;
+
+  const applyQuickTemplatesAndFinish = async () => {
+    if (!allSelectedUseQuickTemplates) {
+      return;
+    }
+
+    setAutoApplying(true);
+
+    try {
+      for (const id of selectedDepts) {
+        const template = departmentQuickStartTemplates[id];
+
+        await apiFetch(`/departments/${id}/config`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            template_key: id,
+            name: template.name,
+            description: template.description,
+            color: template.color,
+            mandate: template.mandate,
+            core_responsibilities: template.coreResponsibilities,
+            deliverables: template.deliverables,
+            roles: template.roles,
+            budget: template.budget,
+          }),
+        });
+
+        markDeptComplete(id);
+      }
+
+      await apiFetch('/company/setup', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          step: 5,
+          isComplete: true,
+          config: {
+            quickTemplatesApplied: selectedDepts,
+          },
+        }),
+      });
+
+      if (user && user.company) {
+        setAuth({
+          ...user,
+          company: {
+            ...user.company,
+            setup: {
+              ...(user.company.setup || {}),
+              is_complete: true,
+              current_step: 5,
+            },
+          },
+        });
+      }
+
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Failed to auto-apply quick templates:', error);
+      alert('Quick templates could not be applied automatically. Please review at least one department manually.');
+    } finally {
+      setAutoApplying(false);
+    }
+  };
+
   const handleNext = () => {
+    if (allSelectedUseQuickTemplates) {
+      void applyQuickTemplatesAndFinish();
+      return;
+    }
+
     if (completed.length < selectedDepts.length) {
       alert('Please configure all selected departments first.');
       return;
@@ -114,9 +194,14 @@ export default function ConfigureHub() {
           <button onClick={() => router.push('/setup/departments')} className="px-6 py-2 text-slate-400 font-medium hover:text-slate-600 transition-colors">← Back to Selection</button>
           <button 
             onClick={handleNext} 
+            disabled={autoApplying}
             className="btn-premium disabled:grayscale disabled:opacity-30"
           >
-            Review Corporate Structure →
+            {autoApplying
+              ? 'Applying Templates...'
+              : allSelectedUseQuickTemplates
+              ? 'Launch Dashboard With Templates →'
+              : 'Review Corporate Structure →'}
           </button>
         </div>
       </div>
