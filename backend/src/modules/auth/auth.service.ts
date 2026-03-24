@@ -33,50 +33,81 @@ export class AuthService {
   private async getAuthenticator() {
     if (!this.authenticatorPromise) {
       this.authenticatorPromise = import('otplib').then((module) => {
-        const authenticatorModule =
-          (module as { authenticator?: unknown }).authenticator ||
-          (module as { default?: { authenticator?: unknown } }).default?.authenticator;
+        const otplibModule = (
+          (module as { default?: Record<string, unknown> }).default || module
+        ) as Record<string, unknown>;
 
-        const generateSecret =
-          authenticatorModule &&
-          typeof authenticatorModule === 'object' &&
-          'generateSecret' in authenticatorModule &&
-          typeof authenticatorModule.generateSecret === 'function'
-            ? authenticatorModule.generateSecret.bind(authenticatorModule)
+        const functionalGenerateSecret =
+          typeof otplibModule.generateSecret === 'function'
+            ? (otplibModule.generateSecret as (options?: { length?: number }) => string)
+            : undefined;
+        const functionalGenerateURI =
+          typeof otplibModule.generateURI === 'function'
+            ? (otplibModule.generateURI as (options: {
+                issuer: string;
+                label: string;
+                secret: string;
+              }) => string)
+            : undefined;
+        const functionalVerify =
+          typeof otplibModule.verify === 'function'
+            ? (otplibModule.verify as (options: {
+                token: string;
+                secret: string;
+                strategy?: string;
+              }) => boolean | Promise<boolean>)
             : undefined;
 
-        const keyuri =
-          authenticatorModule &&
-          typeof authenticatorModule === 'object' &&
-          'keyuri' in authenticatorModule &&
-          typeof authenticatorModule.keyuri === 'function'
-            ? authenticatorModule.keyuri.bind(authenticatorModule)
-            : undefined;
-
-        const verify =
-          authenticatorModule &&
-          typeof authenticatorModule === 'object' &&
-          'verify' in authenticatorModule &&
-          typeof authenticatorModule.verify === 'function'
-            ? authenticatorModule.verify.bind(authenticatorModule)
-            : undefined;
-
-        if (!generateSecret || !keyuri || !verify) {
-          throw new Error('Failed to load otplib authenticator exports.');
-        }
-
-        return {
-          generateSecret: () => generateSecret(),
-          keyuri: (user: string, service: string, secret: string) =>
-            keyuri(user, service, secret),
-          verify: async ({ token, secret }) =>
-            Boolean(
-              await verify({
-                token,
+        if (functionalGenerateSecret && functionalGenerateURI && functionalVerify) {
+          return {
+            generateSecret: () => functionalGenerateSecret(),
+            keyuri: (user: string, service: string, secret: string) =>
+              functionalGenerateURI({
+                issuer: service,
+                label: user,
                 secret,
               }),
-            ),
-        };
+            verify: async ({ token, secret }) =>
+              Boolean(
+                await functionalVerify({
+                  token,
+                  secret,
+                  strategy: 'totp',
+                }),
+              ),
+          };
+        }
+
+        const OtpClass =
+          typeof otplibModule.OTP === 'function'
+            ? (otplibModule.OTP as new (options?: { strategy?: string }) => {
+                generateSecret: () => string;
+                generateURI: (options: { issuer: string; label: string; secret: string }) => string;
+                verify: (options: { token: string; secret: string }) => boolean | Promise<boolean>;
+              })
+            : undefined;
+
+        if (OtpClass) {
+          const otp = new OtpClass({ strategy: 'totp' });
+          return {
+            generateSecret: () => otp.generateSecret(),
+            keyuri: (user: string, service: string, secret: string) =>
+              otp.generateURI({
+                issuer: service,
+                label: user,
+                secret,
+              }),
+            verify: async ({ token, secret }) =>
+              Boolean(
+                await otp.verify({
+                  token,
+                  secret,
+                }),
+              ),
+          };
+        }
+
+        throw new Error('Failed to load otplib exports.');
       });
     }
 
