@@ -1,9 +1,11 @@
 import { Type } from 'class-transformer';
 import {
+  IsInt,
   IsArray,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -28,6 +30,64 @@ class DepartmentRoleDto {
   @IsString()
   @MaxLength(240)
   reportsTo?: string;
+}
+
+class DepartmentRoutineGroupDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  cadence?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  items?: string[];
+}
+
+class DepartmentActivityComponentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  component?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  owner?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  summary?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sections?: string[];
+}
+
+class DepartmentCommunicationLineDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  channel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  purpose?: string;
+}
+
+class DepartmentDataPackItemDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  order?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  system?: string;
 }
 
 export class CreateDepartmentDto {
@@ -77,6 +137,30 @@ export class CreateDepartmentDto {
   @ValidateNested({ each: true })
   @Type(() => DepartmentRoleDto)
   roles?: DepartmentRoleDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentRoutineGroupDto)
+  operational_routines?: DepartmentRoutineGroupDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentDataPackItemDto)
+  data_pack?: DepartmentDataPackItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentActivityComponentDto)
+  activities?: DepartmentActivityComponentDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentCommunicationLineDto)
+  communication_lines?: DepartmentCommunicationLineDto[];
 
   @IsOptional()
   @IsString()

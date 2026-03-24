@@ -6,7 +6,13 @@ import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Plus, Trash2, Wallet, Users, Target, Activity, Settings, Zap } from 'lucide-react';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
-import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
+import {
+  DepartmentActivityComponent,
+  DepartmentCommunicationLine,
+  DepartmentDataPackItem,
+  DepartmentRoutineGroup,
+  departmentQuickStartTemplates,
+} from '@/lib/setup/departmentTemplates';
 
 const subSteps = [
   { id: 1, name: 'Identity', icon: Settings },
@@ -46,6 +52,10 @@ interface DepartmentTemplateResponse {
   deliverables?: string;
   kpis?: KPI[];
   roles?: Role[];
+  operational_routines?: DepartmentRoutineGroup[];
+  data_pack?: DepartmentDataPackItem[];
+  activities?: DepartmentActivityComponent[];
+  communication_lines?: DepartmentCommunicationLine[];
   budget_allocation?: number | string;
   workflows?: string[];
 }
@@ -58,6 +68,10 @@ interface DepartmentConfigPayload {
   core_responsibilities: string;
   deliverables: string;
   roles: Role[];
+  operational_routines: DepartmentRoutineGroup[];
+  data_pack: DepartmentDataPackItem[];
+  activities: DepartmentActivityComponent[];
+  communication_lines: DepartmentCommunicationLine[];
   budget: string;
 }
 
@@ -72,6 +86,10 @@ export default function DepartmentWizard() {
     deliverables: '',
     kpis: [] as KPI[], 
     roles: [] as Role[], 
+    operational_routines: [] as DepartmentRoutineGroup[],
+    data_pack: [] as DepartmentDataPackItem[],
+    activities: [] as DepartmentActivityComponent[],
+    communication_lines: [] as DepartmentCommunicationLine[],
     budget: '',
     workflows: [] as string[]
   });
@@ -99,6 +117,10 @@ export default function DepartmentWizard() {
       deliverables: quickTemplate.deliverables,
       kpis: quickTemplate.kpis,
       roles: quickTemplate.roles,
+      operational_routines: quickTemplate.operationalRoutines,
+      data_pack: quickTemplate.dataPack,
+      activities: quickTemplate.activities,
+      communication_lines: quickTemplate.communicationLines,
       budget: quickTemplate.budget,
       workflows: quickTemplate.workflows,
     }));
@@ -145,6 +167,10 @@ export default function DepartmentWizard() {
                   deliverables: existing.deliverables || '',
                   kpis: Array.isArray(existing.kpis) ? existing.kpis : [],
                   roles: Array.isArray(existing.roles) && existing.roles.length > 0 ? existing.roles : prev.roles,
+                  operational_routines: Array.isArray(existing.operational_routines) ? existing.operational_routines : prev.operational_routines,
+                  data_pack: Array.isArray(existing.data_pack) ? existing.data_pack : prev.data_pack,
+                  activities: Array.isArray(existing.activities) ? existing.activities : prev.activities,
+                  communication_lines: Array.isArray(existing.communication_lines) ? existing.communication_lines : prev.communication_lines,
                   budget: existing.budget_allocation ? String(existing.budget_allocation) : '',
                   workflows: Array.isArray(existing.workflows) ? existing.workflows : []
                 }));
@@ -191,6 +217,10 @@ export default function DepartmentWizard() {
       core_responsibilities: data.core_responsibilities,
       deliverables: data.deliverables,
       roles: data.roles,
+      operational_routines: data.operational_routines,
+      data_pack: data.data_pack,
+      activities: data.activities,
+      communication_lines: data.communication_lines,
       budget: data.budget || '0',
     };
 

@@ -70,6 +70,10 @@ export default function ConfigureHub() {
             core_responsibilities: template.coreResponsibilities,
             deliverables: template.deliverables,
             roles: template.roles,
+            operational_routines: template.operationalRoutines,
+            data_pack: template.dataPack,
+            activities: template.activities,
+            communication_lines: template.communicationLines,
             budget: template.budget,
           }),
         });
