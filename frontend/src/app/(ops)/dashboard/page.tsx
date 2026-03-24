@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/authStore';
 import { CorporateVisualizer } from '@/components/viz/CorporateVisualizer';
 import { OperationalGapDashboard, type Gap } from '@/components/ops/OperationalGapDashboard';
 import { apiFetch } from '@/lib/api';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentSummary {
   id: string;
@@ -16,6 +17,11 @@ interface DepartmentSummary {
 interface CompanySummary {
   tagline?: string;
   gap_statuses?: Gap[];
+  setup?: {
+    steps_config?: {
+      quickTemplatesApplied?: string[];
+    };
+  };
 }
 
 interface TaskSummary {
@@ -58,26 +64,92 @@ export default function DashboardPage() {
   const [company, setCompany] = React.useState<CompanySummary | null>(null);
   const [tasks, setTasks] = React.useState<TaskSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const templateRecoveryAttempted = React.useRef(false);
 
   React.useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+
       try {
-        const [deptRes, companyRes, tasksRes] = await Promise.all([
-          apiFetch('/departments'),
-          apiFetch('/company'),
-          apiFetch('/tasks')
-        ]);
+        let currentDepartments: DepartmentSummary[] = [];
+        const deptRes = await apiFetch('/departments');
 
         if (deptRes.ok) {
           const depts = await deptRes.json();
+          currentDepartments = depts;
           setDepartments(depts);
         }
-        if (companyRes.ok) {
-          const comp = await companyRes.json();
+
+        const quickTemplatesApplied =
+          user?.company &&
+          typeof user.company === 'object' &&
+          user.company.setup &&
+          typeof user.company.setup === 'object' &&
+          'steps_config' in user.company.setup &&
+          user.company.setup.steps_config &&
+          typeof user.company.setup.steps_config === 'object' &&
+          'quickTemplatesApplied' in user.company.setup.steps_config &&
+          Array.isArray(user.company.setup.steps_config.quickTemplatesApplied)
+            ? user.company.setup.steps_config.quickTemplatesApplied.filter(
+                (id): id is string => typeof id === 'string' && Boolean(departmentQuickStartTemplates[id]),
+              )
+            : [];
+
+        const missingTemplateDepartments =
+          !templateRecoveryAttempted.current && currentDepartments.length > 0
+            ? quickTemplatesApplied.filter(
+                (id) => !currentDepartments.some((department) => department.template_key === id),
+              )
+            : [];
+
+        if (missingTemplateDepartments.length > 0) {
+          templateRecoveryAttempted.current = true;
+
+          for (const id of missingTemplateDepartments) {
+            const template = departmentQuickStartTemplates[id];
+            const response = await apiFetch(`/departments/${id}/config`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                template_key: id,
+                name: template.name,
+                description: template.description,
+                color: template.color,
+                mandate: template.mandate,
+                core_responsibilities: template.coreResponsibilities,
+                deliverables: template.deliverables,
+                roles: template.roles,
+                budget: template.budget,
+              }),
+            });
+
+            if (!response.ok) {
+              console.error(`Failed to recover quick template department ${id}`);
+            }
+          }
+
+          const refreshedDepartmentsResponse = await apiFetch('/departments');
+          if (refreshedDepartmentsResponse.ok) {
+            const refreshedDepartments = await refreshedDepartmentsResponse.json();
+            currentDepartments = refreshedDepartments;
+            setDepartments(refreshedDepartments);
+          }
+        }
+
+        const [companyRes, tasksRes] = await Promise.allSettled([
+          apiFetch('/company'),
+          apiFetch('/tasks'),
+        ]);
+
+        if (companyRes.status === 'fulfilled' && companyRes.value.ok) {
+          const comp = await companyRes.value.json();
           setCompany(comp);
         }
-        if (tasksRes.ok) {
-          const tsks = await tasksRes.json();
+
+        if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+          const tsks = await tasksRes.value.json();
           setTasks(tsks);
         }
       } catch (err) {
@@ -87,8 +159,8 @@ export default function DashboardPage() {
       }
     };
 
-    fetchData();
-  }, []);
+    void fetchData();
+  }, [user]);
 
   if (!user) return null;
 

@@ -5,6 +5,10 @@ interface CompanySetup {
   is_complete?: boolean;
   current_step?: number;
   completed_steps?: string[];
+  steps_config?: {
+    quickTemplatesApplied?: string[];
+    [key: string]: unknown;
+  };
 }
 
 interface CompanySummary {
