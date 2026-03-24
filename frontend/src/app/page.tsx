@@ -24,16 +24,11 @@ interface BootstrapUser {
 }
 
 export default function RootPage() {
-  const { isAuthenticated, user, setAuth, logout } = useAuthStore();
+  const { setAuth, logout } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
     const bootstrapSession = async () => {
-      if (isAuthenticated && user) {
-        router.push('/dashboard');
-        return;
-      }
-
       try {
         const res = await apiFetch('/auth/me');
         if (!res.ok) {
@@ -50,7 +45,7 @@ export default function RootPage() {
     };
 
     bootstrapSession();
-  }, [isAuthenticated, user, setAuth, logout, router]);
+  }, [setAuth, logout, router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">

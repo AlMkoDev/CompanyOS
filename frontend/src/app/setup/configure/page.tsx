@@ -27,7 +27,7 @@ const templates: Record<string, DepartmentTemplate> = {
 };
 
 export default function ConfigureHub() {
-  const { setup, user, setAuth, markDeptComplete } = useAuthStore();
+  const { setup, user, setAuth, markDeptComplete, logout } = useAuthStore();
   const selectedDepts = setup.selectedDepartments.length > 0 
     ? setup.selectedDepartments 
     : ['fin', 'hr', 'ops']; // Fallback for dev convenience
@@ -74,6 +74,12 @@ export default function ConfigureHub() {
           }),
         });
 
+        if (response.status === 401) {
+          logout();
+          router.push('/login');
+          return;
+        }
+
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || `Failed to apply ${template.name} template.`);
@@ -95,6 +101,12 @@ export default function ConfigureHub() {
           },
         }),
       });
+
+      if (companySetupResponse.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
 
       if (!companySetupResponse.ok) {
         const message = await companySetupResponse.text();

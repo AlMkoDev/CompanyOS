@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { CorporateVisualizer } from '@/components/viz/CorporateVisualizer';
 import { OperationalGapDashboard, type Gap } from '@/components/ops/OperationalGapDashboard';
@@ -59,7 +60,8 @@ const PRIORITY_COLORS = {
 } as const;
 
 export default function DashboardPage() {
-  const { user, setup } = useAuthStore();
+  const router = useRouter();
+  const { user, setup, logout } = useAuthStore();
   const [departments, setDepartments] = React.useState<DepartmentSummary[]>([]);
   const [company, setCompany] = React.useState<CompanySummary | null>(null);
   const [tasks, setTasks] = React.useState<TaskSummary[]>([]);
@@ -73,6 +75,12 @@ export default function DashboardPage() {
       try {
         let currentDepartments: DepartmentSummary[] = [];
         const deptRes = await apiFetch('/departments');
+
+        if (deptRes.status === 401) {
+          logout();
+          router.push('/login');
+          return;
+        }
 
         if (deptRes.ok) {
           const depts = await deptRes.json();
@@ -133,6 +141,12 @@ export default function DashboardPage() {
               }),
             });
 
+            if (response.status === 401) {
+              logout();
+              router.push('/login');
+              return;
+            }
+
             if (!response.ok) {
               console.error(`Failed to recover quick template department ${id}`);
             }
@@ -151,6 +165,15 @@ export default function DashboardPage() {
           apiFetch('/tasks'),
         ]);
 
+        if (
+          (companyRes.status === 'fulfilled' && companyRes.value.status === 401) ||
+          (tasksRes.status === 'fulfilled' && tasksRes.value.status === 401)
+        ) {
+          logout();
+          router.push('/login');
+          return;
+        }
+
         if (companyRes.status === 'fulfilled' && companyRes.value.ok) {
           const comp = await companyRes.value.json();
           setCompany(comp);
@@ -168,7 +191,7 @@ export default function DashboardPage() {
     };
 
     void fetchData();
-  }, [setup.selectedDepartments, setup.templateSelections, user]);
+  }, [logout, router, setup.selectedDepartments, setup.templateSelections, user]);
 
   if (!user) return null;
 
