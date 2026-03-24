@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { WizardHeader } from '@/components/wizard/WizardHeader';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { apiFetch } from '@/lib/api';
 import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 const templates = [
@@ -20,8 +21,9 @@ const templates = [
 ];
 
 export default function DepartmentsStep() {
-  const { setup, setDepartments, setTemplatePreference } = useAuthStore();
+  const { setup, setDepartments, setTemplatePreference, logout } = useAuthStore();
   const [selected, setSelected] = useState<string[]>(setup.selectedDepartments || []);
+  const [saving, setSaving] = useState(false);
   const router = useRouter();
 
   const toggle = (id: string) => {
@@ -41,7 +43,46 @@ export default function DepartmentsStep() {
   const handleNext = async () => {
     if (selected.length === 0) return alert('Please select at least one department.');
     setDepartments(selected);
-    router.push('/setup/configure');
+    setSaving(true);
+
+    const quickTemplateIds = selected.filter((id) => setup.templateSelections[id] && departmentQuickStartTemplates[id]);
+
+    try {
+      const response = await apiFetch('/company/setup', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          step: 2,
+          isComplete: false,
+          config: {
+            selectedDepartments: selected,
+            quickTemplatesApplied: quickTemplateIds,
+            templateSelections: Object.fromEntries(
+              selected.map((id) => [id, Boolean(setup.templateSelections[id])]),
+            ),
+          },
+        }),
+      });
+
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Failed to save department selection.');
+      }
+
+      router.push('/setup/configure');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to save department selection.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -115,10 +156,10 @@ export default function DepartmentsStep() {
           <button onClick={() => router.back()} className="px-6 py-2 text-slate-400 font-medium hover:text-slate-600 transition-colors">← Back to Identity</button>
           <button 
             onClick={handleNext} 
-            disabled={selected.length === 0} 
+            disabled={selected.length === 0 || saving} 
             className="btn-premium disabled:grayscale disabled:opacity-30"
           >
-            Configure Selected Departments ({selected.length}) →
+            {saving ? 'Saving Selection...' : `Configure Selected Departments (${selected.length}) →`}
           </button>
         </div>
       </div>

@@ -101,7 +101,11 @@ export default function ConfigureHub() {
           step: 5,
           isComplete: true,
           config: {
-            quickTemplatesApplied: selectedDepts,
+            selectedDepartments: selectedDepts,
+            quickTemplatesApplied: selectedQuickTemplateDepts,
+            templateSelections: Object.fromEntries(
+              selectedDepts.map((id) => [id, Boolean(templateSelections[id])]),
+            ),
           },
         }),
       });

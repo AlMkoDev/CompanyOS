@@ -67,6 +67,10 @@ export default function DashboardPage() {
   const [tasks, setTasks] = React.useState<TaskSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const templateRecoveryAttempted = React.useRef(false);
+  const standardTemplateIds = React.useMemo(
+    () => Object.keys(departmentQuickStartTemplates).filter((id) => id !== 'cus'),
+    [],
+  );
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -178,14 +182,90 @@ export default function DashboardPage() {
           return;
         }
 
+        let companyData: CompanySummary | null = null;
+
         if (companyRes.status === 'fulfilled' && companyRes.value.ok) {
           const comp = await companyRes.value.json();
+          companyData = comp;
           setCompany(comp);
         }
 
         if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
           const tsks = await tasksRes.value.json();
           setTasks(tsks);
+        }
+
+        const quickTemplatesAppliedFromApi =
+          companyData?.setup?.steps_config?.quickTemplatesApplied?.filter(
+            (id): id is string => typeof id === 'string' && Boolean(departmentQuickStartTemplates[id]),
+          ) || [];
+
+        const legacyStandardRecovery =
+          quickTemplatesAppliedFromApi.length === 0 &&
+          quickTemplatesAppliedFromSession.length === 0 &&
+          currentDepartments.length === 1 &&
+          currentDepartments[0]?.template_key === 'adm'
+            ? standardTemplateIds
+            : [];
+
+        const combinedRecoveryTemplates = Array.from(
+          new Set([
+            ...quickTemplatesAppliedFromApi,
+            ...quickTemplatesAppliedFromSession,
+            ...legacyStandardRecovery,
+          ]),
+        );
+
+        const missingDepartmentsAfterCompanyLoad =
+          !templateRecoveryAttempted.current && combinedRecoveryTemplates.length > 0
+            ? combinedRecoveryTemplates.filter(
+                (id) => !currentDepartments.some((department) => department.template_key === id),
+              )
+            : [];
+
+        if (missingDepartmentsAfterCompanyLoad.length > 0) {
+          templateRecoveryAttempted.current = true;
+
+          for (const id of missingDepartmentsAfterCompanyLoad) {
+            const template = departmentQuickStartTemplates[id];
+            const response = await apiFetch(`/departments/${id}/config`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                template_key: id,
+                name: template.name,
+                description: template.description,
+                color: template.color,
+                mandate: template.mandate,
+                core_responsibilities: template.coreResponsibilities,
+                deliverables: template.deliverables,
+                roles: template.roles,
+                operational_routines: template.operationalRoutines,
+                data_pack: template.dataPack,
+                activities: template.activities,
+                communication_lines: template.communicationLines,
+                budget: template.budget,
+              }),
+            });
+
+            if (response.status === 401) {
+              logout();
+              router.push('/login');
+              return;
+            }
+
+            if (!response.ok) {
+              console.error(`Failed to recover quick template department ${id}`);
+            }
+          }
+
+          const refreshedDepartmentsResponse = await apiFetch('/departments');
+          if (refreshedDepartmentsResponse.ok) {
+            const refreshedDepartments = await refreshedDepartmentsResponse.json();
+            setDepartments(refreshedDepartments);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);
@@ -195,7 +275,7 @@ export default function DashboardPage() {
     };
 
     void fetchData();
-  }, [logout, router, setup.selectedDepartments, setup.templateSelections, user]);
+  }, [logout, router, setup.selectedDepartments, setup.templateSelections, standardTemplateIds, user]);
 
   if (!user) return null;
 
