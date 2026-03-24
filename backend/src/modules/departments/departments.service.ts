@@ -1,10 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateDepartmentDto, UpdateDepartmentConfigDto } from './dto/department.dto';
 
 @Injectable()
 export class DepartmentsService {
   constructor(private prisma: PrismaService) {}
+
+  private isSchemaDriftError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
 
   async create(companyId: string, data: CreateDepartmentDto) {
     return this.prisma.department.create({
@@ -23,10 +31,30 @@ export class DepartmentsService {
   }
 
   async findOne(id: string, companyId: string) {
-    const dept = await this.prisma.department.findFirst({
-      where: { id, company_id: companyId },
-      include: { kpis: true },
-    });
+    let dept = null;
+
+    try {
+      dept = await this.prisma.department.findFirst({
+        where: { id, company_id: companyId },
+        include: { kpis: true },
+      });
+    } catch (error) {
+      if (!this.isSchemaDriftError(error)) {
+        throw error;
+      }
+
+      dept = await this.prisma.department.findFirst({
+        where: { id, company_id: companyId },
+      });
+
+      if (dept) {
+        dept = {
+          ...dept,
+          kpis: [],
+        };
+      }
+    }
+
     if (!dept) throw new NotFoundException('Department not found');
     return dept;
   }
