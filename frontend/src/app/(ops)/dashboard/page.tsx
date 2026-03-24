@@ -235,6 +235,27 @@ export default function DashboardPage() {
         if (missingDepartmentsAfterCompanyLoad.length > 0) {
           templateRecoveryAttempted.current = true;
 
+          if (legacyStandardRecovery.length > 0) {
+            const bootstrapResponse = await apiFetch('/departments/bootstrap-standard', {
+              method: 'POST',
+            });
+
+            if (bootstrapResponse.status === 401) {
+              logout();
+              router.push('/login');
+              return;
+            }
+
+            if (bootstrapResponse.ok) {
+              const bootstrappedDepartments = await bootstrapResponse.json();
+              currentDepartments = bootstrappedDepartments;
+              setDepartments(bootstrappedDepartments);
+              return;
+            }
+
+            console.error('Failed to bootstrap standard departments for legacy company.');
+          }
+
           for (const id of missingDepartmentsAfterCompanyLoad) {
             const template = departmentQuickStartTemplates[id];
             const response = await apiFetch(`/departments/${id}/config`, {

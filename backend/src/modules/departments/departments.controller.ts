@@ -35,6 +35,11 @@ export class DepartmentsController {
     return this.departmentsService.findByTemplateKey(companyId, key);
   }
 
+  @Post('bootstrap-standard')
+  async bootstrapStandard(@CurrentUser('companyId') companyId: string) {
+    return this.departmentsService.bootstrapStandard(companyId);
+  }
+
   @Get(':id')
   async findOne(
     @CurrentUser('companyId') companyId: string,
