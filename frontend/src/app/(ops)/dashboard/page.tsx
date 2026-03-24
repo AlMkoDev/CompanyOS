@@ -6,7 +6,10 @@ import { useAuthStore } from '@/store/authStore';
 import { CorporateVisualizer } from '@/components/viz/CorporateVisualizer';
 import { OperationalGapDashboard, type Gap } from '@/components/ops/OperationalGapDashboard';
 import { apiFetch } from '@/lib/api';
-import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
+import {
+  departmentQuickStartTemplates,
+  normalizeDepartmentTemplateKey,
+} from '@/lib/setup/departmentTemplates';
 
 interface DepartmentSummary {
   id: string;
@@ -116,9 +119,12 @@ export default function DashboardPage() {
         );
 
         const missingTemplateDepartments =
-          !templateRecoveryAttempted.current && currentDepartments.length > 0
+          !templateRecoveryAttempted.current
             ? quickTemplatesApplied.filter(
-                (id) => !currentDepartments.some((department) => department.template_key === id),
+                (id) =>
+                  !currentDepartments.some(
+                    (department) => normalizeDepartmentTemplateKey(department.template_key) === id,
+                  ),
               )
             : [];
 
@@ -204,7 +210,7 @@ export default function DashboardPage() {
           quickTemplatesAppliedFromApi.length === 0 &&
           quickTemplatesAppliedFromSession.length === 0 &&
           currentDepartments.length === 1 &&
-          currentDepartments[0]?.template_key === 'adm'
+          normalizeDepartmentTemplateKey(currentDepartments[0]?.template_key) === 'adm'
             ? standardTemplateIds
             : [];
 
@@ -219,7 +225,10 @@ export default function DashboardPage() {
         const missingDepartmentsAfterCompanyLoad =
           !templateRecoveryAttempted.current && combinedRecoveryTemplates.length > 0
             ? combinedRecoveryTemplates.filter(
-                (id) => !currentDepartments.some((department) => department.template_key === id),
+                (id) =>
+                  !currentDepartments.some(
+                    (department) => normalizeDepartmentTemplateKey(department.template_key) === id,
+                  ),
               )
             : [];
 
@@ -331,7 +340,7 @@ export default function DashboardPage() {
             departments={departments.map((department) => ({
               ...department,
               color: department.color ?? '#1e3a8a',
-              template_key: department.template_key ?? 'standard',
+              template_key: normalizeDepartmentTemplateKey(department.template_key) ?? 'standard',
             }))}
             loading={loading}
          />

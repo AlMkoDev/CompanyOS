@@ -79,9 +79,15 @@ export class CompanyService {
   }
 
   async updateSetupProgress(companyId: string, data: any) {
-    return this.prisma.companySetup.update({
+    return this.prisma.companySetup.upsert({
       where: { company_id: companyId },
-      data: {
+      update: {
+        current_step: data.step,
+        steps_config: data.config,
+        is_complete: data.isComplete ?? false,
+      },
+      create: {
+        company_id: companyId,
         current_step: data.step,
         steps_config: data.config,
         is_complete: data.isComplete ?? false,

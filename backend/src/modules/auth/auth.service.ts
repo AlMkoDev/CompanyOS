@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, PrismaClientKnownRequestError } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import * as bcrypt from 'bcrypt';
 import * as QRCode from 'qrcode';
@@ -33,23 +33,19 @@ export class AuthService {
   private async getAuthenticator() {
     if (!this.authenticatorPromise) {
       this.authenticatorPromise = import('otplib').then((module) => {
-        const generateSecret = module.generateSecret;
-        const generateURI = module.generateURI;
-        const verify = module.verify;
+        const generateSecret = module.authenticator.generateSecret;
+        const keyuri = module.authenticator.keyuri;
+        const verify = module.authenticator.verify;
 
-        if (!generateSecret || !generateURI || !verify) {
+        if (!generateSecret || !keyuri || !verify) {
           throw new Error('Failed to load otplib functional exports.');
         }
 
         return {
           generateSecret: () => generateSecret(),
           keyuri: (user: string, service: string, secret: string) =>
-            generateURI({
-              issuer: service,
-              label: user,
-              secret,
-            }),
-          verify: ({ token, secret }) =>
+            keyuri(user, service, secret),
+          verify: async ({ token, secret }) =>
             verify({
               token,
               secret,
@@ -175,7 +171,7 @@ export class AuthService {
           data: {
             company_id: company.id,
             name: 'Administration',
-            template_key: 'administration',
+            template_key: 'adm',
           },
         });
 
@@ -196,7 +192,7 @@ export class AuthService {
         error instanceof Error ? error.stack : JSON.stringify(error),
       );
 
-      if (error instanceof PrismaClientKnownRequestError) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new ConflictException('An account or company record already exists with those details.');
         }
@@ -227,6 +223,15 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    // Ensure setup record exists if missing
+    if (user.company && !user.company.setup) {
+      user.company.setup = await this.prisma.companySetup.upsert({
+        where: { company_id: user.company_id },
+        update: {},
+        create: { company_id: user.company_id },
+      });
+    }
+
     return {
       user: this.buildUserResponse(user),
     };
@@ -249,6 +254,15 @@ export class AuthService {
         reason: 'invalid_credentials',
       });
       throw new UnauthorizedException();
+    }
+
+    // Ensure setup record exists if missing
+    if (user.company && !user.company.setup) {
+      user.company.setup = await this.prisma.companySetup.upsert({
+        where: { company_id: user.company_id },
+        update: {},
+        create: { company_id: user.company_id },
+      });
     }
 
     const roles = this.getUserRoles(user);

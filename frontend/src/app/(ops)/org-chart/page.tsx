@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
-import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
+import { getDepartmentTemplate } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentRole {
   title?: string;
@@ -74,10 +74,7 @@ export default function OrgChartPage() {
         <div className="relative w-full max-w-7xl flex flex-wrap justify-center gap-8 px-4">
           
           {departments.map((dept) => {
-             const templateRoles =
-               dept.template_key && departmentQuickStartTemplates[dept.template_key]
-                 ? departmentQuickStartTemplates[dept.template_key].roles
-                 : [];
+             const templateRoles = getDepartmentTemplate(dept.template_key)?.roles || [];
              const roles = dept.roles && dept.roles.length > 0 ? dept.roles : templateRoles;
              // Find executive head
              const head = roles?.find((role) => role.level === 'Executive') || roles?.[0];

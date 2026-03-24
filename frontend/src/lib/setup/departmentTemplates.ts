@@ -60,6 +60,21 @@ export interface DepartmentQuickStartTemplate {
   communicationLines: DepartmentCommunicationLine[];
 }
 
+const templateKeyAliases: Record<string, string> = {
+  administration: 'adm',
+  sales: 'sls',
+};
+
+export function normalizeDepartmentTemplateKey(templateKey?: string | null): string | null {
+  if (!templateKey) return null;
+  return templateKeyAliases[templateKey] || templateKey;
+}
+
+export function getDepartmentTemplate(templateKey?: string | null): DepartmentQuickStartTemplate | undefined {
+  const normalizedKey = normalizeDepartmentTemplateKey(templateKey);
+  return normalizedKey ? departmentQuickStartTemplates[normalizedKey] : undefined;
+}
+
 const cadence = (daily: string[], weekly: string[], monthly: string[]) => [
   { cadence: 'Daily', items: daily },
   { cadence: 'Weekly', items: weekly },

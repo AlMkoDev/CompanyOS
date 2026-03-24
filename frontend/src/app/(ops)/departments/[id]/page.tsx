@@ -28,7 +28,11 @@ import { OperationalSpecTable } from '@/components/ui/OperationalSpecTable';
 import type { OperationalSpecData } from '@/components/ui/OperationalSpecTable';
 import { SOPLibrary } from '@/components/ops/SOPLibrary';
 import { KPIRegistry } from '@/components/ops/KPIRegistry';
-import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
+import {
+  departmentQuickStartTemplates,
+  getDepartmentTemplate,
+  normalizeDepartmentTemplateKey,
+} from '@/lib/setup/departmentTemplates';
 
 interface DepartmentRole {
   title: string;
@@ -251,17 +255,19 @@ export default function DepartmentDetailPage() {
     { id: 'network', label: 'Network & Assets', icon: <Network size={16} /> },
   ];
 
-  const resolvedTemplate = data.template_key ? departmentQuickStartTemplates[data.template_key] : undefined;
+  const normalizedTemplateKey = normalizeDepartmentTemplateKey(data.template_key);
+  const resolvedTemplate = getDepartmentTemplate(data.template_key);
   const resolvedData: DepartmentData = {
     ...data,
+    template_key: normalizedTemplateKey || undefined,
     color: data.color || resolvedTemplate?.color,
-    mandate: normalizeMandate(data.mandate, data.template_key),
-    roles: normalizeRoles(data.roles, data.template_key),
-    kpis: normalizeKpis(data.kpis, data.template_key),
-    operational_routines: normalizeRoutines(data.operational_routines, data.template_key),
-    activities: normalizeActivities(data.activities, data.template_key),
-    communication_lines: normalizeCommunicationLines(data.communication_lines, data.template_key),
-    data_pack: normalizeDataPack(data.data_pack, data.template_key),
+    mandate: normalizeMandate(data.mandate, normalizedTemplateKey || undefined),
+    roles: normalizeRoles(data.roles, normalizedTemplateKey || undefined),
+    kpis: normalizeKpis(data.kpis, normalizedTemplateKey || undefined),
+    operational_routines: normalizeRoutines(data.operational_routines, normalizedTemplateKey || undefined),
+    activities: normalizeActivities(data.activities, normalizedTemplateKey || undefined),
+    communication_lines: normalizeCommunicationLines(data.communication_lines, normalizedTemplateKey || undefined),
+    data_pack: normalizeDataPack(data.data_pack, normalizedTemplateKey || undefined),
   };
 
   return (
