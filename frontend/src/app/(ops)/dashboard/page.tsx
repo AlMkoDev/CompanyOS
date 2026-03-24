@@ -59,7 +59,7 @@ const PRIORITY_COLORS = {
 } as const;
 
 export default function DashboardPage() {
-  const { user } = useAuthStore();
+  const { user, setup } = useAuthStore();
   const [departments, setDepartments] = React.useState<DepartmentSummary[]>([]);
   const [company, setCompany] = React.useState<CompanySummary | null>(null);
   const [tasks, setTasks] = React.useState<TaskSummary[]>([]);
@@ -80,7 +80,7 @@ export default function DashboardPage() {
           setDepartments(depts);
         }
 
-        const quickTemplatesApplied =
+        const quickTemplatesAppliedFromCompany =
           user?.company &&
           typeof user.company === 'object' &&
           user.company.setup &&
@@ -94,6 +94,14 @@ export default function DashboardPage() {
                 (id): id is string => typeof id === 'string' && Boolean(departmentQuickStartTemplates[id]),
               )
             : [];
+
+        const quickTemplatesAppliedFromSession = setup.selectedDepartments.filter(
+          (id) => setup.templateSelections[id] && Boolean(departmentQuickStartTemplates[id]),
+        );
+
+        const quickTemplatesApplied = Array.from(
+          new Set([...quickTemplatesAppliedFromCompany, ...quickTemplatesAppliedFromSession]),
+        );
 
         const missingTemplateDepartments =
           !templateRecoveryAttempted.current && currentDepartments.length > 0
@@ -160,7 +168,7 @@ export default function DashboardPage() {
     };
 
     void fetchData();
-  }, [user]);
+  }, [setup.selectedDepartments, setup.templateSelections, user]);
 
   if (!user) return null;
 
