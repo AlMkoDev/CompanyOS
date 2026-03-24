@@ -78,19 +78,7 @@ export default function LoginPage() {
 
   const completeLogin = (data: AuthSuccessResponse) => {
     setAuth(data.user);
-
-    const setup = data.user.company?.setup;
-    if (
-      setup &&
-      (setup.is_complete ||
-        (setup.current_step ?? 0) >= 4 ||
-        (setup.completed_steps && setup.completed_steps.length >= 4))
-    ) {
-      router.push('/dashboard');
-      return;
-    }
-
-    router.push('/setup/identity');
+    router.push('/dashboard');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

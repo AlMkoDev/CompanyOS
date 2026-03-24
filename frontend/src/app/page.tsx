@@ -30,17 +30,7 @@ export default function RootPage() {
   useEffect(() => {
     const bootstrapSession = async () => {
       if (isAuthenticated && user) {
-        const setup = user.company?.setup;
-        if (
-          setup &&
-          (setup.is_complete ||
-            (setup.current_step ?? 0) >= 4 ||
-            (setup.completed_steps && setup.completed_steps.length >= 4))
-        ) {
-          router.push('/dashboard');
-        } else {
-          router.push('/setup/identity');
-        }
+        router.push('/dashboard');
         return;
       }
 
@@ -52,18 +42,7 @@ export default function RootPage() {
 
         const data = (await res.json()) as { user: BootstrapUser };
         setAuth(data.user);
-
-        const setup = data.user.company?.setup;
-        if (
-          setup &&
-          (setup.is_complete ||
-            (setup.current_step ?? 0) >= 4 ||
-            (setup.completed_steps && setup.completed_steps.length >= 4))
-        ) {
-          router.push('/dashboard');
-        } else {
-          router.push('/setup/identity');
-        }
+        router.push('/dashboard');
       } catch {
         logout();
         router.push('/login');
