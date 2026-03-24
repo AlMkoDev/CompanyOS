@@ -8,6 +8,8 @@ export interface DepartmentTemplateRole {
   title: string;
   responsibilities: string;
   reportsTo: string;
+  level?: string;
+  hc?: number;
 }
 
 export interface DepartmentRoutineGroup {

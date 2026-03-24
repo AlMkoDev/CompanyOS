@@ -29,9 +29,14 @@ interface KPI {
 
 interface KPIRegistryProps {
   departmentId: string;
+  fallbackKpis?: Array<{
+    name: string;
+    target: string;
+    unit: string;
+  }>;
 }
 
-export const KPIRegistry: React.FC<KPIRegistryProps> = ({ departmentId }) => {
+export const KPIRegistry: React.FC<KPIRegistryProps> = ({ departmentId, fallbackKpis = [] }) => {
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedKpi, setSelectedKpi] = useState<KPI | null>(null);
@@ -42,18 +47,40 @@ export const KPIRegistry: React.FC<KPIRegistryProps> = ({ departmentId }) => {
         const res = await apiFetch(`/kpis?departmentId=${departmentId}`);
         if (res.ok) {
           const data = await res.json();
-          setKpis(data);
-          if (data.length > 0) setSelectedKpi(data[0]);
+          if (data.length > 0) {
+            setKpis(data);
+            setSelectedKpi(data[0]);
+            return;
+          }
         }
       } catch (err) {
         console.error('Failed to fetch KPIs:', err);
-      } finally {
-        setLoading(false);
       }
+
+      if (fallbackKpis.length > 0) {
+        const normalizedFallback = fallbackKpis.map((kpi, index) => ({
+          id: `template-kpi-${index}`,
+          name: kpi.name,
+          description: 'Loaded from the selected department template.',
+          formula: 'Template-defined performance target.',
+          data_source: 'Department template',
+          owner_role: 'Department Head',
+          frequency: 'monthly',
+          unit: kpi.unit,
+          target: Number(kpi.target) || 0,
+          current_value: 0,
+          status: 'on-track' as const,
+          last_updated: new Date().toISOString(),
+        }));
+        setKpis(normalizedFallback);
+        setSelectedKpi(normalizedFallback[0]);
+      }
+
+      setLoading(false);
     };
 
     if (departmentId) fetchKpis();
-  }, [departmentId]);
+  }, [departmentId, fallbackKpis]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

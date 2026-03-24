@@ -41,6 +41,8 @@ interface Role {
   title: string;
   responsibilities: string;
   reportsTo: string;
+  level?: string;
+  hc?: number;
 }
 
 interface DepartmentTemplateResponse {

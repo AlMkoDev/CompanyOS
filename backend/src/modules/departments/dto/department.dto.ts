@@ -30,6 +30,16 @@ class DepartmentRoleDto {
   @IsString()
   @MaxLength(240)
   reportsTo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  level?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  hc?: number;
 }
 
 class DepartmentRoutineGroupDto {

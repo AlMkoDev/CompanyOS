@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentRole {
   title?: string;
@@ -16,6 +17,7 @@ interface DepartmentNode {
   name: string;
   color?: string;
   icon?: string | null;
+  template_key?: string | null;
   roles?: DepartmentRole[];
 }
 
@@ -72,8 +74,13 @@ export default function OrgChartPage() {
         <div className="relative w-full max-w-7xl flex flex-wrap justify-center gap-8 px-4">
           
           {departments.map((dept) => {
+             const templateRoles =
+               dept.template_key && departmentQuickStartTemplates[dept.template_key]
+                 ? departmentQuickStartTemplates[dept.template_key].roles
+                 : [];
+             const roles = dept.roles && dept.roles.length > 0 ? dept.roles : templateRoles;
              // Find executive head
-             const head = dept.roles?.find((role) => role.level === 'Executive') || dept.roles?.[0];
+             const head = roles?.find((role) => role.level === 'Executive') || roles?.[0];
              
              return (
                <div 
@@ -97,7 +104,7 @@ export default function OrgChartPage() {
                  )}
                  <div className="mt-4 flex justify-between text-[10px] font-bold text-slate-400 border-t border-slate-100 pt-3">
                    <span className="uppercase tracking-widest text-emerald-600">Active</span>
-                   <span className="uppercase">HC: {dept.roles?.reduce((acc, role) => acc + (role.hc || 1), 0) || 0}</span>
+                   <span className="uppercase">HC: {roles?.reduce((acc, role) => acc + (role.hc || 1), 0) || 0}</span>
                  </div>
                </div>
              );

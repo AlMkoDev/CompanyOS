@@ -28,6 +28,7 @@ import { OperationalSpecTable } from '@/components/ui/OperationalSpecTable';
 import type { OperationalSpecData } from '@/components/ui/OperationalSpecTable';
 import { SOPLibrary } from '@/components/ops/SOPLibrary';
 import { KPIRegistry } from '@/components/ops/KPIRegistry';
+import { departmentQuickStartTemplates } from '@/lib/setup/departmentTemplates';
 
 interface DepartmentRole {
   title: string;
@@ -48,6 +49,12 @@ interface DepartmentMandate {
   objectives?: string[];
 }
 
+interface DepartmentTemplateKpiFallback {
+  name: string;
+  target: string;
+  unit: string;
+}
+
 interface DepartmentData {
   id: string;
   name: string;
@@ -63,40 +70,133 @@ interface DepartmentData {
   data_pack?: OperationalSpecData;
 }
 
-interface DepartmentTemplate {
-  name: string;
-  color: string;
-  roles: DepartmentRole[];
-}
-
 type DepartmentTab = 'strategy' | 'routines' | 'activities' | 'network' | 'sops' | 'performance';
 
-// Fallback roles for demo/preview if DB not seeded
-const templates: Record<string, DepartmentTemplate> = {
-  fin: { 
-    name: 'Finance', 
-    color: '#B8860B',
-    roles: [
-      { title: 'Chief Financial Officer', responsibilities: 'Strategic financial oversight and capital allocation.', reportsTo: 'CEO' },
-      { title: 'Head of Accounting', responsibilities: 'Financial reporting, audit compliance, and day-to-day bookkeeping.', reportsTo: 'CFO' }
-    ]
-  },
-  hr: { 
-    name: 'Human Resources', 
-    color: '#3B82F6',
-    roles: [
-      { title: 'HR Director', responsibilities: 'Talent strategy and organizational culture.', reportsTo: 'CEO' },
-      { title: 'Recruitment Manager', responsibilities: 'End-to-end hiring process and onboarding.', reportsTo: 'HR Director' }
-    ]
-  },
-  ops: { 
-    name: 'Operations', 
-    color: '#10B981',
-    roles: [
-      { title: 'Operations Manager', responsibilities: 'Optimizing internal processes and supply chain.', reportsTo: 'CEO' },
-      { title: 'Logistics Coordinator', responsibilities: 'Managing day-to-day distribution and inventory.', reportsTo: 'Operations Manager' }
-    ]
-  },
+const inferRoleLevel = (title: string) => {
+  if (/chief|cfo|coo|cmo|cro|cto|cio|general counsel|chro|cao|cso/i.test(title)) return 'Executive';
+  if (/director|head of|head /i.test(title)) return 'Senior Management';
+  if (/manager/i.test(title)) return 'Management';
+  if (/senior|specialist|analyst|officer|counsel/i.test(title)) return 'Senior IC';
+  return 'Individual Contributor';
+};
+
+const normalizeRoutines = (input: DepartmentData['operational_routines'], templateKey?: string): OperationalSpecData => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  const source = Array.isArray(input) && input.length > 0 ? input : template?.operationalRoutines;
+  if (!source) return {};
+
+  if (!Array.isArray(source)) return input ?? {};
+
+  return source.reduce<Record<string, string[]>>((acc, group) => {
+    const cadenceKey = String((group as { cadence?: string }).cadence || '').toLowerCase();
+    const items: string[] = Array.isArray((group as { items?: string[] }).items)
+      ? [...((group as { items?: string[] }).items ?? [])]
+      : [];
+    if (cadenceKey) acc[cadenceKey] = items;
+    return acc;
+  }, {});
+};
+
+const normalizeActivities = (input: DepartmentData['activities'], templateKey?: string): OperationalSpecData => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  const source = Array.isArray(input) && input.length > 0 ? input : template?.activities;
+  if (!source || !Array.isArray(source)) return [];
+
+  return source.map((item) => {
+    if ('sections' in item && Array.isArray(item.sections) && item.sections.length > 0 && typeof item.sections[0] === 'object') {
+      return item;
+    }
+
+    const activity = item as { component?: string; owner?: string; summary?: string; sections?: string[] };
+    return {
+      component: activity.component || 'Operational Component',
+      sections: [
+        ...(activity.summary ? [{ name: 'Summary', detail: activity.summary }] : []),
+        ...((activity.sections || []).map((section) => ({ name: 'Section', detail: section }))),
+        ...(activity.owner ? [{ name: 'Owner', detail: activity.owner }] : []),
+      ],
+    };
+  }) as OperationalSpecData;
+};
+
+const normalizeCommunicationLines = (input: DepartmentData['communication_lines'], templateKey?: string): OperationalSpecData => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  const source = Array.isArray(input) && input.length > 0 ? input : template?.communicationLines;
+  if (!source || !Array.isArray(source)) return [];
+
+  return source.map((item) => {
+    if ('from' in item && 'to' in item) {
+      return item;
+    }
+
+    const line = item as { channel?: string; purpose?: string };
+    const [from = 'Department', to = 'Stakeholder'] = (line.channel || '').split(/\s*->\s*/);
+    return {
+      from,
+      to,
+      content: line.purpose || '',
+    };
+  }) as OperationalSpecData;
+};
+
+const normalizeDataPack = (input: DepartmentData['data_pack'], templateKey?: string): OperationalSpecData => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  const source = Array.isArray(input) && input.length > 0 ? input : template?.dataPack;
+  if (!source || !Array.isArray(source)) return [];
+
+  return source.map((item, index) => {
+    if ('asset' in item && 'id' in item) {
+      return item;
+    }
+
+    const dataItem = item as { order?: number; system?: string };
+    return {
+      id: String(dataItem.order ?? index + 1),
+      asset: dataItem.system || '',
+    };
+  }) as OperationalSpecData;
+};
+
+const normalizeRoles = (input: DepartmentRole[] | undefined, templateKey?: string): DepartmentRole[] => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  const source = input && input.length > 0 ? input : template?.roles;
+  if (!source) return [];
+
+  return source.map((role) => ({
+    ...role,
+    level: role.level || inferRoleLevel(role.title),
+    hc: role.hc || 1,
+  }));
+};
+
+const normalizeMandate = (input: DepartmentData['mandate'], templateKey?: string): DepartmentMandate => {
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+
+  if (typeof input === 'string') {
+    return { mission: input };
+  }
+
+  if (input?.mission || input?.objectives) {
+    return input;
+  }
+
+  if (template) {
+    return { mission: template.mandate };
+  }
+
+  return {};
+};
+
+const normalizeKpis = (input: DepartmentData['kpis'], templateKey?: string): DepartmentKpi[] => {
+  if (input && input.length > 0) return input;
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  if (!template) return [];
+
+  return template.kpis.map((kpi: DepartmentTemplateKpiFallback) => ({
+    name: kpi.name,
+    target: kpi.target,
+    unit: kpi.unit,
+  }));
 };
 
 export default function DepartmentDetailPage() {
@@ -151,6 +251,19 @@ export default function DepartmentDetailPage() {
     { id: 'network', label: 'Network & Assets', icon: <Network size={16} /> },
   ];
 
+  const resolvedTemplate = data.template_key ? departmentQuickStartTemplates[data.template_key] : undefined;
+  const resolvedData: DepartmentData = {
+    ...data,
+    color: data.color || resolvedTemplate?.color,
+    mandate: normalizeMandate(data.mandate, data.template_key),
+    roles: normalizeRoles(data.roles, data.template_key),
+    kpis: normalizeKpis(data.kpis, data.template_key),
+    operational_routines: normalizeRoutines(data.operational_routines, data.template_key),
+    activities: normalizeActivities(data.activities, data.template_key),
+    communication_lines: normalizeCommunicationLines(data.communication_lines, data.template_key),
+    data_pack: normalizeDataPack(data.data_pack, data.template_key),
+  };
+
   return (
     <div className="p-6 md:p-10 space-y-10 pb-32 max-w-7xl mx-auto">
       {/* Header */}
@@ -164,10 +277,10 @@ export default function DepartmentDetailPage() {
           </button>
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: data.color }}></div>
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: resolvedData.color }}></div>
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Functional Command</span>
             </div>
-            <h1 className="text-4xl font-heading text-brand-navy">{data.name}</h1>
+            <h1 className="text-4xl font-heading text-brand-navy">{resolvedData.name}</h1>
           </div>
         </div>
         
@@ -177,7 +290,7 @@ export default function DepartmentDetailPage() {
             Charter.pdf
           </button>
           <button 
-             onClick={() => router.push(`/setup/configure/${data.template_key || data.id}`)}
+             onClick={() => router.push(`/setup/configure/${resolvedData.template_key || resolvedData.id}`)}
              className="px-6 py-2 bg-brand-navy text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-lg flex items-center gap-2"
           >
             <Zap size={14} className="text-brand-gold" />
@@ -217,11 +330,11 @@ export default function DepartmentDetailPage() {
                   </div>
                   <div 
                     className="prose prose-slate max-w-none text-slate-600 leading-relaxed italic text-lg"
-                    dangerouslySetInnerHTML={{ __html: data.mandate?.mission || 'No mission defined.' }}
+                    dangerouslySetInnerHTML={{ __html: resolvedData.mandate?.mission || 'No mission defined.' }}
                   />
-                  {data.mandate?.objectives && (
+                  {resolvedData.mandate?.objectives && (
                     <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {data.mandate.objectives.map((obj: string, i: number) => (
+                      {resolvedData.mandate.objectives.map((obj: string, i: number) => (
                         <div key={i} className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                           <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
                           <span className="text-xs font-bold text-slate-700">{obj}</span>
@@ -240,7 +353,7 @@ export default function DepartmentDetailPage() {
                       <Users size={24} className="text-brand-gold" />
                       Command Structure
                     </h2>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{data.roles?.length || 0} Officers</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{resolvedData.roles?.length || 0} Officers</span>
                  </div>
 
                  {/* Visual Summary */}
@@ -255,14 +368,14 @@ export default function DepartmentDetailPage() {
                         <div className={`w-2 h-2 rounded-full ${lv.color} mb-1`}></div>
                         <span className="text-[10px] font-black uppercase text-slate-400 text-center leading-tight">{lv.label}</span>
                         <span className="text-lg font-heading text-brand-navy">
-                          {data.roles?.filter((role) => role.level?.includes(lv.label)).length || 0}
+                          {resolvedData.roles?.filter((role) => role.level?.includes(lv.label)).length || 0}
                         </span>
                       </div>
                     ))}
                  </div>
 
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {(data.roles && Array.isArray(data.roles) && data.roles.length > 0 ? data.roles : (data.template_key && templates[data.template_key] ? templates[data.template_key].roles : [])).map((role, idx) => (
+                    {(resolvedData.roles || []).map((role, idx) => (
                       <div key={idx} className="p-6 bg-white border border-slate-100 rounded-3xl hover:border-brand-gold/30 hover:shadow-xl transition-all group duration-500">
                         <div className="flex justify-between items-start mb-4">
                           <h4 className="font-bold text-slate-800 group-hover:text-brand-gold transition-colors">{role.title}</h4>
@@ -295,7 +408,7 @@ export default function DepartmentDetailPage() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Departmental Routines" 
-                data={data.operational_routines ?? {}} 
+                data={resolvedData.operational_routines ?? {}} 
                 type="routines" 
                 icon={<Clock size={24} className="text-brand-gold" />}
               />
@@ -306,7 +419,7 @@ export default function DepartmentDetailPage() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Technical Activities" 
-                data={data.activities ?? []} 
+                data={resolvedData.activities ?? []} 
                 type="activities" 
                 icon={<GitBranch size={24} className="text-brand-accent" />}
               />
@@ -321,7 +434,7 @@ export default function DepartmentDetailPage() {
 
           {activeTab === 'performance' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <KPIRegistry departmentId={departmentId as string} />
+              <KPIRegistry departmentId={departmentId as string} fallbackKpis={resolvedData.kpis} />
             </div>
           )}
 
@@ -329,13 +442,13 @@ export default function DepartmentDetailPage() {
             <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <OperationalSpecTable 
                 title="Communication Network" 
-                data={data.communication_lines ?? []} 
+                data={resolvedData.communication_lines ?? []} 
                 type="comms" 
                 icon={<Network size={24} className="text-brand-navy" />}
               />
               <OperationalSpecTable 
                 title="Infrastructure Data Packs" 
-                data={data.data_pack ?? []} 
+                data={resolvedData.data_pack ?? []} 
                 type="datapack" 
                 icon={<Database size={24} className="text-emerald-500" />}
               />
@@ -359,7 +472,7 @@ export default function DepartmentDetailPage() {
                 </div>
                 <div className="text-5xl font-heading mb-3 flex items-start">
                    <span className="text-xl text-brand-gold mt-1 mr-1">R</span>
-                   {data.budget_allocation?.toLocaleString() || '0'}
+                   {resolvedData.budget_allocation?.toLocaleString() || '0'}
                 </div>
                 <p className="text-[10px] text-white/50 font-bold uppercase tracking-widest">Authorized Quarterly Drawdown</p>
                 
@@ -389,7 +502,7 @@ export default function DepartmentDetailPage() {
                 <PieChart size={20} className="text-slate-200" />
               </div>
               <div className="space-y-10 relative z-10">
-                {data.kpis?.map((kpi, idx) => (
+                {resolvedData.kpis?.map((kpi, idx) => (
                   <div key={idx} className="space-y-4 group">
                     <div className="flex justify-between items-end">
                       <div>
@@ -406,7 +519,7 @@ export default function DepartmentDetailPage() {
                     </div>
                   </div>
                 ))}
-                {(!data.kpis || data.kpis.length === 0) && (
+                {(!resolvedData.kpis || resolvedData.kpis.length === 0) && (
                   <div className="py-10 text-center space-y-3">
                     <Activity className="mx-auto text-slate-200" size={32} />
                     <p className="text-slate-400 text-xs italic">No performance benchmarks registered.</p>
