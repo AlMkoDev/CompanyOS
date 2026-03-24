@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateTaskDto } from './dto/task.dto';
@@ -9,6 +10,13 @@ export class TasksService {
     private prisma: PrismaService,
     private audit: AuditService,
   ) {}
+
+  private isSchemaDriftError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
 
   private async getCompanyTask(companyId: string, id: string) {
     const task = await this.prisma.task.findFirst({
@@ -40,14 +48,35 @@ export class TasksService {
   }
 
   async findAll(companyId: string, departmentId?: string) {
-    return this.prisma.task.findMany({
-      where: {
-        company_id: companyId,
-        ...(departmentId && { department_id: departmentId }),
-      },
-      include: { assignee: true, creator: true },
-      orderBy: { created_at: 'desc' },
-    });
+    try {
+      return await this.prisma.task.findMany({
+        where: {
+          company_id: companyId,
+          ...(departmentId && { department_id: departmentId }),
+        },
+        include: { assignee: true, creator: true },
+        orderBy: { created_at: 'desc' },
+      });
+    } catch (error) {
+      if (!this.isSchemaDriftError(error)) {
+        throw error;
+      }
+
+      return this.prisma.task.findMany({
+        where: {
+          company_id: companyId,
+          ...(departmentId && { department_id: departmentId }),
+        },
+        select: {
+          id: true,
+          title: true,
+          department_id: true,
+          status: true,
+          priority: true,
+        },
+        orderBy: { created_at: 'desc' },
+      });
+    }
   }
 
   async updateStatus(
