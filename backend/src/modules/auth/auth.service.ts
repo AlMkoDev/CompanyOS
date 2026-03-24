@@ -33,12 +33,36 @@ export class AuthService {
   private async getAuthenticator() {
     if (!this.authenticatorPromise) {
       this.authenticatorPromise = import('otplib').then((module) => {
-        const generateSecret = module.authenticator.generateSecret;
-        const keyuri = module.authenticator.keyuri;
-        const verify = module.authenticator.verify;
+        const authenticatorModule =
+          (module as { authenticator?: unknown }).authenticator ||
+          (module as { default?: { authenticator?: unknown } }).default?.authenticator;
+
+        const generateSecret =
+          authenticatorModule &&
+          typeof authenticatorModule === 'object' &&
+          'generateSecret' in authenticatorModule &&
+          typeof authenticatorModule.generateSecret === 'function'
+            ? authenticatorModule.generateSecret.bind(authenticatorModule)
+            : undefined;
+
+        const keyuri =
+          authenticatorModule &&
+          typeof authenticatorModule === 'object' &&
+          'keyuri' in authenticatorModule &&
+          typeof authenticatorModule.keyuri === 'function'
+            ? authenticatorModule.keyuri.bind(authenticatorModule)
+            : undefined;
+
+        const verify =
+          authenticatorModule &&
+          typeof authenticatorModule === 'object' &&
+          'verify' in authenticatorModule &&
+          typeof authenticatorModule.verify === 'function'
+            ? authenticatorModule.verify.bind(authenticatorModule)
+            : undefined;
 
         if (!generateSecret || !keyuri || !verify) {
-          throw new Error('Failed to load otplib functional exports.');
+          throw new Error('Failed to load otplib authenticator exports.');
         }
 
         return {
@@ -46,10 +70,12 @@ export class AuthService {
           keyuri: (user: string, service: string, secret: string) =>
             keyuri(user, service, secret),
           verify: async ({ token, secret }) =>
-            verify({
-              token,
-              secret,
-            }),
+            Boolean(
+              await verify({
+                token,
+                secret,
+              }),
+            ),
         };
       });
     }
