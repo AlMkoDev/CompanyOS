@@ -225,9 +225,15 @@ export default function EmployeeDirectoryPage() {
     }
   };
 
-  const availablePositions = form.department_id
+  const positionsForSelectedDepartment = form.department_id
     ? positions.filter((position) => position.department_id === form.department_id)
+    : [];
+  const availablePositions = positionsForSelectedDepartment.length > 0
+    ? positionsForSelectedDepartment
     : positions;
+  const selectedDepartmentName = departments.find((department) => department.id === form.department_id)?.name ?? '';
+  const isDepartmentPositionListEmpty = Boolean(form.department_id) && positionsForSelectedDepartment.length === 0;
+  const isPositionCatalogEmpty = positions.length === 0;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -498,12 +504,27 @@ export default function EmployeeDirectoryPage() {
                   className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
                 >
                   <option value="">Select position</option>
+                  {isPositionCatalogEmpty && (
+                    <option value="" disabled>
+                      No positions created yet
+                    </option>
+                  )}
                   {availablePositions.map((position) => (
                     <option key={position.id} value={position.id}>
                       {position.title}
                     </option>
                   ))}
                 </select>
+                {isDepartmentPositionListEmpty && (
+                  <p className="mt-2 text-xs font-medium text-amber-600">
+                    No positions are assigned to {selectedDepartmentName || 'this department'} yet. Showing company positions instead.
+                  </p>
+                )}
+                {isPositionCatalogEmpty && (
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    Create a position in the Positions page first, or leave this blank and add it later.
+                  </p>
+                )}
               </div>
             </div>
 
