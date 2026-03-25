@@ -37,39 +37,95 @@ interface Employee {
   avatar_url: string | null;
 }
 
+interface DepartmentOption {
+  id: string;
+  name: string;
+}
+
+interface PositionOption {
+  id: string;
+  title: string;
+  department_id: string | null;
+}
+
+interface CreateEmployeeFormState {
+  first_name: string;
+  last_name: string;
+  email: string;
+  hire_date: string;
+  department_id: string;
+  position_id: string;
+  manager_id: string;
+  status: string;
+}
+
 export default function EmployeeDirectoryPage() {
   const router = useRouter();
   const { logout } = useAuthStore();
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<DepartmentOption[]>([]);
+  const [positions, setPositions] = useState<PositionOption[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState<CreateEmployeeFormState>({
+    first_name: '',
+    last_name: '',
+    email: '',
+    hire_date: '',
+    department_id: '',
+    position_id: '',
+    manager_id: '',
+    status: 'active',
+  });
 
   useEffect(() => {
-    const loadEmployees = async () => {
+    const loadDirectoryData = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        const response = await apiFetch('/hris/employees');
+        const [employeesResponse, departmentsResponse, positionsResponse] = await Promise.all([
+          apiFetch('/hris/employees'),
+          apiFetch('/departments'),
+          apiFetch('/hris/positions'),
+        ]);
 
-        if (response.status === 401) {
+        if (
+          employeesResponse.status === 401 ||
+          departmentsResponse.status === 401 ||
+          positionsResponse.status === 401
+        ) {
           logout();
           router.push('/login');
           return;
         }
 
-        if (response.status === 403) {
+        if (
+          employeesResponse.status === 403 ||
+          departmentsResponse.status === 403 ||
+          positionsResponse.status === 403
+        ) {
           setError('You do not have permission to access the employee directory.');
           return;
         }
 
-        if (!response.ok) {
+        if (!employeesResponse.ok || !departmentsResponse.ok || !positionsResponse.ok) {
           throw new Error('Failed to load employee directory.');
         }
 
-        const data = await response.json();
-        setEmployees(data);
+        const [employeesData, departmentsData, positionsData] = await Promise.all([
+          employeesResponse.json(),
+          departmentsResponse.json(),
+          positionsResponse.json(),
+        ]);
+
+        setEmployees(employeesData);
+        setDepartments(departmentsData);
+        setPositions(positionsData);
       } catch (loadError) {
         console.error(loadError);
         setError(loadError instanceof Error ? loadError.message : 'Failed to load employee directory.');
@@ -78,8 +134,100 @@ export default function EmployeeDirectoryPage() {
       }
     };
 
-    void loadEmployees();
+    void loadDirectoryData();
   }, [logout, router]);
+
+  const resetCreateForm = () => {
+    setForm({
+      first_name: '',
+      last_name: '',
+      email: '',
+      hire_date: '',
+      department_id: '',
+      position_id: '',
+      manager_id: '',
+      status: 'active',
+    });
+    setCreateError(null);
+  };
+
+  const handleCreateEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCreateError(null);
+
+    if (!form.first_name || !form.last_name || !form.email || !form.hire_date) {
+      setCreateError('First name, last name, email, and hire date are required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await apiFetch('/hris/employees', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          first_name: form.first_name.trim(),
+          last_name: form.last_name.trim(),
+          email: form.email.trim(),
+          hire_date: form.hire_date,
+          department_id: form.department_id || undefined,
+          position_id: form.position_id || undefined,
+          manager_id: form.manager_id || undefined,
+          status: form.status || undefined,
+        }),
+      });
+
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
+      if (response.status === 403) {
+        setCreateError('You do not have permission to add employees.');
+        return;
+      }
+
+      if (!response.ok) {
+        let message = 'Failed to create employee.';
+
+        try {
+          const payload = await response.json();
+          if (typeof payload?.message === 'string') {
+            message = payload.message;
+          } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+            message = payload.message.join(', ');
+          }
+        } catch {
+          // Keep default message when no JSON payload is returned.
+        }
+
+        throw new Error(message);
+      }
+
+      const createdEmployee = await response.json();
+
+      setEmployees((current) =>
+        [...current, createdEmployee].sort((left, right) =>
+          `${left.first_name} ${left.last_name}`.localeCompare(`${right.first_name} ${right.last_name}`),
+        ),
+      );
+      resetCreateForm();
+      setIsCreateModalOpen(false);
+    } catch (submitError) {
+      console.error(submitError);
+      setCreateError(submitError instanceof Error ? submitError.message : 'Failed to create employee.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const availablePositions = form.department_id
+    ? positions.filter((position) => position.department_id === form.department_id)
+    : positions;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -120,7 +268,13 @@ export default function EmployeeDirectoryPage() {
           <Button variant="outline" className="h-14 px-8 rounded-[20px] border-slate-200 font-bold hover:bg-slate-50 transition-all flex gap-3 shadow-sm active:scale-95">
             <Filter size={18} className="text-brand-navy" /> <span className="text-slate-600">Advanced Filters</span>
           </Button>
-          <Button className="h-14 px-8 rounded-[20px] bg-brand-navy border-none font-bold text-white shadow-xl shadow-brand-navy/20 hover:shadow-brand-navy/30 hover:-translate-y-0.5 transition-all flex gap-3 active:scale-95">
+          <Button
+            className="h-14 px-8 rounded-[20px] bg-brand-navy border-none font-bold text-white shadow-xl shadow-brand-navy/20 hover:shadow-brand-navy/30 hover:-translate-y-0.5 transition-all flex gap-3 active:scale-95"
+            onClick={() => {
+              resetCreateForm();
+              setIsCreateModalOpen(true);
+            }}
+          >
             <UserPlus size={18} className="text-brand-gold" /> Add New Employee
           </Button>
         </div>
@@ -241,6 +395,177 @@ export default function EmployeeDirectoryPage() {
         )}
       </div>
     </div>
+    {isCreateModalOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-6 backdrop-blur-sm">
+        <div className="relative w-full max-w-3xl rounded-[32px] bg-white p-8 shadow-2xl">
+          <button
+            type="button"
+            className="absolute right-6 top-6 text-sm font-bold text-slate-400 transition-colors hover:text-slate-700"
+            onClick={() => {
+              setIsCreateModalOpen(false);
+              resetCreateForm();
+            }}
+          >
+            Close
+          </button>
+
+          <div className="mb-8 pr-16">
+            <h2 className="text-3xl font-heading font-black tracking-tight text-brand-navy">Add New Employee</h2>
+            <p className="mt-2 text-sm font-medium text-slate-500">
+              Create the employee record and trigger the linked onboarding workflow.
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={handleCreateEmployee}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">First Name *</label>
+                <Input
+                  value={form.first_name}
+                  onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))}
+                  placeholder="Ava"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Last Name *</label>
+                <Input
+                  value={form.last_name}
+                  onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value }))}
+                  placeholder="Ndlovu"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Email *</label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="ava.ndlovu@company.com"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Hire Date *</label>
+                <Input
+                  type="date"
+                  value={form.hire_date}
+                  onChange={(event) => setForm((current) => ({ ...current, hire_date: event.target.value }))}
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Department</label>
+                <select
+                  value={form.department_id}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      department_id: event.target.value,
+                      position_id:
+                        current.position_id &&
+                        positions.some(
+                          (position) =>
+                            position.id === current.position_id &&
+                            position.department_id === event.target.value,
+                        )
+                          ? current.position_id
+                          : '',
+                    }))
+                  }
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                >
+                  <option value="">Select department</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Position</label>
+                <select
+                  value={form.position_id}
+                  onChange={(event) => setForm((current) => ({ ...current, position_id: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                >
+                  <option value="">Select position</option>
+                  {availablePositions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Manager</label>
+                <select
+                  value={form.manager_id}
+                  onChange={(event) => setForm((current) => ({ ...current, manager_id: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                >
+                  <option value="">Select manager</option>
+                  {employees
+                    .filter((employee) => employee.status !== 'terminated')
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.first_name} {employee.last_name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Status</label>
+                <select
+                  value={form.status}
+                  onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                >
+                  <option value="active">Active</option>
+                  <option value="probation">Probation</option>
+                  <option value="terminated">Terminated</option>
+                </select>
+              </div>
+            </div>
+
+            {createError && (
+              <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {createError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 pt-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 rounded-2xl px-6"
+                onClick={() => {
+                  setIsCreateModalOpen(false);
+                  resetCreateForm();
+                }}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="h-12 rounded-2xl px-6" disabled={isSubmitting}>
+                {isSubmitting ? 'Creating...' : 'Create Employee'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
     </AppPermissionGuard>
   );
 }
