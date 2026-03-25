@@ -1,9 +1,12 @@
-import { IsBoolean, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
 
 export class UpdateCompanySetupDto {
-  @IsString()
-  @MaxLength(120)
-  step: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  step: number;
 
   @IsOptional()
   @IsObject()

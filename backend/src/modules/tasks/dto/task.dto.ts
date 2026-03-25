@@ -8,7 +8,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-const TASK_STATUSES = ['todo', 'in_progress', 'done', 'blocked'] as const;
+const TASK_STATUSES = ['open', 'in-progress', 'review', 'done', 'blocked'] as const;
 
 export class CreateTaskDto {
   @IsString()

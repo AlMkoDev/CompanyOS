@@ -17,9 +17,35 @@ export function apiUrl(path: string) {
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
+function getStoredAccessToken() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem('companyos-auth');
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as { state?: { accessToken?: string | null } };
+    return parsed.state?.accessToken ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function apiFetch(path: string, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  const accessToken = getStoredAccessToken();
+
+  if (accessToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
+  }
+
   return fetch(apiUrl(path), {
     credentials: 'include',
     ...init,
+    headers,
   });
 }

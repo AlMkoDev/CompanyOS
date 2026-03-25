@@ -34,6 +34,7 @@ interface TaskSummary {
   department_id?: string;
   status: string;
   priority: keyof typeof PRIORITY_COLORS;
+  due_date?: string;
 }
 
 interface WorkflowCardProps {
@@ -69,6 +70,7 @@ export default function DashboardPage() {
   const [company, setCompany] = React.useState<CompanySummary | null>(null);
   const [tasks, setTasks] = React.useState<TaskSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [bootError, setBootError] = React.useState<string | null>(null);
   const templateRecoveryAttempted = React.useRef(false);
   const standardTemplateIds = React.useMemo(
     () => Object.keys(departmentQuickStartTemplates).filter((id) => id !== 'cus'),
@@ -80,6 +82,7 @@ export default function DashboardPage() {
       setLoading(true);
 
       try {
+        setBootError(null);
         let currentDepartments: DepartmentSummary[] = [];
         const deptRes = await apiFetch('/departments');
 
@@ -162,8 +165,8 @@ export default function DashboardPage() {
             }
 
             if (!response.ok) {
-              console.error(`Failed to recover quick template department ${id}`);
-            }
+            console.error(`Failed to recover quick template department ${id}`);
+          }
           }
 
           const refreshedDepartmentsResponse = await apiFetch('/departments');
@@ -299,6 +302,7 @@ export default function DashboardPage() {
         }
       } catch (err) {
         console.error('Failed to fetch dashboard data:', err);
+        setBootError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
       } finally {
         setLoading(false);
       }
@@ -308,6 +312,12 @@ export default function DashboardPage() {
   }, [logout, router, setup.selectedDepartments, setup.templateSelections, standardTemplateIds, user]);
 
   if (!user) return null;
+
+  const activeTasks = tasks.filter((task) => task.status !== 'done').length;
+  const overdueTasks = tasks.filter(
+    (task) => task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date(),
+  ).length;
+  const departmentCoverage = departments.length > 0 ? Math.min(100, Math.round((departments.length / 9) * 100)) : 0;
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-10">
@@ -370,6 +380,11 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start pb-20">
         {/* Department Quick List */}
         <section className="lg:col-span-2 space-y-6">
+           {bootError && (
+            <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {bootError}
+            </div>
+           )}
            <div className="flex items-center justify-between px-2">
               <h3 className="text-xl font-heading">Active Workflows</h3>
               <button 
@@ -407,18 +422,18 @@ export default function DashboardPage() {
               <span className="text-[10px] text-slate-400 font-bold uppercase">Q1 Performance</span>
             </h3>
             <div className="space-y-8">
-              <KpiRow label="Monthly Revenue" value="R450k" progress={75} />
-              <KpiRow label="Task Velocity" value="85%" progress={85} />
-              <KpiRow label="Compliance Score" value="98%" progress={98} />
+              <KpiRow label="Department Coverage" value={`${departments.length}/9`} progress={departmentCoverage} />
+              <KpiRow label="Open Workload" value={`${activeTasks}`} progress={Math.min(100, activeTasks * 10)} />
+              <KpiRow label="Overdue Tasks" value={`${overdueTasks}`} progress={Math.max(5, 100 - Math.min(100, overdueTasks * 15))} />
             </div>
           </div>
 
           <div className="glass-card p-8 rounded-3xl border-l-4 border-brand-gold bg-white">
             <h3 className="font-heading text-lg mb-6 text-brand-navy">Latest Audit Trail</h3>
             <div className="text-[11px] text-slate-500 space-y-6">
-              <AuditItem time="2m ago" action="Status Change" details="Task #104 moved to DONE" />
-              <AuditItem time="15m ago" action="Config Update" details="Finance mandate revised" />
-              <AuditItem time="1h ago" action="User Access" details="New member John invited" />
+              <AuditItem time="Now" action="Department Sync" details={`${departments.length} active departments visible in the current company view`} />
+              <AuditItem time="Now" action="Operational Status" details={`${activeTasks} active task items currently in execution`} />
+              <AuditItem time="Now" action="Access Context" details={`Signed in as ${user.roles.join(', ') || 'Standard User'}`} />
             </div>
           </div>
         </aside>

@@ -31,12 +31,13 @@ interface User {
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
+  accessToken: string | null;
   setup: {
     selectedDepartments: string[];
     completedDepartments: string[];
     templateSelections: Record<string, boolean>;
   };
-  setAuth: (user: User) => void;
+  setAuth: (user: User, accessToken?: string | null) => void;
   setDepartments: (depts: string[]) => void;
   setTemplatePreference: (deptId: string, enabled: boolean) => void;
   markDeptComplete: (deptId: string) => void;
@@ -48,12 +49,17 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       isAuthenticated: false,
+      accessToken: null,
       setup: {
         selectedDepartments: [],
         completedDepartments: [],
         templateSelections: {},
       },
-      setAuth: (user) => set({ user, isAuthenticated: true }),
+      setAuth: (user, accessToken) => set((state) => ({
+        user,
+        isAuthenticated: true,
+        accessToken: accessToken === undefined ? state.accessToken : accessToken,
+      })),
       setDepartments: (depts) => set((state) => ({
         setup: {
           ...state.setup,
@@ -82,6 +88,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () => set({ 
         user: null, 
         isAuthenticated: false,
+        accessToken: null,
         setup: { selectedDepartments: [], completedDepartments: [], templateSelections: {} }
       }),
     }),

@@ -161,6 +161,7 @@ export class AuthService {
     email: string;
     first_name: string;
     last_name: string;
+    company_id: string;
     company: unknown;
     department_members: Array<{ role: { name: string } | null }>;
     mfa_enabled: boolean;
@@ -172,6 +173,7 @@ export class AuthService {
       email: user.email,
       firstName: user.first_name,
       lastName: user.last_name,
+      companyId: user.company_id,
       company: user.company,
       roles,
       mfaEnabled: user.mfa_enabled,

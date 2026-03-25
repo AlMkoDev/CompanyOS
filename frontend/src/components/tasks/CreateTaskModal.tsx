@@ -9,6 +9,7 @@ interface CreateTaskModalProps {
     department_id: string;
     priority: string;
     status: string;
+    due_date?: string;
   }) => void;
   departments: { id: string; name: string }[];
 }
@@ -18,6 +19,7 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
   const [description, setDescription] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [priority, setPriority] = useState('medium');
+  const [dueDate, setDueDate] = useState('');
 
   if (!isOpen) return null;
 
@@ -33,12 +35,14 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
       department_id: departmentId,
       priority,
       status: 'open',
+      due_date: dueDate || undefined,
     });
     // Reset
     setTitle('');
     setDescription('');
     setDepartmentId('');
     setPriority('medium');
+    setDueDate('');
     onClose();
   };
 
@@ -104,6 +108,16 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
                 <option value="critical">Critical</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Due Date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
+            />
           </div>
 
           <div className="pt-6 flex justify-end gap-3">

@@ -30,8 +30,10 @@ export class TasksService {
     const task = await this.prisma.task.create({
       data: {
         ...data,
+        status: data.status ?? 'open',
         company_id: companyId,
         creator_id: userId,
+        due_date: data.due_date ? new Date(data.due_date) : undefined,
       },
     });
 

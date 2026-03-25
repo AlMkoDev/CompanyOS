@@ -2,10 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { apiFetch } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
 import { 
   Users, 
   Search, 
@@ -33,53 +36,43 @@ interface Employee {
 }
 
 export default function EmployeeDirectoryPage() {
+  const router = useRouter();
+  const { logout } = useAuthStore();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setTimeout(() => {
-      setEmployees([
-        {
-          id: '1',
-          emp_no: 'EMP-0001',
-          first_name: 'Sarah',
-          last_name: 'Verdant',
-          email: 'sarah.v@verdantfields.com',
-          phone: '+254 712 345 678',
-          status: 'active',
-          department: { name: 'Executive' },
-          position: { title: 'Managing Director' },
-          avatar_url: null,
-        },
-        {
-          id: '2',
-          emp_no: 'EMP-0002',
-          first_name: 'James',
-          last_name: 'Makokha',
-          email: 'james.m@verdantfields.com',
-          phone: '+254 722 987 654',
-          status: 'probation',
-          department: { name: 'Operations' },
-          position: { title: 'Farm Manager' },
-          avatar_url: null,
-        },
-        {
-          id: '3',
-          emp_no: 'EMP-0003',
-          first_name: 'Grace',
-          last_name: 'Nyambura',
-          email: 'grace.n@verdantfields.com',
-          phone: '+254 733 111 222',
-          status: 'active',
-          department: { name: 'Finance' },
-          position: { title: 'Head of Finance' },
-          avatar_url: null,
+    const loadEmployees = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await apiFetch('/hris/employees');
+
+        if (response.status === 401) {
+          logout();
+          router.push('/login');
+          return;
         }
-      ]);
-      setLoading(false);
-    }, 1000);
-  }, []);
+
+        if (!response.ok) {
+          throw new Error('Failed to load employee directory.');
+        }
+
+        const data = await response.json();
+        setEmployees(data);
+      } catch (loadError) {
+        console.error(loadError);
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load employee directory.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadEmployees();
+  }, [logout, router]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -127,6 +120,12 @@ export default function EmployeeDirectoryPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {error && (
+        <div className="rounded-[24px] border border-red-100 bg-red-50 px-6 py-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
         {loading ? (

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
+import { useRouter } from 'next/navigation';
 
 interface Task {
   id: string;
@@ -13,6 +14,7 @@ interface Task {
   priority: string;
   department_id: string;
   created_at: string;
+  due_date?: string;
   assignee?: { first_name: string; last_name: string };
   creator?: { first_name: string; last_name: string };
 }
@@ -37,11 +39,13 @@ const COLUMNS = [
 ];
 
 export default function TasksPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, logout } = useAuthStore();
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Drag state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -53,15 +57,28 @@ export default function TasksPage() {
         apiFetch('/departments')
       ])
       .then(async ([tasksRes, deptsRes]) => {
+        if (tasksRes.status === 401 || deptsRes.status === 401) {
+          logout();
+          router.push('/login');
+          return;
+        }
+
+        if (!tasksRes.ok || !deptsRes.ok) {
+          throw new Error('Failed to load task workspace.');
+        }
+
         const tasksData = await tasksRes.json();
         const deptsData = await deptsRes.json();
         setTasks(tasksData);
         setDepartments(deptsData);
       })
-      .catch(console.error)
+      .catch((fetchError) => {
+        console.error(fetchError);
+        setError(fetchError instanceof Error ? fetchError.message : 'Failed to load task workspace.');
+      })
       .finally(() => setLoading(false));
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, logout, router]);
 
   const handleCreateTask = async (data: CreateTaskInput) => {
     try {
@@ -73,32 +90,54 @@ export default function TasksPage() {
         body: JSON.stringify(data),
       });
 
+      if (res.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
       if (res.ok) {
         const newTask = await res.json();
         setTasks(prev => [newTask, ...prev]);
+      } else {
+        throw new Error('Failed to create task.');
       }
     } catch (error) {
       console.error('Failed to create task:', error);
+      setError(error instanceof Error ? error.message : 'Failed to create task.');
     }
   };
 
   const handleDrop = async (status: string) => {
     if (!draggedTaskId) return;
 
+    const previousTasks = tasks;
+
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === draggedTaskId ? { ...t, status } : t));
     
     try {
-      await apiFetch(`/tasks/${draggedTaskId}/status`, {
+      const response = await apiFetch(`/tasks/${draggedTaskId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ status }),
       });
+
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to update task status.');
+      }
     } catch (error) {
       console.error('Failed to update status:', error);
-      // Revert would go here in a robust app
+      setTasks(previousTasks);
+      setError(error instanceof Error ? error.message : 'Failed to update task status.');
     }
     
     setDraggedTaskId(null);
@@ -125,12 +164,17 @@ export default function TasksPage() {
     );
   }
 
+  const overdueCount = tasks.filter((task) => task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date()).length;
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-50 overflow-hidden">
       <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-slate-200 shrink-0">
         <div>
           <h1 className="text-2xl font-heading text-brand-navy">Operational TaskBoard</h1>
           <p className="text-sm text-slate-500 tracking-wide mt-1">Cross-departmental workflow synchronization</p>
+          <p className="text-xs text-slate-400 mt-2">
+            {tasks.length} tasks tracked · {overdueCount} overdue
+          </p>
         </div>
         <button 
           onClick={() => setIsModalOpen(true)}
@@ -141,6 +185,11 @@ export default function TasksPage() {
       </div>
 
       <div className="flex-1 overflow-x-auto p-8">
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
         <div className="flex gap-6 h-full min-w-max pb-4">
           {COLUMNS.map(col => (
             <div 
@@ -180,6 +229,11 @@ export default function TasksPage() {
                     <h4 className="font-medium text-slate-900 leading-tight mb-2 pl-2">{task.title}</h4>
                     {task.description && (
                       <p className="text-xs text-slate-500 line-clamp-2 mb-4 pl-2">{task.description}</p>
+                    )}
+                    {task.due_date && (
+                      <div className="mb-3 pl-2 text-[11px] font-medium text-slate-500">
+                        Due {new Date(task.due_date).toLocaleDateString()}
+                      </div>
                     )}
                     
                     <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-50 pl-2">

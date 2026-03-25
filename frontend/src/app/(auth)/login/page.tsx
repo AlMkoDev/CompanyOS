@@ -28,6 +28,7 @@ interface LoginUser {
 
 interface AuthSuccessResponse {
   user: LoginUser;
+  access_token?: string;
 }
 
 interface MfaChallengeResponse {
@@ -77,7 +78,7 @@ export default function LoginPage() {
   const setAuth = useAuthStore((state) => state.setAuth);
 
   const completeLogin = (data: AuthSuccessResponse) => {
-    setAuth(data.user);
+    setAuth(data.user, data.access_token ?? null);
     router.push('/dashboard');
   };
 
