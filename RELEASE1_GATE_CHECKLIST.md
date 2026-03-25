@@ -63,6 +63,10 @@ Covered spec files:
 
 These checks remain manual and must pass in staging before a Release 1 sign-off.
 
+Record results in:
+
+- [`RELEASE1_STAGING_SIGNOFF.md`](/C:/CompanyOS/RELEASE1_STAGING_SIGNOFF.md)
+
 ### Auth and session
 
 - register a new company and super-admin account
@@ -140,3 +144,12 @@ These do not block Release 1 by definition, but they remain outside the release 
 - payroll production hardening
 - cross-department enterprise workflow inbox maturity
 
+## 6. Evidence Log
+
+Use the staging sign-off worksheet to capture:
+
+- environment URL and build identifier
+- operator name and execution date
+- test accounts used
+- pass/fail status for each manual gate item
+- blocking defects or waivers
