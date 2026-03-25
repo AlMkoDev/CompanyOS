@@ -22,7 +22,7 @@ export class HrisController {
   @Post('employees')
   @Roles('Super Admin', 'Dept Admin', 'Chief Human Resources Officer', 'HR Director', 'Administration Manager')
   createEmployee(@Req() req: any, @Body() data: CreateEmployeeDto) {
-    return this.hrisService.createEmployee(req.user.companyId, data);
+    return this.hrisService.createEmployee(req.user.companyId, req.user.userId, data);
   }
 
   @Get('employees')
@@ -40,7 +40,7 @@ export class HrisController {
   @Patch('employees/:id')
   @Roles('Super Admin', 'Dept Admin', 'Chief Human Resources Officer', 'HR Director', 'Administration Manager')
   updateEmployee(@Req() req: any, @Param('id') id: string, @Body() data: UpdateEmployeeDto) {
-    return this.hrisService.updateEmployee(req.user.companyId, id, data);
+    return this.hrisService.updateEmployee(req.user.companyId, req.user.userId, id, data);
   }
 
   // ─── POSITIONS ───────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import {
   CreateEmployeeDto,
   CreatePositionDto,
@@ -9,13 +10,249 @@ import {
 
 @Injectable()
 export class HrisService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
+
+  private lifecycleTemplateKeyAliases: Record<string, string> = {
+    hr: 'hr',
+    human_resources: 'hr',
+    'human resources': 'hr',
+    it: 'it',
+    'it_systems': 'it',
+    'it & systems': 'it',
+    finance: 'fin',
+    operations: 'ops',
+    security: 'ops',
+    administration: 'adm',
+  };
+
+  private normalizeLifecycleDepartmentKey(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+
+    const normalized = value.trim().toLowerCase().replace(/\s+/g, '_');
+    return this.lifecycleTemplateKeyAliases[normalized] || normalized;
+  }
+
+  private mapLifecycleStatusToTaskStatus(status?: string | null) {
+    if (!status) return 'open';
+    if (status === 'completed') return 'done';
+    if (status === 'blocked') return 'blocked';
+    if (status === 'in_progress') return 'in-progress';
+    return 'open';
+  }
+
+  private async resolveDepartmentIdByTemplateOrName(
+    tx: Omit<PrismaService, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+    companyId: string,
+    departmentHint?: string | null,
+  ) {
+    if (!departmentHint) {
+      return null;
+    }
+
+    const normalizedKey = this.normalizeLifecycleDepartmentKey(departmentHint);
+    const department = await tx.department.findFirst({
+      where: {
+        company_id: companyId,
+        OR: [
+          { template_key: normalizedKey || undefined },
+          { name: { equals: departmentHint, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    return department?.id || null;
+  }
+
+  private async createOnboardingArtifacts(
+    tx: Omit<PrismaService, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+    companyId: string,
+    creatorUserId: string | undefined,
+    employee: {
+      id: string;
+      hire_date: Date;
+      first_name: string;
+      last_name: string;
+      department_id: string | null;
+    },
+  ) {
+    const existingPlan = await tx.onboardingPlan.findUnique({
+      where: { employee_id: employee.id },
+    });
+
+    if (existingPlan) {
+      return existingPlan;
+    }
+
+    const plan = await tx.onboardingPlan.create({
+      data: {
+        employee_id: employee.id,
+        start_date: employee.hire_date,
+        status: 'started',
+      },
+    });
+
+    const defaultTasks = [
+      { title: 'IT Setup: Email & Hardware', category: 'IT', assignee_dept: 'IT' },
+      { title: 'HR Induction: Policies & Benefits', category: 'HR', assignee_dept: 'HR' },
+      { title: 'Finance: Bank & Tax Details', category: 'Finance', assignee_dept: 'Finance' },
+      { title: 'Security: Access Cards & Badge', category: 'Security', assignee_dept: 'Operations' },
+    ];
+
+    for (let index = 0; index < defaultTasks.length; index += 1) {
+      const lifecycleTask = defaultTasks[index];
+      const dueDate = new Date(employee.hire_date);
+      dueDate.setDate(dueDate.getDate() + index + 1);
+
+      const onboardingTask = await tx.onboardingTask.create({
+        data: {
+          plan_id: plan.id,
+          title: lifecycleTask.title,
+          category: lifecycleTask.category,
+          assignee_dept: lifecycleTask.assignee_dept,
+          due_date: dueDate,
+        },
+      });
+
+      const departmentId =
+        (await this.resolveDepartmentIdByTemplateOrName(tx, companyId, lifecycleTask.assignee_dept)) ||
+        employee.department_id;
+
+      if (!departmentId || !creatorUserId) {
+        continue;
+      }
+
+      await tx.task.create({
+        data: {
+          company_id: companyId,
+          department_id: departmentId,
+          creator_id: creatorUserId,
+          title: `${employee.first_name} ${employee.last_name}: ${lifecycleTask.title}`,
+          description: `Onboarding workflow task for ${employee.first_name} ${employee.last_name}.`,
+          task_code: `ONB-${plan.id.slice(0, 8)}-${String(index + 1).padStart(2, '0')}`,
+          task_category: 'onboarding',
+          status: 'open',
+          priority: 'medium',
+          due_date: dueDate,
+          attachments: {
+            lifecycle: 'onboarding',
+            plan_id: plan.id,
+            onboarding_task_id: onboardingTask.id,
+            employee_id: employee.id,
+          },
+        },
+      });
+    }
+
+    const milestones = [30, 60, 90].map((days) => {
+      const date = new Date(employee.hire_date);
+      date.setDate(date.getDate() + days);
+      return {
+        plan_id: plan.id,
+        type: `${days}day`,
+        due_date: date,
+      };
+    });
+
+    await tx.milestone.createMany({ data: milestones });
+
+    return plan;
+  }
+
+  private async createOffboardingArtifacts(
+    tx: Omit<PrismaService, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+    companyId: string,
+    creatorUserId: string | undefined,
+    employee: {
+      id: string;
+      first_name: string;
+      last_name: string;
+      termination_date: Date | null;
+      department_id: string | null;
+    },
+  ) {
+    const lastDay = employee.termination_date || new Date();
+    const existingPlan = await tx.offboardingPlan.findUnique({
+      where: { employee_id: employee.id },
+    });
+
+    const plan =
+      existingPlan ||
+      (await tx.offboardingPlan.create({
+        data: {
+          employee_id: employee.id,
+          last_day: lastDay,
+        },
+      }));
+
+    const lifecycleTasks = [
+      { title: 'IT Deprovisioning and Access Removal', assignee_dept: 'IT', priority: 'high' },
+      { title: 'Recover Company Assets and Badge', assignee_dept: 'Operations', priority: 'high' },
+      { title: 'Finalize Payroll and Benefits Closure', assignee_dept: 'Finance', priority: 'high' },
+      { title: 'Archive Personnel Documents and Records', assignee_dept: 'HR', priority: 'medium' },
+    ];
+
+    for (let index = 0; index < lifecycleTasks.length; index += 1) {
+      const lifecycleTask = lifecycleTasks[index];
+      const departmentId =
+        (await this.resolveDepartmentIdByTemplateOrName(tx, companyId, lifecycleTask.assignee_dept)) ||
+        employee.department_id;
+
+      if (!departmentId || !creatorUserId) {
+        continue;
+      }
+
+      const taskCode = `OFF-${plan.id.slice(0, 8)}-${String(index + 1).padStart(2, '0')}`;
+      const existingTask = await tx.task.findFirst({
+        where: {
+          company_id: companyId,
+          task_code: taskCode,
+        },
+        select: { id: true },
+      });
+
+      if (existingTask) {
+        continue;
+      }
+
+      await tx.task.create({
+        data: {
+          company_id: companyId,
+          department_id: departmentId,
+          creator_id: creatorUserId,
+          title: `${employee.first_name} ${employee.last_name}: ${lifecycleTask.title}`,
+          description: `Offboarding workflow task for ${employee.first_name} ${employee.last_name}.`,
+          task_code: taskCode,
+          task_category: 'offboarding',
+          status: 'open',
+          priority: lifecycleTask.priority,
+          due_date: lastDay,
+          attachments: {
+            lifecycle: 'offboarding',
+            plan_id: plan.id,
+            employee_id: employee.id,
+          },
+        },
+      });
+    }
+
+    return plan;
+  }
 
   private async getCompanyEmployee(companyId: string, id: string) {
     const employee = await this.prisma.employee.findFirst({
       where: {
         id,
         company_id: companyId,
+      },
+      include: {
+        onboarding: true,
+        offboarding: true,
       },
     });
 
@@ -28,7 +265,7 @@ export class HrisService {
 
   // ─── EMPLOYEES ───────────────────────────────────────────────────────────────
 
-  async createEmployee(companyId: string, data: CreateEmployeeDto) {
+  async createEmployee(companyId: string, userId: string, data: CreateEmployeeDto) {
     const count = await this.prisma.employee.count({ where: { company_id: companyId } });
     const empNo = `EMP-${String(count + 1).padStart(4, '0')}`;
     
@@ -43,39 +280,30 @@ export class HrisService {
         include: { department: true, position: true },
       });
 
-      // --- Auto-trigger Onboarding ---
-      const plan = await tx.onboardingPlan.create({
+      await tx.employmentHistory.create({
         data: {
           employee_id: employee.id,
+          department_id: employee.department_id,
+          position_id: employee.position_id,
           start_date: employee.hire_date,
-          status: 'started',
+          change_reason: 'Initial hire',
         },
       });
 
-      // Default tasks
-      const defaultTasks = [
-        { title: 'IT Setup: Email & Hardware', category: 'IT', assignee_dept: 'IT' },
-        { title: 'HR Induction: Policies & Benefits', category: 'HR', assignee_dept: 'HR' },
-        { title: 'Finance: Bank & Tax Details', category: 'Finance', assignee_dept: 'Finance' },
-        { title: 'Security: Access Cards & Badge', category: 'Security', assignee_dept: 'Operations' },
-      ];
+      await this.createOnboardingArtifacts(tx, companyId, userId, employee);
 
-      await tx.onboardingTask.createMany({
-        data: defaultTasks.map(t => ({ ...t, plan_id: plan.id })),
+      await this.audit.log({
+        companyId,
+        userId,
+        action: 'CREATED_EMPLOYEE',
+        resourceType: 'EMPLOYEE',
+        resourceId: employee.id,
+        details: {
+          emp_no: employee.emp_no,
+          department_id: employee.department_id,
+          position_id: employee.position_id,
+        },
       });
-
-      // 30/60/90 milestones
-      const milestones = [30, 60, 90].map(days => {
-        const date = new Date(employee.hire_date);
-        date.setDate(date.getDate() + days);
-        return {
-          plan_id: plan.id,
-          type: `${days}day`,
-          due_date: date,
-        };
-      });
-
-      await tx.milestone.createMany({ data: milestones });
 
       return employee;
     });
@@ -119,13 +347,93 @@ export class HrisService {
     return emp;
   }
 
-  async updateEmployee(companyId: string, id: string, data: UpdateEmployeeDto) {
-    await this.getCompanyEmployee(companyId, id);
+  async updateEmployee(companyId: string, userId: string, id: string, data: UpdateEmployeeDto) {
+    const currentEmployee = await this.getCompanyEmployee(companyId, id);
 
-    return this.prisma.employee.update({
-      where: { id },
-      data: { ...data, updated_at: new Date() },
-      include: { department: true, position: true },
+    return this.prisma.$transaction(async (tx) => {
+      const nextStatus = data.status || currentEmployee.status;
+      const nextDepartmentId = data.department_id === undefined ? currentEmployee.department_id : data.department_id;
+      const nextPositionId = data.position_id === undefined ? currentEmployee.position_id : data.position_id;
+      const nextHireDate = data.hire_date ? new Date(data.hire_date) : currentEmployee.hire_date;
+      const terminationDate =
+        nextStatus === 'terminated'
+          ? currentEmployee.termination_date || new Date()
+          : data.status && data.status !== 'terminated'
+            ? null
+            : currentEmployee.termination_date;
+
+      const employee = await tx.employee.update({
+        where: { id },
+        data: {
+          ...data,
+          hire_date: data.hire_date ? new Date(data.hire_date) : undefined,
+          status: nextStatus,
+          termination_date: terminationDate,
+          updated_at: new Date(),
+        },
+        include: { department: true, position: true },
+      });
+
+      const roleChanged =
+        currentEmployee.department_id !== nextDepartmentId ||
+        currentEmployee.position_id !== nextPositionId;
+
+      if (roleChanged) {
+        await tx.employmentHistory.updateMany({
+          where: {
+            employee_id: id,
+            end_date: null,
+          },
+          data: {
+            end_date: new Date(),
+          },
+        });
+
+        await tx.employmentHistory.create({
+          data: {
+            employee_id: id,
+            department_id: nextDepartmentId,
+            position_id: nextPositionId,
+            start_date: new Date(),
+            change_reason: 'Role or department update',
+          },
+        });
+      }
+
+      if (data.hire_date && !currentEmployee.onboarding) {
+        await this.createOnboardingArtifacts(tx, companyId, userId, {
+          id: employee.id,
+          hire_date: nextHireDate,
+          first_name: employee.first_name,
+          last_name: employee.last_name,
+          department_id: employee.department_id,
+        });
+      }
+
+      if (nextStatus === 'terminated') {
+        await this.createOffboardingArtifacts(tx, companyId, userId, {
+          id: employee.id,
+          first_name: employee.first_name,
+          last_name: employee.last_name,
+          termination_date: terminationDate,
+          department_id: employee.department_id,
+        });
+      }
+
+      await this.audit.log({
+        companyId,
+        userId,
+        action: 'UPDATED_EMPLOYEE',
+        resourceType: 'EMPLOYEE',
+        resourceId: employee.id,
+        details: {
+          status: employee.status,
+          department_id: employee.department_id,
+          position_id: employee.position_id,
+        },
+      });
+
+      return employee;
     });
   }
 
