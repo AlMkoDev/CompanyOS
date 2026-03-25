@@ -88,6 +88,23 @@ class DepartmentCommunicationLineDto {
   purpose?: string;
 }
 
+class DepartmentKpiDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  target?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  unit?: string;
+}
+
 class DepartmentDataPackItemDto {
   @IsOptional()
   @IsInt()
@@ -183,6 +200,17 @@ export class CreateDepartmentDto {
   @ValidateNested({ each: true })
   @Type(() => DepartmentCommunicationLineDto)
   communication_lines?: DepartmentCommunicationLineDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DepartmentKpiDto)
+  kpis?: DepartmentKpiDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  workflows?: string[];
 
   @IsOptional()
   @IsString()

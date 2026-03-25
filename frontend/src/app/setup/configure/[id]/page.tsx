@@ -14,6 +14,8 @@ import {
   departmentQuickStartTemplates,
 } from '@/lib/setup/departmentTemplates';
 
+const WORKFLOW_ACTIVITY_COMPONENT = 'Core Workflow Definitions';
+
 const subSteps = [
   { id: 1, name: 'Identity', icon: Settings },
   { id: 2, name: 'Mandate', icon: Target },
@@ -69,13 +71,36 @@ interface DepartmentConfigPayload {
   mandate: string;
   core_responsibilities: string;
   deliverables: string;
+  kpis: KPI[];
   roles: Role[];
   operational_routines: DepartmentRoutineGroup[];
   data_pack: DepartmentDataPackItem[];
   activities: DepartmentActivityComponent[];
   communication_lines: DepartmentCommunicationLine[];
   budget: string;
+  workflows: string[];
 }
+
+const extractWorkflowDefinitions = (
+  activities?: DepartmentActivityComponent[] | null,
+  workflows?: string[],
+) => {
+  if (Array.isArray(workflows) && workflows.length > 0) {
+    return workflows;
+  }
+
+  if (!Array.isArray(activities)) {
+    return [];
+  }
+
+  const workflowActivity = activities.find(
+    (activity) => activity?.component === WORKFLOW_ACTIVITY_COMPONENT,
+  );
+
+  return Array.isArray(workflowActivity?.sections)
+    ? workflowActivity.sections.filter((section): section is string => typeof section === 'string')
+    : [];
+};
 
 export default function DepartmentWizard() {
   const [step, setStep] = useState(1);
@@ -228,7 +253,7 @@ export default function DepartmentWizard() {
                   activities: Array.isArray(existing.activities) ? existing.activities : prev.activities,
                   communication_lines: Array.isArray(existing.communication_lines) ? existing.communication_lines : prev.communication_lines,
                   budget: existing.budget_allocation ? String(existing.budget_allocation) : '',
-                  workflows: Array.isArray(existing.workflows) ? existing.workflows : []
+                  workflows: extractWorkflowDefinitions(existing.activities, existing.workflows)
                 }));
               }
             } catch (je) {
@@ -272,12 +297,14 @@ export default function DepartmentWizard() {
       mandate: data.mandate,
       core_responsibilities: data.core_responsibilities,
       deliverables: data.deliverables,
+      kpis: data.kpis,
       roles: data.roles,
       operational_routines: data.operational_routines,
       data_pack: data.data_pack,
       activities: data.activities,
       communication_lines: data.communication_lines,
       budget: data.budget || '0',
+      workflows: data.workflows,
     };
 
     try {

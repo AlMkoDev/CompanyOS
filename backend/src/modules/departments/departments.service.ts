@@ -19,6 +19,11 @@ const standardDepartmentCatalog = [
   { template_key: 'adm', name: 'Administration', description: 'Records & Procurement', icon: 'Clipboard', color: '#0F766E' },
 ] as const;
 
+const WORKFLOW_ACTIVITY_COMPONENT = 'Core Workflow Definitions';
+const WORKFLOW_ACTIVITY_OWNER = 'Department Lead';
+const WORKFLOW_ACTIVITY_SUMMARY =
+  'Sequenced workflow definitions configured for this department.';
+
 @Injectable()
 export class DepartmentsService {
   constructor(private prisma: PrismaService) {}
@@ -41,6 +46,7 @@ export class DepartmentsService {
 
     return {
       templateKey,
+      kpis: Array.isArray(data.kpis) ? data.kpis : [],
       payload: {
         mandate: data.mandate,
         core_responsibilities: data.core_responsibilities,
@@ -48,7 +54,7 @@ export class DepartmentsService {
         roles: data.roles,
         operational_routines: data.operational_routines,
         data_pack: data.data_pack,
-        activities: data.activities,
+        activities: this.mergeWorkflowActivities(data.activities, data.workflows),
         communication_lines: data.communication_lines,
         budget_allocation: data.budget ? parseFloat(data.budget) : null,
         description: data.description,
@@ -59,6 +65,78 @@ export class DepartmentsService {
         company_id: companyId,
       },
     };
+  }
+
+  private mergeWorkflowActivities(
+    activities: UpdateDepartmentConfigDto['activities'],
+    workflows: string[] | undefined,
+  ) {
+    const baseActivities = Array.isArray(activities)
+      ? activities.filter(
+          (item) => item?.component !== WORKFLOW_ACTIVITY_COMPONENT,
+        )
+      : [];
+    const workflowSteps = Array.isArray(workflows)
+      ? workflows
+          .map((workflow) => (typeof workflow === 'string' ? workflow.trim() : ''))
+          .filter(Boolean)
+      : [];
+
+    if (workflowSteps.length === 0) {
+      return baseActivities;
+    }
+
+    return [
+      ...baseActivities,
+      {
+        component: WORKFLOW_ACTIVITY_COMPONENT,
+        owner: WORKFLOW_ACTIVITY_OWNER,
+        summary: WORKFLOW_ACTIVITY_SUMMARY,
+        sections: workflowSteps,
+      },
+    ];
+  }
+
+  private mapKpiCreatePayload(
+    companyId: string,
+    departmentId: string,
+    kpis: NonNullable<UpdateDepartmentConfigDto['kpis']>,
+  ) {
+    return kpis
+      .filter((item) => item?.name?.trim())
+      .map((item, index) => ({
+        company_id: companyId,
+        department_id: departmentId,
+        name: item.name!.trim(),
+        unit: item.unit?.trim() || 'count',
+        target: item.target && item.target.trim() !== '' ? new Prisma.Decimal(item.target.trim()) : null,
+        status: 'on-track',
+        frequency: 'monthly',
+        kpi_code: `${departmentId}-${String(index + 1).padStart(2, '0')}`,
+      }));
+  }
+
+  private async syncDepartmentKpis(
+    tx: Omit<PrismaService, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>,
+    companyId: string,
+    departmentId: string,
+    kpis: NonNullable<UpdateDepartmentConfigDto['kpis']>,
+  ) {
+    await tx.kPI.deleteMany({
+      where: {
+        company_id: companyId,
+        department_id: departmentId,
+      },
+    });
+
+    const kpiPayload = this.mapKpiCreatePayload(companyId, departmentId, kpis);
+    if (kpiPayload.length === 0) {
+      return;
+    }
+
+    await tx.kPI.createMany({
+      data: kpiPayload,
+    });
   }
 
   private async findDepartmentForUpdate(idOrTemplateKey: string, companyId: string, templateKey?: string | null) {
@@ -143,6 +221,9 @@ export class DepartmentsService {
         template_key: templateKey,
         status: 'active',
       },
+      include: {
+        kpis: true,
+      },
     });
   }
 
@@ -191,7 +272,7 @@ export class DepartmentsService {
   async applyTemplates(companyId: string, data: ApplyDepartmentTemplatesDto) {
     await this.prisma.$transaction(async (tx) => {
       for (const department of data.departments) {
-        const { templateKey, payload } = this.buildDepartmentPayload(companyId, department.template_key, {
+        const { templateKey, payload, kpis } = this.buildDepartmentPayload(companyId, department.template_key, {
           ...department.config,
           template_key: department.template_key,
         });
@@ -204,19 +285,21 @@ export class DepartmentsService {
         });
 
         if (existingDepartment) {
-          await tx.department.update({
+          const updatedDepartment = await tx.department.update({
             where: { id: existingDepartment.id },
             data: payload,
           });
+          await this.syncDepartmentKpis(tx, companyId, updatedDepartment.id, kpis);
           continue;
         }
 
-        await tx.department.create({
+        const createdDepartment = await tx.department.create({
           data: {
             ...payload,
             name: payload.name || 'New Department',
           },
         });
+        await this.syncDepartmentKpis(tx, companyId, createdDepartment.id, kpis);
       }
     });
 
@@ -224,21 +307,33 @@ export class DepartmentsService {
   }
 
   async updateConfig(id: string, companyId: string, data: UpdateDepartmentConfigDto) {
-    const { templateKey, payload } = this.buildDepartmentPayload(companyId, id, data);
+    const { templateKey, payload, kpis } = this.buildDepartmentPayload(companyId, id, data);
     const dept = await this.findDepartmentForUpdate(id, companyId, templateKey);
 
-    if (dept) {
-      return this.prisma.department.update({
-        where: { id: dept.id },
-        data: payload,
-      });
-    } else {
-      return this.prisma.department.create({
-        data: {
-          ...payload,
-          name: payload.name || 'New Department',
+    return this.prisma.$transaction(async (tx) => {
+      const savedDepartment = dept
+        ? await tx.department.update({
+            where: { id: dept.id },
+            data: payload,
+          })
+        : await tx.department.create({
+            data: {
+              ...payload,
+              name: payload.name || 'New Department',
+            },
+          });
+
+      await this.syncDepartmentKpis(tx, companyId, savedDepartment.id, kpis);
+
+      return tx.department.findFirst({
+        where: {
+          id: savedDepartment.id,
+          company_id: companyId,
+        },
+        include: {
+          kpis: true,
         },
       });
-    }
+    });
   }
 }

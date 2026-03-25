@@ -12,6 +12,10 @@ describe('DepartmentsService', () => {
       update: jest.fn(),
       create: jest.fn(),
     },
+    kPI: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -62,6 +66,10 @@ describe('DepartmentsService', () => {
           update: prisma.department.update,
           create: prisma.department.create,
         },
+        kPI: {
+          deleteMany: prisma.kPI.deleteMany,
+          createMany: prisma.kPI.createMany,
+        },
       }),
     );
     prisma.department.findMany.mockResolvedValue([
@@ -74,7 +82,15 @@ describe('DepartmentsService', () => {
     const result = await service.applyTemplates('company-1', {
       departments: [
         { template_key: 'fin', config: { name: 'Finance', mandate: 'Own finance' } },
-        { template_key: 'human_resources', config: { name: 'Human Resources', mandate: 'Own people ops' } },
+        {
+          template_key: 'human_resources',
+          config: {
+            name: 'Human Resources',
+            mandate: 'Own people ops',
+            kpis: [{ name: 'Time to fill', target: '35', unit: 'days' }],
+            workflows: ['Open requisition', 'Screen candidates'],
+          },
+        },
       ],
     });
 
@@ -93,7 +109,26 @@ describe('DepartmentsService', () => {
         template_key: 'human_resources',
         name: 'Human Resources',
         mandate: 'Own people ops',
+        activities: [
+          {
+            component: 'Core Workflow Definitions',
+            owner: 'Department Lead',
+            summary: 'Sequenced workflow definitions configured for this department.',
+            sections: ['Open requisition', 'Screen candidates'],
+          },
+        ],
       }),
+    });
+    expect(prisma.kPI.deleteMany).toHaveBeenCalled();
+    expect(prisma.kPI.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          company_id: 'company-1',
+          department_id: 'dept-hr',
+          name: 'Time to fill',
+          unit: 'days',
+        }),
+      ],
     });
     expect(result).toHaveLength(2);
   });
