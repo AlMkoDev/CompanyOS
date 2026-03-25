@@ -21,10 +21,65 @@ const templates = [
 ];
 
 export default function DepartmentsStep() {
-  const { setup, setDepartments, setTemplatePreference, logout } = useAuthStore();
+  const { setup, setDepartments, setTemplatePreference, hydrateSetup, isAuthenticated, logout } = useAuthStore();
   const [selected, setSelected] = useState<string[]>(setup.selectedDepartments || []);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isAuthenticated || setup.selectedDepartments.length > 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadSetup = async () => {
+      try {
+        const response = await apiFetch('/company', {
+          signal: controller.signal,
+        });
+
+        if (response.status === 401) {
+          logout();
+          router.push('/login');
+          return;
+        }
+
+        if (!response.ok) {
+          return;
+        }
+
+        const company = await response.json();
+        const config =
+          company?.setup?.steps_config && typeof company.setup.steps_config === 'object'
+            ? company.setup.steps_config
+            : {};
+        const selectedDepartments = Array.isArray(config.selectedDepartments)
+          ? config.selectedDepartments.filter((value: unknown): value is string => typeof value === 'string')
+          : [];
+        const templateSelections =
+          config.templateSelections && typeof config.templateSelections === 'object'
+            ? Object.fromEntries(
+                Object.entries(config.templateSelections).map(([key, value]) => [key, Boolean(value)]),
+              )
+            : {};
+
+        hydrateSetup({
+          selectedDepartments,
+          templateSelections,
+        });
+        setSelected(selectedDepartments);
+      } catch (error) {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
+          console.error('Failed to hydrate setup state:', error);
+        }
+      }
+    };
+
+    void loadSetup();
+
+    return () => controller.abort();
+  }, [hydrateSetup, isAuthenticated, logout, router, setup.selectedDepartments.length]);
 
   const toggle = (id: string) => {
     const next = selected.includes(id) ? selected.filter(i => i !== id) : [...selected, id];

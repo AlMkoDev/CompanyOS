@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateDepartmentDto, UpdateDepartmentConfigDto } from './dto/department.dto';
+import {
+  ApplyDepartmentTemplatesDto,
+  CreateDepartmentDto,
+  UpdateDepartmentConfigDto,
+} from './dto/department.dto';
 
 const standardDepartmentCatalog = [
   { template_key: 'fin', name: 'Finance', description: 'Accounting, Budgeting & P&L', icon: 'Wallet', color: '#B8860B' },
@@ -18,6 +22,67 @@ const standardDepartmentCatalog = [
 @Injectable()
 export class DepartmentsService {
   constructor(private prisma: PrismaService) {}
+
+  private normalizeTemplateKey(templateKey?: string | null) {
+    if (!templateKey) return null;
+    if (templateKey === 'administration') return 'adm';
+    if (templateKey === 'sales') return 'sls';
+    return templateKey;
+  }
+
+  private buildDepartmentPayload(
+    companyId: string,
+    idOrTemplateKey: string,
+    data: UpdateDepartmentConfigDto,
+  ) {
+    const templateKey = this.normalizeTemplateKey(
+      data.template_key || (idOrTemplateKey.includes('-') ? null : idOrTemplateKey),
+    );
+
+    return {
+      templateKey,
+      payload: {
+        mandate: data.mandate,
+        core_responsibilities: data.core_responsibilities,
+        deliverables: data.deliverables,
+        roles: data.roles,
+        operational_routines: data.operational_routines,
+        data_pack: data.data_pack,
+        activities: data.activities,
+        communication_lines: data.communication_lines,
+        budget_allocation: data.budget ? parseFloat(data.budget) : null,
+        description: data.description,
+        icon: data.icon,
+        color: data.color,
+        name: data.name,
+        template_key: templateKey,
+        company_id: companyId,
+      },
+    };
+  }
+
+  private async findDepartmentForUpdate(idOrTemplateKey: string, companyId: string, templateKey?: string | null) {
+    if (idOrTemplateKey.includes('-')) {
+      return this.prisma.department.findFirst({
+        where: {
+          id: idOrTemplateKey,
+          company_id: companyId,
+        },
+      });
+    }
+
+    if (!templateKey) {
+      return null;
+    }
+
+    return this.prisma.department.findFirst({
+      where: {
+        company_id: companyId,
+        template_key: templateKey,
+        status: 'active',
+      },
+    });
+  }
 
   private isSchemaDriftError(error: unknown) {
     return (
@@ -123,45 +188,44 @@ export class DepartmentsService {
     return this.findAll(companyId);
   }
 
+  async applyTemplates(companyId: string, data: ApplyDepartmentTemplatesDto) {
+    await this.prisma.$transaction(async (tx) => {
+      for (const department of data.departments) {
+        const { templateKey, payload } = this.buildDepartmentPayload(companyId, department.template_key, {
+          ...department.config,
+          template_key: department.template_key,
+        });
+
+        const existingDepartment = await tx.department.findFirst({
+          where: {
+            company_id: companyId,
+            template_key: templateKey,
+          },
+        });
+
+        if (existingDepartment) {
+          await tx.department.update({
+            where: { id: existingDepartment.id },
+            data: payload,
+          });
+          continue;
+        }
+
+        await tx.department.create({
+          data: {
+            ...payload,
+            name: payload.name || 'New Department',
+          },
+        });
+      }
+    });
+
+    return this.findAll(companyId);
+  }
+
   async updateConfig(id: string, companyId: string, data: UpdateDepartmentConfigDto) {
-    const templateKey = data.template_key || (id.includes('-') ? null : id);
-
-    // Find existing department
-    let dept = null;
-    if (id.includes('-')) {
-      dept = await this.prisma.department.findFirst({
-        where: {
-          id,
-          company_id: companyId,
-        },
-      });
-    } else if (templateKey) {
-      dept = await this.prisma.department.findFirst({
-        where: {
-          company_id: companyId,
-          template_key: templateKey,
-          status: 'active',
-        },
-      });
-    }
-
-    const payload = {
-      mandate: data.mandate,
-      core_responsibilities: data.core_responsibilities,
-      deliverables: data.deliverables,
-      roles: data.roles,
-      operational_routines: data.operational_routines,
-      data_pack: data.data_pack,
-      activities: data.activities,
-      communication_lines: data.communication_lines,
-      budget_allocation: data.budget ? parseFloat(data.budget) : null,
-      description: data.description,
-      icon: data.icon,
-      color: data.color,
-      name: data.name || (dept ? undefined : 'New Department'),
-      template_key: templateKey,
-      company_id: companyId,
-    };
+    const { templateKey, payload } = this.buildDepartmentPayload(companyId, id, data);
+    const dept = await this.findDepartmentForUpdate(id, companyId, templateKey);
 
     if (dept) {
       return this.prisma.department.update({
@@ -170,7 +234,10 @@ export class DepartmentsService {
       });
     } else {
       return this.prisma.department.create({
-        data: payload,
+        data: {
+          ...payload,
+          name: payload.name || 'New Department',
+        },
       });
     }
   }

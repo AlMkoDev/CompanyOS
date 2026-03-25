@@ -100,6 +100,18 @@ class DepartmentDataPackItemDto {
   system?: string;
 }
 
+class ApplyDepartmentTemplateItemDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  template_key!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateDepartmentConfigDto)
+  config?: UpdateDepartmentConfigDto;
+}
+
 export class CreateDepartmentDto {
   @IsOptional()
   @IsString()
@@ -179,3 +191,10 @@ export class CreateDepartmentDto {
 }
 
 export class UpdateDepartmentConfigDto extends CreateDepartmentDto {}
+
+export class ApplyDepartmentTemplatesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApplyDepartmentTemplateItemDto)
+  departments!: ApplyDepartmentTemplateItemDto[];
+}

@@ -27,7 +27,7 @@ const templates: Record<string, DepartmentTemplate> = {
 };
 
 export default function ConfigureHub() {
-  const { setup, user, setAuth, markDeptComplete, logout } = useAuthStore();
+  const { setup, user, setAuth, hydrateSetup, markDeptComplete, logout, isAuthenticated } = useAuthStore();
   const selectedDepts = setup.selectedDepartments.length > 0 
     ? setup.selectedDepartments 
     : ['fin', 'hr', 'ops']; // Fallback for dev convenience
@@ -36,6 +36,71 @@ export default function ConfigureHub() {
   const templateSelections = setup.templateSelections;
   const router = useRouter();
   const [autoApplying, setAutoApplying] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isAuthenticated || setup.selectedDepartments.length > 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadSetup = async () => {
+      try {
+        const response = await apiFetch('/company', {
+          signal: controller.signal,
+        });
+
+        if (response.status === 401) {
+          logout();
+          router.push('/login');
+          return;
+        }
+
+        if (!response.ok) {
+          return;
+        }
+
+        const company = await response.json();
+        const config =
+          company?.setup?.steps_config && typeof company.setup.steps_config === 'object'
+            ? company.setup.steps_config
+            : {};
+        const selectedDepartments = Array.isArray(config.selectedDepartments)
+          ? config.selectedDepartments.filter((value: unknown): value is string => typeof value === 'string')
+          : [];
+        const templateSelections =
+          config.templateSelections && typeof config.templateSelections === 'object'
+            ? Object.fromEntries(
+                Object.entries(config.templateSelections).map(([key, value]) => [key, Boolean(value)]),
+              )
+            : {};
+        const completedDepartments = Array.isArray(company?.departments)
+          ? company.departments
+              .filter((department: { template_key?: string | null; mandate?: string | null; core_responsibilities?: string | null; deliverables?: string | null }) =>
+                Boolean(
+                  department.template_key &&
+                    (department.mandate || department.core_responsibilities || department.deliverables),
+                ),
+              )
+              .map((department: { template_key: string }) => department.template_key)
+          : [];
+
+        hydrateSetup({
+          selectedDepartments,
+          templateSelections,
+          completedDepartments,
+        });
+      } catch (error) {
+        if (!(error instanceof Error && error.name === 'AbortError')) {
+          console.error('Failed to hydrate configure state:', error);
+        }
+      }
+    };
+
+    void loadSetup();
+
+    return () => controller.abort();
+  }, [hydrateSetup, isAuthenticated, logout, router, setup.selectedDepartments.length]);
 
   const handleConfigure = (id: string) => {
     router.push(`/setup/configure/${id}`);
@@ -53,44 +118,52 @@ export default function ConfigureHub() {
     setAutoApplying(true);
 
     try {
-      for (const id of selectedDepts) {
-        const template = departmentQuickStartTemplates[id];
+      const response = await apiFetch('/departments/apply-templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          departments: selectedDepts.map((id) => {
+            const template = departmentQuickStartTemplates[id];
 
-        const response = await apiFetch(`/departments/${id}/config`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            template_key: id,
-            name: template.name,
-            description: template.description,
-            color: template.color,
-            mandate: template.mandate,
-            core_responsibilities: template.coreResponsibilities,
-            deliverables: template.deliverables,
-            roles: template.roles,
-            operational_routines: template.operationalRoutines,
-            data_pack: template.dataPack,
-            activities: template.activities,
-            communication_lines: template.communicationLines,
-            budget: template.budget,
+            return {
+              template_key: id,
+              config: {
+                template_key: id,
+                name: template.name,
+                description: template.description,
+                icon: template.icon,
+                color: template.color,
+                mandate: template.mandate,
+                core_responsibilities: template.coreResponsibilities,
+                deliverables: template.deliverables,
+                roles: template.roles,
+                operational_routines: template.operationalRoutines,
+                data_pack: template.dataPack,
+                activities: template.activities,
+                communication_lines: template.communicationLines,
+                budget: template.budget,
+              },
+            };
           }),
-        });
+        }),
+      });
 
-        if (response.status === 401) {
-          logout();
-          router.push('/login');
-          return;
-        }
-
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(message || `Failed to apply ${template.name} template.`);
-        }
-
-        markDeptComplete(id);
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
       }
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Failed to apply department templates.');
+      }
+
+      selectedDepts.forEach((id) => {
+        markDeptComplete(id);
+      });
 
       const companySetupResponse = await apiFetch('/company/setup', {
         method: 'PATCH',

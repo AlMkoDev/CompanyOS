@@ -10,7 +10,11 @@ import {
 import { DepartmentsService } from './departments.service';
 import { JwtAuthGuard } from '../auth/jwt.strategy';
 import { CurrentUser } from '../../common/decorators/user.decorator';
-import { CreateDepartmentDto, UpdateDepartmentConfigDto } from './dto/department.dto';
+import {
+  ApplyDepartmentTemplatesDto,
+  CreateDepartmentDto,
+  UpdateDepartmentConfigDto,
+} from './dto/department.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('departments')
@@ -38,6 +42,14 @@ export class DepartmentsController {
   @Post('bootstrap-standard')
   async bootstrapStandard(@CurrentUser('companyId') companyId: string) {
     return this.departmentsService.bootstrapStandard(companyId);
+  }
+
+  @Post('apply-templates')
+  async applyTemplates(
+    @CurrentUser('companyId') companyId: string,
+    @Body() data: ApplyDepartmentTemplatesDto,
+  ) {
+    return this.departmentsService.applyTemplates(companyId, data);
   }
 
   @Get(':id')

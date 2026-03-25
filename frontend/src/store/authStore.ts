@@ -38,6 +38,11 @@ interface AuthState {
     templateSelections: Record<string, boolean>;
   };
   setAuth: (user: User, accessToken?: string | null) => void;
+  hydrateSetup: (data: {
+    selectedDepartments?: string[];
+    completedDepartments?: string[];
+    templateSelections?: Record<string, boolean>;
+  }) => void;
   setDepartments: (depts: string[]) => void;
   setTemplatePreference: (deptId: string, enabled: boolean) => void;
   markDeptComplete: (deptId: string) => void;
@@ -59,6 +64,20 @@ export const useAuthStore = create<AuthState>()(
         user,
         isAuthenticated: true,
         accessToken: accessToken === undefined ? state.accessToken : accessToken,
+      })),
+      hydrateSetup: (data) => set((state) => ({
+        setup: {
+          selectedDepartments: Array.isArray(data.selectedDepartments)
+            ? data.selectedDepartments
+            : state.setup.selectedDepartments,
+          completedDepartments: Array.isArray(data.completedDepartments)
+            ? data.completedDepartments
+            : state.setup.completedDepartments,
+          templateSelections:
+            data.templateSelections && typeof data.templateSelections === 'object'
+              ? data.templateSelections
+              : state.setup.templateSelections,
+        },
       })),
       setDepartments: (depts) => set((state) => ({
         setup: {
