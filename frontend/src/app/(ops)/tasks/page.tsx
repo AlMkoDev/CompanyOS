@@ -5,6 +5,8 @@ import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
 import { useRouter } from 'next/navigation';
+import { AppPermissionGuard } from '@/components/common/AppPermissionGuard';
+import { UnauthorizedEntry } from '@/components/common/AccessState';
 
 interface Task {
   id: string;
@@ -63,6 +65,11 @@ export default function TasksPage() {
           return;
         }
 
+        if (tasksRes.status === 403 || deptsRes.status === 403) {
+          setError('You do not have permission to access the task workspace.');
+          return;
+        }
+
         if (!tasksRes.ok || !deptsRes.ok) {
           throw new Error('Failed to load task workspace.');
         }
@@ -93,6 +100,11 @@ export default function TasksPage() {
       if (res.status === 401) {
         logout();
         router.push('/login');
+        return;
+      }
+
+      if (res.status === 403) {
+        setError('You do not have permission to create tasks in this workspace.');
         return;
       }
 
@@ -131,6 +143,10 @@ export default function TasksPage() {
         return;
       }
 
+      if (response.status === 403) {
+        throw new Error('You do not have permission to update this task.');
+      }
+
       if (!response.ok) {
         throw new Error('Failed to update task status.');
       }
@@ -167,6 +183,16 @@ export default function TasksPage() {
   const overdueCount = tasks.filter((task) => task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date()).length;
 
   return (
+    <AppPermissionGuard
+      module="tasks"
+      fallback={
+        <UnauthorizedEntry
+          message="You do not have permission to access the task workspace."
+          actionLabel="Return to Dashboard"
+          onAction={() => router.push('/dashboard')}
+        />
+      }
+    >
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-50 overflow-hidden">
       <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-slate-200 shrink-0">
         <div>
@@ -265,5 +291,6 @@ export default function TasksPage() {
         departments={departments}
       />
     </div>
+    </AppPermissionGuard>
   );
 }

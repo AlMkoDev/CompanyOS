@@ -3,6 +3,8 @@
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
+import { AppPermissionGuard } from '@/components/common/AppPermissionGuard';
+import { UnauthorizedEntry } from '@/components/common/AccessState';
 import { CorporateVisualizer } from '@/components/viz/CorporateVisualizer';
 import { OperationalGapDashboard, type Gap } from '@/components/ops/OperationalGapDashboard';
 import { apiFetch } from '@/lib/api';
@@ -320,6 +322,7 @@ export default function DashboardPage() {
   const departmentCoverage = departments.length > 0 ? Math.min(100, Math.round((departments.length / 9) * 100)) : 0;
 
   return (
+    <AppPermissionGuard module="dashboard">
     <div className="p-6 md:p-10 flex flex-col gap-10">
       {/* Signboard Header */}
       <header className="bg-brand-navy rounded-3xl p-10 text-white shadow-2xl relative overflow-hidden shrink-0 border border-white/5">
@@ -439,6 +442,7 @@ export default function DashboardPage() {
         </aside>
       </div>
     </div>
+    </AppPermissionGuard>
   );
 }
 

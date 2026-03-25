@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { AppPermissionGuard } from '@/components/common/AppPermissionGuard';
+import { UnauthorizedEntry } from '@/components/common/AccessState';
 import { 
   Users, 
   Search, 
@@ -57,6 +59,11 @@ export default function EmployeeDirectoryPage() {
           return;
         }
 
+        if (response.status === 403) {
+          setError('You do not have permission to access the employee directory.');
+          return;
+        }
+
         if (!response.ok) {
           throw new Error('Failed to load employee directory.');
         }
@@ -90,6 +97,16 @@ export default function EmployeeDirectoryPage() {
   );
 
   return (
+    <AppPermissionGuard
+      module="hris"
+      fallback={
+        <UnauthorizedEntry
+          message="You do not have permission to access HRIS."
+          actionLabel="Return to Dashboard"
+          onAction={() => router.push('/dashboard')}
+        />
+      }
+    >
     <div className="p-6 md:p-12 flex flex-col gap-10 pb-32 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
         <div className="space-y-2">
@@ -224,5 +241,6 @@ export default function EmployeeDirectoryPage() {
         )}
       </div>
     </div>
+    </AppPermissionGuard>
   );
 }
