@@ -56,6 +56,9 @@ describe('AuthService', () => {
           department_members: [{ role: { name: 'Super Admin' } }],
         }),
       },
+      companySetup: {
+        upsert: jest.fn().mockResolvedValue({ id: 'setup-1', company_id: 'company-1' }),
+      },
     };
 
     const jwtService = {
@@ -75,7 +78,8 @@ describe('AuthService', () => {
         email: 'owner@example.com',
         firstName: 'Owner',
         lastName: 'User',
-        company: { id: 'company-1' },
+        companyId: 'company-1',
+        company: expect.objectContaining({ id: 'company-1' }),
         roles: ['Super Admin'],
         mfaEnabled: false,
       },
@@ -104,6 +108,9 @@ describe('AuthService', () => {
           department_members: [{ role: { name: 'Contributor' } }],
         }),
       },
+      companySetup: {
+        upsert: jest.fn().mockResolvedValue({ id: 'setup-1', company_id: 'company-1' }),
+      },
     };
 
     const jwtService = {
@@ -122,7 +129,8 @@ describe('AuthService', () => {
         email: 'member@example.com',
         firstName: 'Member',
         lastName: 'User',
-        company: { id: 'company-1' },
+        companyId: 'company-1',
+        company: expect.objectContaining({ id: 'company-1' }),
         roles: ['Contributor'],
         mfaEnabled: false,
       },
@@ -151,6 +159,9 @@ describe('AuthService', () => {
           department_members: [{ role: { name: 'Super Admin' } }],
         }),
       },
+      companySetup: {
+        upsert: jest.fn().mockResolvedValue({ id: 'setup-1', company_id: 'company-1' }),
+      },
     };
 
     const jwtService = {
@@ -170,7 +181,8 @@ describe('AuthService', () => {
         email: 'secured@example.com',
         firstName: 'Secured',
         lastName: 'User',
-        company: { id: 'company-1' },
+        companyId: 'company-1',
+        company: expect.objectContaining({ id: 'company-1' }),
         roles: ['Super Admin'],
         mfaEnabled: true,
       },
@@ -210,5 +222,41 @@ describe('AuthService', () => {
     expect(loggerWarnSpy).toHaveBeenCalledWith(
       expect.stringContaining('"reason":"invalid_credentials"'),
     );
+  });
+
+  it('hydrates missing setup state through auth/me and includes companyId in the user payload', async () => {
+    const prisma: any = {
+      user: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'user-1',
+          email: 'owner@example.com',
+          first_name: 'Owner',
+          last_name: 'User',
+          company_id: 'company-1',
+          mfa_enabled: true,
+          company: { id: 'company-1', setup: null },
+          department_members: [{ role: { name: 'Super Admin' } }],
+        }),
+      },
+      companySetup: {
+        upsert: jest.fn().mockResolvedValue({ id: 'setup-1', company_id: 'company-1' }),
+      },
+    };
+
+    const service = new AuthService(prisma, { signAsync: jest.fn() } as any);
+    const result = await service.getCurrentUser('user-1');
+
+    expect(prisma.companySetup.upsert).toHaveBeenCalledWith({
+      where: { company_id: 'company-1' },
+      update: {},
+      create: { company_id: 'company-1' },
+    });
+    expect(result).toEqual({
+      user: expect.objectContaining({
+        id: 'user-1',
+        companyId: 'company-1',
+        roles: ['Super Admin'],
+      }),
+    });
   });
 });

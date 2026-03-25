@@ -5,12 +5,14 @@ import { DepartmentsService } from './departments.service';
 
 describe('DepartmentsService', () => {
   let service: DepartmentsService;
-  const prisma = {
+  const prisma: any = {
     department: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
     },
+    $transaction: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -47,5 +49,52 @@ describe('DepartmentsService', () => {
         company_id: 'company-1',
       },
     });
+  });
+
+  it('applies department templates idempotently through a transaction', async () => {
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        department: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'dept-fin', template_key: 'fin' })
+            .mockResolvedValueOnce(null),
+          update: prisma.department.update,
+          create: prisma.department.create,
+        },
+      }),
+    );
+    prisma.department.findMany.mockResolvedValue([
+      { id: 'dept-fin', template_key: 'fin', name: 'Finance', status: 'active', _count: { members: 0, tasks: 0 } },
+      { id: 'dept-hr', template_key: 'hr', name: 'Human Resources', status: 'active', _count: { members: 0, tasks: 0 } },
+    ]);
+    prisma.department.update.mockResolvedValue({ id: 'dept-fin' });
+    prisma.department.create.mockResolvedValue({ id: 'dept-hr' });
+
+    const result = await service.applyTemplates('company-1', {
+      departments: [
+        { template_key: 'fin', config: { name: 'Finance', mandate: 'Own finance' } },
+        { template_key: 'human_resources', config: { name: 'Human Resources', mandate: 'Own people ops' } },
+      ],
+    });
+
+    expect(prisma.department.update).toHaveBeenCalledWith({
+      where: { id: 'dept-fin' },
+      data: expect.objectContaining({
+        company_id: 'company-1',
+        template_key: 'fin',
+        name: 'Finance',
+        mandate: 'Own finance',
+      }),
+    });
+    expect(prisma.department.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        company_id: 'company-1',
+        template_key: 'human_resources',
+        name: 'Human Resources',
+        mandate: 'Own people ops',
+      }),
+    });
+    expect(result).toHaveLength(2);
   });
 });
