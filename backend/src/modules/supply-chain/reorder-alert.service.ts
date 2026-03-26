@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationService } from '../../common/services/notification.service';
 
@@ -30,6 +31,13 @@ export class ReorderAlertService {
     private notificationService: NotificationService,
   ) {}
 
+  private isSchemaDriftError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
+
   /**
    * Scheduled job to check for reorder alerts every hour during business hours
    */
@@ -47,6 +55,11 @@ export class ReorderAlertService {
         this.logger.log('No reorder alerts found');
       }
     } catch (error) {
+      if (this.isSchemaDriftError(error)) {
+        this.logger.warn('Skipping reorder alert check because the supply-chain schema is not ready yet.');
+        return;
+      }
+
       this.logger.error('Error during reorder alert check:', error);
     }
   }
@@ -58,43 +71,54 @@ export class ReorderAlertService {
     const whereClause = companyId ? { company_id: companyId } : {};
 
     // Get all stock levels that are at or below reorder point
-    const lowStockItems = await this.prisma.stockLevel.findMany({
-      where: {
-        ...whereClause,
-        AND: [
-          {
-            reorder_point: {
-              not: null,
+    let lowStockItems;
+
+    try {
+      lowStockItems = await this.prisma.stockLevel.findMany({
+        where: {
+          ...whereClause,
+          AND: [
+            {
+              reorder_point: {
+                not: null,
+              },
             },
-          },
-          {
-            OR: [
-              {
-                quantity: {
-                  lte: this.prisma.stockLevel.fields.reorder_point,
+            {
+              OR: [
+                {
+                  quantity: {
+                    lte: this.prisma.stockLevel.fields.reorder_point,
+                  },
                 },
+              ],
+            },
+          ],
+        },
+        include: {
+          product: {
+            include: {
+              suppliers: {
+                where: {
+                  is_preferred: true,
+                },
+                include: {
+                  supplier: true,
+                },
+                take: 1,
               },
-            ],
-          },
-        ],
-      },
-      include: {
-        product: {
-          include: {
-            suppliers: {
-              where: {
-                is_preferred: true,
-              },
-              include: {
-                supplier: true,
-              },
-              take: 1,
             },
           },
+          location: true,
         },
-        location: true,
-      },
-    });
+      });
+    } catch (error) {
+      if (this.isSchemaDriftError(error)) {
+        this.logger.warn('Skipping reorder alert generation because supply-chain tables are not ready yet.');
+        return [];
+      }
+
+      throw error;
+    }
 
     const alerts: ReorderAlert[] = [];
 

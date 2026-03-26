@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationService } from '../../common/services/notification.service';
 
@@ -12,6 +13,13 @@ export class ComplianceReminderService {
     private notificationService: NotificationService,
   ) {}
 
+  private isSchemaDriftError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async checkDeadlines() {
     this.logger.log('Running daily compliance deadline check...');
@@ -21,20 +29,31 @@ export class ComplianceReminderService {
     const t14 = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
     const t7 = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    const deadlines = await this.prisma.complianceDeadline.findMany({
-      where: {
-        is_active: true,
-        status: 'pending',
-        due_date: {
-          lte: t30,
-          gte: now,
+    let deadlines;
+
+    try {
+      deadlines = await this.prisma.complianceDeadline.findMany({
+        where: {
+          is_active: true,
+          status: 'pending',
+          due_date: {
+            lte: t30,
+            gte: now,
+          }
+        },
+        include: {
+          assignee: true,
+          company: true,
         }
-      },
-      include: {
-        assignee: true,
-        company: true,
+      });
+    } catch (error) {
+      if (this.isSchemaDriftError(error)) {
+        this.logger.warn('Skipping compliance deadline check because compliance tables are not ready yet.');
+        return;
       }
-    });
+
+      throw error;
+    }
 
     for (const deadline of deadlines) {
       const daysLeft = Math.ceil((deadline.due_date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
@@ -72,18 +91,29 @@ export class ComplianceReminderService {
     
     const now = new Date();
     
-    const result = await this.prisma.complianceDeadline.updateMany({
-      where: {
-        is_active: true,
-        status: 'pending',
-        due_date: {
-          lt: now,
+    let result;
+
+    try {
+      result = await this.prisma.complianceDeadline.updateMany({
+        where: {
+          is_active: true,
+          status: 'pending',
+          due_date: {
+            lt: now,
+          }
+        },
+        data: {
+          status: 'overdue',
         }
-      },
-      data: {
-        status: 'overdue',
+      });
+    } catch (error) {
+      if (this.isSchemaDriftError(error)) {
+        this.logger.warn('Skipping overdue compliance update because compliance tables are not ready yet.');
+        return;
       }
-    });
+
+      throw error;
+    }
 
     if (result.count > 0) {
       this.logger.log(`Marked ${result.count} deadlines as overdue`);
