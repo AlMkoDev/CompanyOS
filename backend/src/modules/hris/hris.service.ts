@@ -271,7 +271,7 @@ export class HrisService {
     const count = await this.prisma.employee.count({ where: { company_id: companyId } });
     const empNo = `EMP-${String(count + 1).padStart(4, '0')}`;
     
-    return this.prisma.$transaction(async (tx) => {
+    const employee = await this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.create({
         data: {
           ...data,
@@ -292,8 +292,20 @@ export class HrisService {
         },
       });
 
-      await this.createOnboardingArtifacts(tx, companyId, userId, employee);
+      return employee;
+    });
 
+    try {
+      const tx = this.prisma as any;
+      await this.createOnboardingArtifacts(tx, companyId, userId, employee);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create onboarding artifacts for employee ${employee.id}; continuing with employee record`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+    }
+
+    try {
       await this.audit.log({
         companyId,
         userId,
@@ -306,9 +318,14 @@ export class HrisService {
           position_id: employee.position_id,
         },
       });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to write employee audit log for ${employee.id}`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+    }
 
-      return employee;
-    });
+    return employee;
   }
 
   async getEmployees(companyId: string, filters?: any) {
