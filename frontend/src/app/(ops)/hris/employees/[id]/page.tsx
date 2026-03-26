@@ -63,6 +63,33 @@ type FormState = {
   avatar_url: string;
 };
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function humanizeFieldLabel(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .replace(/\bOr\b/g, 'or');
+}
+
+function formatProfileValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return 'Not provided';
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(', ') : 'Not provided';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+
+  return String(value);
+}
+
 function getProfileData(employee: EmployeeSummary | null) {
   if (employee?.profile_data && Object.keys(employee.profile_data).length > 0) {
     return employee.profile_data;
@@ -193,6 +220,60 @@ export default function EmployeeProfilePage() {
   })();
 
   const managerName = employee?.manager ? `${employee.manager.first_name} ${employee.manager.last_name}` : 'No manager assigned';
+  const profileData = employee ? getProfileData(employee) : createBlankEmployeeProfileData();
+  const getProfileSection = (sectionKey: string) =>
+    (isPlainObject(profileData[sectionKey]) ? (profileData[sectionKey] as Record<string, unknown>) : {});
+  const profileSections = Object.entries(profileData).filter(([, sectionValue]) => isPlainObject(sectionValue));
+
+  const renderFieldRow = (label: string, value: unknown) => (
+    <div className="rounded-[22px] border border-slate-100 bg-slate-50/80 p-4">
+      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-semibold leading-6 text-brand-navy">{formatProfileValue(value)}</div>
+    </div>
+  );
+
+  const renderSectionValue = (sectionKey: string, value: unknown) => {
+    if (!isPlainObject(value)) {
+      return null;
+    }
+
+    const entries = Object.entries(value);
+    const listItems = entries.filter(([, itemValue]) => Array.isArray(itemValue));
+    const textItems = entries.filter(([, itemValue]) => !Array.isArray(itemValue) && itemValue !== '' && itemValue !== null && itemValue !== undefined);
+
+    return (
+      <Card key={sectionKey} className="rounded-[32px] border-slate-100 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h3 className="text-2xl font-heading font-black text-brand-navy">{humanizeFieldLabel(sectionKey)}</h3>
+          <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">{entries.length} fields</span>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          {textItems.map(([fieldKey, fieldValue]) => renderFieldRow(humanizeFieldLabel(fieldKey), fieldValue))}
+        </div>
+
+        {listItems.length > 0 && (
+          <div className="mt-5 space-y-5">
+            {listItems.map(([fieldKey, fieldValue]) => (
+              <div key={fieldKey} className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">{humanizeFieldLabel(fieldKey)}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(Array.isArray(fieldValue) ? fieldValue : []).map((item) => (
+                    <span
+                      key={String(item)}
+                      className="rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm"
+                    >
+                      {String(item)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  };
 
   const beginEdit = () => {
     if (!employee) return;
@@ -440,40 +521,49 @@ export default function EmployeeProfilePage() {
                   </div>
                 </Card>
 
-                <Card className="rounded-[36px] border-slate-100 bg-white p-8 shadow-sm">
-                  <div className="mb-6 flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
-                      <Building2 size={18} />
-                    </div>
-                    <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel File Summary</h3>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Profile Status</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-700">
-                        Rich personnel data is loaded from the structured profile record.
+                <div className="grid gap-8 xl:grid-cols-2">
+                  <Card className="rounded-[36px] border-slate-100 bg-white p-8 shadow-sm">
+                    <div className="mb-6 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
+                        <Building2 size={18} />
                       </div>
+                      <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel Overview</h3>
                     </div>
-                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Passport Photo</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-700">
-                        Upload or update the employee passport-sized photo from the edit modal.
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {renderFieldRow('Employee ID', employee?.emp_no)}
+                      {renderFieldRow('Email', employee?.email)}
+                      {renderFieldRow('Phone', employee?.phone)}
+                      {renderFieldRow('Department', employee?.department?.name ?? 'Unassigned')}
+                      {renderFieldRow('Position', employee?.position?.title ?? 'No Position')}
+                      {renderFieldRow('Reports To', reportsTo)}
+                      {renderFieldRow('Manager', managerName)}
+                      {renderFieldRow('Hire Date', employee?.hire_date?.slice(0, 10) ?? 'Not provided')}
+                      {renderFieldRow('Employment Type', getProfileSection('employment_details').employment_type)}
+                      {renderFieldRow('Status', getProfileSection('employment_details').status ?? employee?.status)}
+                      {renderFieldRow('Basic Salary', getProfileSection('compensation').basic_salary)}
+                      {renderFieldRow('Work Location', getProfileSection('employment_details').work_location)}
+                    </div>
+                  </Card>
+
+                  <Card className="rounded-[36px] border-slate-100 bg-white p-8 shadow-sm">
+                    <div className="mb-6 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
+                        <User size={18} />
                       </div>
+                      <h3 className="text-2xl font-heading font-black text-brand-navy">Profile Highlights</h3>
                     </div>
-                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Reporting Line</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-700">
-                        The page shows who the employee reports to and links the manager profile.
-                      </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {renderFieldRow('Gender', getProfileSection('personal_information').gender)}
+                      {renderFieldRow('Date of Birth', getProfileSection('personal_information').date_of_birth)}
+                      {renderFieldRow('South African ID', getProfileSection('personal_information').south_african_id_number)}
+                      {renderFieldRow('Passport Photo', getProfileSection('personal_information').employee_photo)}
+                      {renderFieldRow('Tax Number', getProfileSection('tax_and_statutory').tax_number)}
+                      {renderFieldRow('PAYE Reference', getProfileSection('tax_and_statutory').paye_reference)}
+                      {renderFieldRow('Bank Name', getProfileSection('compensation').bank_name)}
+                      {renderFieldRow('Account Type', getProfileSection('compensation').account_type)}
                     </div>
-                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
-                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Editable Fields</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-700">
-                        Core HR fields remain editable in the modal without exposing raw JSON.
-                      </div>
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
+                </div>
 
                 <Card className="rounded-[36px] border-slate-100 bg-brand-navy px-8 py-6 text-white shadow-2xl shadow-brand-navy/20">
                   <button
@@ -490,6 +580,12 @@ export default function EmployeeProfilePage() {
                     </div>
                   </button>
                 </Card>
+
+                {profileSections.length > 0 ? (
+                  <div className="space-y-8">
+                    {profileSections.map(([sectionKey, sectionValue]) => renderSectionValue(sectionKey, sectionValue))}
+                  </div>
+                ) : null}
               </div>
             </div>
 
