@@ -28,6 +28,13 @@ interface Department {
   color: string;
 }
 
+interface EmployeeOption {
+  id: string;
+  first_name: string;
+  last_name: string;
+  status?: string;
+}
+
 type CreateTaskInput = React.ComponentProps<typeof CreateTaskModal>['onSubmit'] extends (
   data: infer T,
 ) => void
@@ -46,6 +53,7 @@ export default function TasksPage() {
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,28 +66,31 @@ export default function TasksPage() {
     if (isAuthenticated) {
       Promise.all([
         apiFetch('/tasks'),
-        apiFetch('/departments')
+        apiFetch('/departments'),
+        apiFetch('/hris/employees')
       ])
-      .then(async ([tasksRes, deptsRes]) => {
-        if (tasksRes.status === 401 || deptsRes.status === 401) {
+      .then(async ([tasksRes, deptsRes, employeesRes]) => {
+        if (tasksRes.status === 401 || deptsRes.status === 401 || employeesRes.status === 401) {
           logout();
           router.push('/login');
           return;
         }
 
-        if (tasksRes.status === 403 || deptsRes.status === 403) {
+        if (tasksRes.status === 403 || deptsRes.status === 403 || employeesRes.status === 403) {
           setError('You do not have permission to access the task workspace.');
           return;
         }
 
-        if (!tasksRes.ok || !deptsRes.ok) {
+        if (!tasksRes.ok || !deptsRes.ok || !employeesRes.ok) {
           throw new Error('Failed to load task workspace.');
         }
 
         const tasksData = await tasksRes.json();
         const deptsData = await deptsRes.json();
+        const employeesData = await employeesRes.json();
         setTasks(tasksData);
         setDepartments(deptsData);
+        setEmployees(employeesData.filter((employee: EmployeeOption) => employee.status !== 'terminated'));
       })
       .catch((fetchError) => {
         console.error(fetchError);
@@ -313,11 +324,12 @@ export default function TasksPage() {
         onClose={() => setIsModalOpen(false)} 
         onSubmit={handleCreateTask}
         departments={departments}
+        assignees={employees}
       />
 
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/40 px-4 py-6 backdrop-blur-sm">
-          <div className="relative my-auto w-full max-w-2xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-brand-navy/40 px-4 py-12 backdrop-blur-sm">
+          <div className="relative mt-6 w-full max-w-2xl max-h-[calc(100vh-6rem)] overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Task Details</p>

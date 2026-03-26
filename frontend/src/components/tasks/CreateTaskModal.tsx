@@ -11,17 +11,20 @@ interface CreateTaskModalProps {
     status: string;
     due_date?: string;
     attachments?: string[];
+    assignee_id?: string;
   }) => void;
   departments: { id: string; name: string }[];
+  assignees: { id: string; first_name: string; last_name: string }[];
 }
 
-export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: CreateTaskModalProps) => {
+export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments, assignees }: CreateTaskModalProps) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
   const [attachments, setAttachments] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
 
   if (!isOpen) return null;
 
@@ -38,6 +41,7 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
       priority,
       status: 'open',
       due_date: dueDate || undefined,
+      assignee_id: assigneeId || undefined,
       attachments: attachments
         .split(',')
         .map((value) => value.trim())
@@ -50,12 +54,13 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
     setPriority('medium');
     setDueDate('');
     setAttachments('');
+    setAssigneeId('');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/30 px-4 py-6 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative my-auto w-full max-w-lg max-h-[calc(100vh-3rem)] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-brand-navy/30 px-4 py-12 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative mt-6 w-full max-w-lg max-h-[calc(100vh-6rem)] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-200">
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
@@ -115,6 +120,22 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
                 <option value="critical">Critical</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Assignee</label>
+            <select
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
+            >
+              <option value="">Unassigned</option>
+              {assignees.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.first_name} {person.last_name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
