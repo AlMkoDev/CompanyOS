@@ -478,7 +478,11 @@ export class HrisService {
 
   async createPosition(companyId: string, data: CreatePositionDto) {
     return this.prisma.position.create({
-      data: { ...data, company_id: companyId },
+      data: {
+        ...data,
+        company_id: companyId,
+        level: data.level ? Number.parseInt(data.level, 10) || 4 : 4,
+      },
       include: { department: true },
     });
   }

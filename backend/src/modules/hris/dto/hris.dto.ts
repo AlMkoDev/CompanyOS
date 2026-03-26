@@ -82,6 +82,11 @@ export class CreatePositionDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
+  level?: string;
+
+  @IsOptional()
+  @IsString()
   department_id?: string;
 
   @IsOptional()
