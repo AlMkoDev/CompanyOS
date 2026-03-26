@@ -12,11 +12,15 @@ export class HrisSchemaBootstrapService implements OnModuleInit {
   }
 
   private async tableExists(tableName: string) {
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ table_name: string | null }>>(
-      `SELECT to_regclass('"${tableName}"') AS table_name`,
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ exists: string | null }>>(
+      `SELECT table_name AS "exists"
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name = '${tableName}'
+       LIMIT 1`,
     );
 
-    return Boolean(rows[0]?.table_name);
+    return Boolean(rows[0]?.exists);
   }
 
   private async createTableIfMissing(tableName: string, statement: string) {
