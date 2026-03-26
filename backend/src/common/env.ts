@@ -91,6 +91,37 @@ export function getFrontendOrigins() {
     : ['http://localhost:3000'];
 }
 
+export function isAllowedFrontendOrigin(origin: string, configuredOrigins: string[]) {
+  if (!origin) {
+    return false;
+  }
+
+  if (configuredOrigins.includes(origin)) {
+    return true;
+  }
+
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  const originHost = parsedOrigin.hostname.toLowerCase();
+  if (!originHost.endsWith('.vercel.app')) {
+    return false;
+  }
+
+  return configuredOrigins.some((configuredOrigin) => {
+    try {
+      const parsedConfiguredOrigin = new URL(configuredOrigin);
+      return parsedConfiguredOrigin.hostname.toLowerCase().endsWith('.vercel.app');
+    } catch {
+      return false;
+    }
+  });
+}
+
 export function getPort() {
   const rawPort = getOptionalEnv('PORT');
   const parsedPort = rawPort ? Number(rawPort) : NaN;

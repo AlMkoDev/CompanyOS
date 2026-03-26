@@ -15,6 +15,7 @@ import {
   getS3Config,
   getSmtpConfig,
   getSmsConfig,
+  isAllowedFrontendOrigin,
 } from './env';
 
 describe('env helpers', () => {
@@ -56,6 +57,23 @@ describe('env helpers', () => {
       'https://app.example.com',
     ]);
     expect(getPort()).toBe(4000);
+  });
+
+  it('allows vercel preview origins when a vercel frontend origin is configured', () => {
+    const configuredOrigins = [
+      'https://companyos-staging.vercel.app',
+      'http://localhost:3000',
+    ];
+
+    expect(
+      isAllowedFrontendOrigin(
+        'https://companyos-staging-dvgoopdgg-allenplay4fan-7440s-projects.vercel.app',
+        configuredOrigins,
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedFrontendOrigin('https://malicious.example.com', configuredOrigins),
+    ).toBe(false);
   });
 
   it('parses optional boolean values for feature flags', () => {

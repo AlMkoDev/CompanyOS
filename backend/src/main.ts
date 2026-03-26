@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { getEnableHsts, getFrontendOrigins, getPort } from './common/env';
+import { isAllowedFrontendOrigin } from './common/env';
 import { applySecurityHeaders } from './common/security-headers';
 import { validateEnvironment } from './common/env.validation';
 
@@ -15,7 +16,19 @@ async function bootstrap() {
   
   // Enable CORS
   app.enableCors({
-    origin: frontendOrigins,
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (isAllowedFrontendOrigin(origin, frontendOrigins)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS.`), false);
+    },
     credentials: true,
   });
   
