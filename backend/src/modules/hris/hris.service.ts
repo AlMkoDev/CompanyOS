@@ -480,6 +480,8 @@ export class HrisService {
     return this.prisma.position.create({
       data: {
         ...data,
+        job_description: data.description,
+        description: undefined,
         company_id: companyId,
         level: data.level ? Number.parseInt(data.level, 10) || 4 : 4,
       },
