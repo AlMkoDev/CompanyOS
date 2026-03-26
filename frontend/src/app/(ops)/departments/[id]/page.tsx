@@ -34,6 +34,8 @@ import {
   normalizeDepartmentTemplateKey,
 } from '@/lib/setup/departmentTemplates';
 
+const WORKFLOW_ACTIVITY_COMPONENT = 'Core Workflow Definitions';
+
 interface DepartmentRole {
   title: string;
   responsibilities?: string;
@@ -64,6 +66,8 @@ interface DepartmentData {
   name: string;
   color?: string;
   template_key?: string;
+  core_responsibilities?: string;
+  deliverables?: string;
   mandate?: DepartmentMandate;
   roles?: DepartmentRole[];
   kpis?: DepartmentKpi[];
@@ -72,6 +76,7 @@ interface DepartmentData {
   activities?: OperationalSpecData;
   communication_lines?: OperationalSpecData;
   data_pack?: OperationalSpecData;
+  workflows?: string[];
 }
 
 type DepartmentTab = 'strategy' | 'routines' | 'activities' | 'network' | 'sops' | 'performance';
@@ -203,6 +208,40 @@ const normalizeKpis = (input: DepartmentData['kpis'], templateKey?: string): Dep
   }));
 };
 
+const normalizeTextField = (value?: string, fallback?: string) => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+
+  return fallback || '';
+};
+
+const normalizeWorkflows = (input: DepartmentData['workflows'], activities: DepartmentData['activities'], templateKey?: string) => {
+  if (Array.isArray(input) && input.length > 0) {
+    return input
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(activities) && activities.length > 0) {
+    const workflowActivity = activities.find(
+      (item) => item && typeof item === 'object' && 'component' in item && String((item as { component?: string }).component) === WORKFLOW_ACTIVITY_COMPONENT,
+    ) as { sections?: unknown } | undefined;
+
+    const workflowSections = Array.isArray(workflowActivity?.sections)
+      ? workflowActivity.sections.filter((section): section is string => typeof section === 'string').map((section) => section.trim()).filter(Boolean)
+      : [];
+
+    if (workflowSections.length > 0) {
+      return workflowSections;
+    }
+  }
+
+  const template = templateKey ? departmentQuickStartTemplates[templateKey] : undefined;
+  return template?.workflows ?? [];
+};
+
 export default function DepartmentDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -261,6 +300,8 @@ export default function DepartmentDetailPage() {
     ...data,
     template_key: normalizedTemplateKey || undefined,
     color: data.color || resolvedTemplate?.color,
+    core_responsibilities: normalizeTextField((data as { core_responsibilities?: string }).core_responsibilities, resolvedTemplate?.coreResponsibilities),
+    deliverables: normalizeTextField((data as { deliverables?: string }).deliverables, resolvedTemplate?.deliverables),
     mandate: normalizeMandate(data.mandate, normalizedTemplateKey || undefined),
     roles: normalizeRoles(data.roles, normalizedTemplateKey || undefined),
     kpis: normalizeKpis(data.kpis, normalizedTemplateKey || undefined),
@@ -268,6 +309,7 @@ export default function DepartmentDetailPage() {
     activities: normalizeActivities(data.activities, normalizedTemplateKey || undefined),
     communication_lines: normalizeCommunicationLines(data.communication_lines, normalizedTemplateKey || undefined),
     data_pack: normalizeDataPack(data.data_pack, normalizedTemplateKey || undefined),
+    workflows: normalizeWorkflows((data as { workflows?: string[] }).workflows, data.activities, normalizedTemplateKey || undefined),
   };
 
   return (
@@ -300,7 +342,7 @@ export default function DepartmentDetailPage() {
              className="px-6 py-2 bg-brand-navy text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all shadow-lg flex items-center gap-2"
           >
             <Zap size={14} className="text-brand-gold" />
-            Reconfigure
+            Edit Operating Model
           </button>
         </div>
       </div>
@@ -350,6 +392,58 @@ export default function DepartmentDetailPage() {
                   )}
                 </div>
                 <div className="absolute top-0 right-0 w-64 h-64 bg-slate-50 rounded-full -mr-32 -mt-32 opacity-50"></div>
+              </section>
+
+              <section className="space-y-8">
+                <div className="flex items-center justify-between px-2">
+                  <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
+                    <Target size={24} className="text-brand-gold" />
+                    Operating Model Snapshot
+                  </h2>
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Source: Department Config</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Core Responsibilities</div>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      {resolvedData.core_responsibilities || 'No core responsibilities defined yet.'}
+                    </p>
+                  </div>
+                  <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Deliverables</div>
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                      {resolvedData.deliverables || 'No deliverables defined yet.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-100 rounded-3xl shadow-sm p-6 md:p-8">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Operational Workflows</div>
+                      <h3 className="text-xl font-heading text-brand-navy">How this department turns inputs into output</h3>
+                    </div>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{resolvedData.workflows?.length || 0} Defined Steps</span>
+                  </div>
+                  {resolvedData.workflows && resolvedData.workflows.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {resolvedData.workflows.map((workflow, index) => (
+                        <div
+                          key={`${workflow}-${index}`}
+                          className="flex items-start gap-3 p-4 rounded-2xl border border-slate-100 bg-slate-50/70"
+                        >
+                          <div className="w-8 h-8 rounded-xl bg-brand-navy text-white flex items-center justify-center text-xs font-black shrink-0">
+                            {index + 1}
+                          </div>
+                          <div className="text-sm text-slate-600 leading-relaxed">{workflow}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-slate-400 text-sm italic">No workflow definitions configured yet.</div>
+                  )}
+                </div>
               </section>
 
               {/* Functional Roles & Org Chart Summary */}
