@@ -81,6 +81,32 @@ describe('TasksService', () => {
     expect(result.status).toBe('open');
   });
 
+  it('persists task attachments when provided', async () => {
+    prisma.task.create.mockResolvedValue({
+      id: 'task-2',
+      title: 'Upload policy',
+      status: 'open',
+      attachments: ['https://example.com/policy.pdf'],
+    });
+
+    await service.create('company-1', 'user-1', {
+      title: 'Upload policy',
+      department_id: 'dept-1',
+      priority: 'medium',
+      attachments: ['https://example.com/policy.pdf'],
+    } as any);
+
+    expect(prisma.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        company_id: 'company-1',
+        creator_id: 'user-1',
+        title: 'Upload policy',
+        status: 'open',
+        attachments: ['https://example.com/policy.pdf'],
+      }),
+    });
+  });
+
   it('audits scoped task status updates', async () => {
     prisma.task.findFirst.mockResolvedValue({ id: 'task-1', company_id: 'company-1' });
     prisma.task.update.mockResolvedValue({ id: 'task-1', status: 'blocked' });

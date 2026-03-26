@@ -17,6 +17,7 @@ interface Task {
   department_id: string;
   created_at: string;
   due_date?: string;
+  attachments?: string[] | null;
   assignee?: { first_name: string; last_name: string };
   creator?: { first_name: string; last_name: string };
 }
@@ -46,6 +47,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,6 +171,13 @@ export default function TasksPage() {
     return dept ? dept.name : 'Unknown';
   };
 
+  const isTaskOverdue = (task: Task) =>
+    Boolean(task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date());
+
+  const formatTaskDate = (value?: string) => (value ? new Date(value).toLocaleDateString() : 'Not provided');
+
+  const getTaskAttachments = (task: Task) => (Array.isArray(task.attachments) ? task.attachments : []);
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -237,7 +246,8 @@ export default function TasksPage() {
                     key={task.id}
                     draggable
                     onDragStart={() => setDraggedTaskId(task.id)}
-                    className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-brand-gold/50 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden"
+                    className={`bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-brand-gold/50 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden ${isTaskOverdue(task) ? 'ring-1 ring-red-200' : ''}`}
+                    onClick={() => setSelectedTask(task)}
                   >
                     <div className={`absolute top-0 left-0 w-1 h-full ${getDepartmentColor(task.department_id)}`}></div>
                     
@@ -257,8 +267,22 @@ export default function TasksPage() {
                       <p className="text-xs text-slate-500 line-clamp-2 mb-4 pl-2">{task.description}</p>
                     )}
                     {task.due_date && (
-                      <div className="mb-3 pl-2 text-[11px] font-medium text-slate-500">
-                        Due {new Date(task.due_date).toLocaleDateString()}
+                      <div className={`mb-3 pl-2 text-[11px] font-semibold ${isTaskOverdue(task) ? 'text-red-600' : 'text-slate-500'}`}>
+                        Due {formatTaskDate(task.due_date)}{isTaskOverdue(task) ? ' · Overdue' : ''}
+                      </div>
+                    )}
+                    {getTaskAttachments(task).length > 0 && (
+                      <div className="mb-3 flex flex-wrap gap-2 pl-2">
+                        {getTaskAttachments(task).slice(0, 3).map((attachment, index) => (
+                          <span key={`${task.id}-attachment-${index}`} className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                            Attachment {index + 1}
+                          </span>
+                        ))}
+                        {getTaskAttachments(task).length > 3 && (
+                          <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
+                            +{getTaskAttachments(task).length - 3} more
+                          </span>
+                        )}
                       </div>
                     )}
                     
@@ -290,6 +314,81 @@ export default function TasksPage() {
         onSubmit={handleCreateTask}
         departments={departments}
       />
+
+      {selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-[32px] bg-white p-8 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Task Details</p>
+                <h3 className="mt-2 text-3xl font-heading font-black text-brand-navy">{selectedTask.title}</h3>
+              </div>
+              <button
+                type="button"
+                className="text-sm font-bold text-slate-400 hover:text-slate-700"
+                onClick={() => setSelectedTask(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Status</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">{selectedTask.status}</div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Priority</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">{selectedTask.priority}</div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Department</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">{getDepartmentName(selectedTask.department_id)}</div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Due Date</div>
+                <div className={`mt-2 text-sm font-semibold ${isTaskOverdue(selectedTask) ? 'text-red-600' : 'text-brand-navy'}`}>
+                  {formatTaskDate(selectedTask.due_date)}{isTaskOverdue(selectedTask) ? ' · Overdue' : ''}
+                </div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Created By</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">
+                  {selectedTask.creator ? `${selectedTask.creator.first_name} ${selectedTask.creator.last_name}` : 'Unknown'}
+                </div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Assignee</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">
+                  {selectedTask.assignee ? `${selectedTask.assignee.first_name} ${selectedTask.assignee.last_name}` : 'Unassigned'}
+                </div>
+              </div>
+            </div>
+
+            {selectedTask.description && (
+              <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Description</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{selectedTask.description}</p>
+              </div>
+            )}
+
+            <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Attachments</div>
+              {getTaskAttachments(selectedTask).length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {getTaskAttachments(selectedTask).map((attachment, index) => (
+                    <span key={`${selectedTask.id}-modal-attachment-${index}`} className="rounded-full bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                      {attachment}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">No attachments provided.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </AppPermissionGuard>
   );

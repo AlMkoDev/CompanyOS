@@ -10,6 +10,7 @@ interface CreateTaskModalProps {
     priority: string;
     status: string;
     due_date?: string;
+    attachments?: string[];
   }) => void;
   departments: { id: string; name: string }[];
 }
@@ -20,6 +21,7 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
   const [departmentId, setDepartmentId] = useState('');
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
+  const [attachments, setAttachments] = useState('');
 
   if (!isOpen) return null;
 
@@ -36,6 +38,10 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
       priority,
       status: 'open',
       due_date: dueDate || undefined,
+      attachments: attachments
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
     });
     // Reset
     setTitle('');
@@ -43,6 +49,7 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
     setDepartmentId('');
     setPriority('medium');
     setDueDate('');
+    setAttachments('');
     onClose();
   };
 
@@ -118,6 +125,20 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
               onChange={e => setDueDate(e.target.value)}
               className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Attachments</label>
+            <input
+              type="text"
+              value={attachments}
+              onChange={(e) => setAttachments(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
+              placeholder="Comma-separated links or file references"
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              Example: Google Drive link, document URL, or file reference.
+            </p>
           </div>
 
           <div className="pt-6 flex justify-end gap-3">

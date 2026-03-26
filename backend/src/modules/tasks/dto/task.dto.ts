@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsIn,
   IsOptional,
@@ -41,6 +41,11 @@ export class CreateTaskDto {
   @IsString()
   @MaxLength(40)
   priority?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 }
 
 export class UpdateTaskStatusDto {

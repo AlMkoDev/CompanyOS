@@ -34,6 +34,7 @@ export class TasksService {
         company_id: companyId,
         creator_id: userId,
         due_date: data.due_date ? new Date(data.due_date) : undefined,
+        attachments: data.attachments?.length ? data.attachments : undefined,
       },
     });
 
@@ -75,6 +76,8 @@ export class TasksService {
           department_id: true,
           status: true,
           priority: true,
+          due_date: true,
+          attachments: true,
         },
         orderBy: { created_at: 'desc' },
       });
