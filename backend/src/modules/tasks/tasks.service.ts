@@ -59,14 +59,14 @@ export class TasksService {
         "updated_at"
       )
       VALUES (
-        ${companyId},
-        ${data.department_id},
+        ${companyId}::uuid,
+        ${data.department_id}::uuid,
         ${data.title},
         ${data.description ?? null},
         ${data.status ?? 'open'},
         ${data.priority ?? 'medium'},
-        ${userId},
-        ${data.assignee_id ?? null},
+        ${userId}::uuid,
+        ${data.assignee_id ?? null}::uuid,
         ${dueDate},
         ${attachments}::jsonb,
         NOW(),
