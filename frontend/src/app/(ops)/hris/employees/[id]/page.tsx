@@ -16,8 +16,6 @@ import {
   createBlankEmployeeProfileData,
   createAvaEmployeeProfileData,
   fileToDataUrl,
-  parseProfileData,
-  stringifyProfileData,
   type EmployeeProfileData,
 } from '@/lib/hris/profileData';
 
@@ -90,6 +88,34 @@ function formatProfileValue(value: unknown): string {
   return String(value);
 }
 
+function cloneProfileData(data: EmployeeProfileData): EmployeeProfileData {
+  return JSON.parse(JSON.stringify(data)) as EmployeeProfileData;
+}
+
+function getStringSectionValue(profileData: EmployeeProfileData, sectionKey: string, fieldKey: string) {
+  const section = profileData[sectionKey];
+
+  if (!isPlainObject(section)) {
+    return '';
+  }
+
+  const value = section[fieldKey];
+  return typeof value === 'string' ? value : '';
+}
+
+function setProfileField(
+  profileData: EmployeeProfileData,
+  sectionKey: string,
+  fieldKey: string,
+  value: string,
+) {
+  const next = cloneProfileData(profileData);
+  const currentSection = isPlainObject(next[sectionKey]) ? (next[sectionKey] as Record<string, unknown>) : {};
+  currentSection[fieldKey] = value;
+  next[sectionKey] = currentSection;
+  return next;
+}
+
 function getProfileData(employee: EmployeeSummary | null) {
   if (employee?.profile_data && Object.keys(employee.profile_data).length > 0) {
     return employee.profile_data;
@@ -118,7 +144,7 @@ export default function EmployeeProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [profileDataJson, setProfileDataJson] = useState('');
+  const [profileDraft, setProfileDraft] = useState<EmployeeProfileData>(createBlankEmployeeProfileData());
   const [form, setForm] = useState<FormState>({
     emp_no: '',
     first_name: '',
@@ -191,7 +217,7 @@ export default function EmployeeProfilePage() {
       setDepartments(departmentsData);
       setPositions(positionsData);
       setAvatarPreview(employeeData.avatar_url ?? null);
-      setProfileDataJson(stringifyProfileData(getProfileData(employeeData)));
+      setProfileDraft(cloneProfileData(getProfileData(employeeData)));
     } catch (loadError) {
       console.error(loadError);
       setError(loadError instanceof Error ? loadError.message : 'Failed to load employee profile.');
@@ -275,6 +301,10 @@ export default function EmployeeProfilePage() {
     );
   };
 
+  const updateProfileDraft = (sectionKey: string, fieldKey: string, value: string) => {
+    setProfileDraft((current) => setProfileField(current, sectionKey, fieldKey, value));
+  };
+
   const beginEdit = () => {
     if (!employee) return;
 
@@ -295,7 +325,7 @@ export default function EmployeeProfilePage() {
       avatar_url: employee.avatar_url ?? '',
     });
     setAvatarPreview(employee.avatar_url ?? null);
-    setProfileDataJson(stringifyProfileData(getProfileData(employee)));
+    setProfileDraft(cloneProfileData(getProfileData(employee)));
     setSaveError(null);
     setIsEditModalOpen(true);
   };
@@ -313,7 +343,6 @@ export default function EmployeeProfilePage() {
     setIsSaving(true);
 
     try {
-      const profileData = parseProfileData(profileDataJson);
       const response = await apiFetch(`/hris/employees/${employeeId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -332,7 +361,7 @@ export default function EmployeeProfilePage() {
           position_id: form.position_id || undefined,
           manager_id: form.manager_id || undefined,
           status: form.status || undefined,
-          profile_data: profileData ?? undefined,
+          profile_data: profileDraft ?? undefined,
         }),
       });
 
@@ -354,7 +383,7 @@ export default function EmployeeProfilePage() {
       const updatedEmployee = await response.json();
       setEmployee(updatedEmployee);
       setAvatarPreview(updatedEmployee.avatar_url ?? null);
-      setProfileDataJson(stringifyProfileData(updatedEmployee.profile_data ?? createAvaEmployeeProfileData()));
+      setProfileDraft(cloneProfileData(updatedEmployee.profile_data ?? createAvaEmployeeProfileData()));
       setIsEditModalOpen(false);
     } catch (submitError) {
       console.error(submitError);
@@ -735,11 +764,73 @@ export default function EmployeeProfilePage() {
                       <div className="rounded-[28px] border border-slate-100 bg-slate-50/80 p-5">
                         <div className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Personnel Profile</div>
                         <p className="mt-3 text-sm leading-6 text-slate-600">
-                          The detailed personnel record is already loaded for this employee and can be reviewed from the
-                          profile snapshot cards on the page.
+                          Update the richer personnel details here without exposing raw JSON.
                         </p>
-                        <div className="mt-4 rounded-[22px] bg-white px-4 py-3 text-xs font-medium text-slate-500 shadow-sm">
-                          Use this modal for manager, department, position, status, and photo updates.
+                        <div className="mt-5 grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Gender</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'personal_information', 'gender')}
+                              onChange={(event) => updateProfileDraft('personal_information', 'gender', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Date of Birth</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'personal_information', 'date_of_birth')}
+                              onChange={(event) => updateProfileDraft('personal_information', 'date_of_birth', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Job Title</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'employment_details', 'job_title')}
+                              onChange={(event) => updateProfileDraft('employment_details', 'job_title', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Work Location</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'employment_details', 'work_location')}
+                              onChange={(event) => updateProfileDraft('employment_details', 'work_location', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Basic Salary</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'compensation', 'basic_salary')}
+                              onChange={(event) => updateProfileDraft('compensation', 'basic_salary', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Bank Name</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'compensation', 'bank_name')}
+                              onChange={(event) => updateProfileDraft('compensation', 'bank_name', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Tax Number</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'tax_and_statutory', 'tax_number')}
+                              onChange={(event) => updateProfileDraft('tax_and_statutory', 'tax_number', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Primary Contact</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'emergency_contact', 'primary_contact_name')}
+                              onChange={(event) => updateProfileDraft('emergency_contact', 'primary_contact_name', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
