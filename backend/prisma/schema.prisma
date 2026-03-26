@@ -864,6 +864,7 @@ model Employee {
   employment_type  String    @default("full-time") // full-time, part-time, contract
   salary_grade     String?
   avatar_url       String?
+  profile_data     Json?
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
 

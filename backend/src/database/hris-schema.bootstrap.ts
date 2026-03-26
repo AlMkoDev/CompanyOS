@@ -73,6 +73,7 @@ export class HrisSchemaBootstrapService implements OnModuleInit {
         "employment_type" TEXT NOT NULL DEFAULT 'full-time',
         "salary_grade" TEXT,
         "avatar_url" TEXT,
+        "profile_data" JSONB,
         "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updated_at" TIMESTAMP(3) NOT NULL,
         CONSTRAINT "Employee_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -187,6 +188,10 @@ export class HrisSchemaBootstrapService implements OnModuleInit {
         createdTables.push(tableName);
       }
     }
+
+    await this.prisma.$executeRawUnsafe(
+      `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "profile_data" JSONB`,
+    );
 
     const statements = [
       `CREATE UNIQUE INDEX IF NOT EXISTS "Employee_emp_no_key" ON "Employee"("emp_no")`,

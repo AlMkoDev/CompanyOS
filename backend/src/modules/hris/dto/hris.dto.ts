@@ -14,6 +14,35 @@ export class CreateEmployeeDto {
   @IsEmail()
   email: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  emp_no?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  national_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  employment_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  salary_grade?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar_url?: string;
+
   @IsDateString()
   hire_date: string;
 
@@ -33,6 +62,9 @@ export class CreateEmployeeDto {
   @IsString()
   @MaxLength(40)
   status?: string;
+
+  @IsOptional()
+  profile_data?: Record<string, unknown>;
 }
 
 export class UpdateEmployeeDto {
@@ -51,6 +83,35 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  emp_no?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  national_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  employment_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  salary_grade?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar_url?: string;
 
   @IsOptional()
   @IsDateString()
@@ -72,6 +133,9 @@ export class UpdateEmployeeDto {
   @IsString()
   @MaxLength(40)
   status?: string;
+
+  @IsOptional()
+  profile_data?: Record<string, unknown>;
 }
 
 export class CreatePositionDto {

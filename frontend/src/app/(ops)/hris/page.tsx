@@ -11,6 +11,12 @@ import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { AppPermissionGuard } from '@/components/common/AppPermissionGuard';
 import { UnauthorizedEntry } from '@/components/common/AccessState';
+import {
+  createBlankEmployeeProfileData,
+  fileToDataUrl,
+  parseProfileData,
+  stringifyProfileData,
+} from '@/lib/hris/profileData';
 import { 
   Users, 
   Search, 
@@ -49,9 +55,15 @@ interface PositionOption {
 }
 
 interface CreateEmployeeFormState {
+  emp_no: string;
   first_name: string;
   last_name: string;
   email: string;
+  phone: string;
+  national_id: string;
+  employment_type: string;
+  salary_grade: string;
+  avatar_url: string;
   hire_date: string;
   department_id: string;
   position_id: string;
@@ -71,10 +83,18 @@ export default function EmployeeDirectoryPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [profileDataJson, setProfileDataJson] = useState(stringifyProfileData(createBlankEmployeeProfileData()));
   const [form, setForm] = useState<CreateEmployeeFormState>({
+    emp_no: '',
     first_name: '',
     last_name: '',
     email: '',
+    phone: '',
+    national_id: '',
+    employment_type: '',
+    salary_grade: '',
+    avatar_url: '',
     hire_date: '',
     department_id: '',
     position_id: '',
@@ -139,16 +159,34 @@ export default function EmployeeDirectoryPage() {
 
   const resetCreateForm = () => {
     setForm({
+      emp_no: '',
       first_name: '',
       last_name: '',
       email: '',
+      phone: '',
+      national_id: '',
+      employment_type: '',
+      salary_grade: '',
+      avatar_url: '',
       hire_date: '',
       department_id: '',
       position_id: '',
       manager_id: '',
       status: 'active',
     });
+    setAvatarPreview(null);
+    setProfileDataJson(stringifyProfileData(createBlankEmployeeProfileData()));
     setCreateError(null);
+  };
+
+  const handleAvatarUpload = async (file: File | null) => {
+    if (!file) {
+      return;
+    }
+
+    const dataUrl = await fileToDataUrl(file);
+    setAvatarPreview(dataUrl);
+    setForm((current) => ({ ...current, avatar_url: dataUrl }));
   };
 
   const handleCreateEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -163,20 +201,37 @@ export default function EmployeeDirectoryPage() {
     setIsSubmitting(true);
 
     try {
+      let profileData;
+
+      try {
+        profileData = parseProfileData(profileDataJson);
+      } catch {
+        setCreateError('Profile details must be valid JSON.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const response = await apiFetch('/hris/employees', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          emp_no: form.emp_no.trim() || undefined,
           first_name: form.first_name.trim(),
           last_name: form.last_name.trim(),
           email: form.email.trim(),
+          phone: form.phone.trim() || undefined,
+          national_id: form.national_id.trim() || undefined,
+          employment_type: form.employment_type.trim() || undefined,
+          salary_grade: form.salary_grade.trim() || undefined,
+          avatar_url: form.avatar_url.trim() || undefined,
           hire_date: form.hire_date,
           department_id: form.department_id || undefined,
           position_id: form.position_id || undefined,
           manager_id: form.manager_id || undefined,
           status: form.status || undefined,
+          profile_data: profileData ?? undefined,
         }),
       });
 
@@ -424,10 +479,19 @@ export default function EmployeeDirectoryPage() {
 
           <form className="space-y-6" onSubmit={handleCreateEmployee}>
             <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-700">First Name *</label>
-                <Input
-                  value={form.first_name}
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Employee ID</label>
+                  <Input
+                    value={form.emp_no}
+                    onChange={(event) => setForm((current) => ({ ...current, emp_no: event.target.value }))}
+                    placeholder="EMP-2026-0847"
+                    className="h-12 rounded-2xl border-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">First Name *</label>
+                  <Input
+                    value={form.first_name}
                   onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))}
                   placeholder="Ava"
                   className="h-12 rounded-2xl border-slate-200"
@@ -463,6 +527,85 @@ export default function EmployeeDirectoryPage() {
                   onChange={(event) => setForm((current) => ({ ...current, hire_date: event.target.value }))}
                   className="h-12 rounded-2xl border-slate-200"
                 />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Phone</label>
+                <Input
+                  value={form.phone}
+                  onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
+                  placeholder="+27 82 456 7890"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">National ID</label>
+                <Input
+                  value={form.national_id}
+                  onChange={(event) => setForm((current) => ({ ...current, national_id: event.target.value }))}
+                  placeholder="9508150234087"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Employment Type</label>
+                <Input
+                  value={form.employment_type}
+                  onChange={(event) => setForm((current) => ({ ...current, employment_type: event.target.value }))}
+                  placeholder="Permanent Full-time"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Salary Grade</label>
+                <Input
+                  value={form.salary_grade}
+                  onChange={(event) => setForm((current) => ({ ...current, salary_grade: event.target.value }))}
+                  placeholder="R420,000 ZAR per annum"
+                  className="h-12 rounded-2xl border-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[160px,1fr] items-start">
+              <div className="space-y-3">
+                <div className="h-36 w-36 overflow-hidden rounded-[28px] border border-slate-100 bg-slate-50 shadow-sm">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Passport preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs font-black uppercase tracking-widest text-slate-300">
+                      No photo
+                    </div>
+                  )}
+                </div>
+                <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-brand-navy hover:bg-slate-50">
+                  Upload Passport Photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      void handleAvatarUpload(event.target.files?.[0] ?? null);
+                    }}
+                  />
+                </label>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">Additional Profile Details (JSON)</label>
+                <textarea
+                  value={profileDataJson}
+                  onChange={(event) => setProfileDataJson(event.target.value)}
+                  rows={14}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                />
+                <p className="mt-2 text-xs font-medium text-slate-500">
+                  Store the full personnel profile here, including gender, emergency contacts, benefits, equipment, and declaration details.
+                </p>
               </div>
             </div>
 

@@ -269,7 +269,7 @@ export class HrisService {
 
   async createEmployee(companyId: string, userId: string, data: CreateEmployeeDto) {
     const count = await this.prisma.employee.count({ where: { company_id: companyId } });
-    const empNo = `EMP-${String(count + 1).padStart(4, '0')}`;
+    const empNo = data.emp_no?.trim() || `EMP-${String(count + 1).padStart(4, '0')}`;
     
     const employee = await this.prisma.$transaction(async (tx) => {
       const employee = await tx.employee.create({
@@ -277,6 +277,7 @@ export class HrisService {
           ...data,
           emp_no: empNo,
           company_id: companyId,
+          profile_data: data.profile_data ?? undefined,
           hire_date: new Date(data.hire_date),
         },
         include: { department: true, position: true },
@@ -398,9 +399,11 @@ export class HrisService {
         data: {
           ...data,
           hire_date: data.hire_date ? new Date(data.hire_date) : undefined,
+          emp_no: data.emp_no?.trim() || undefined,
           status: nextStatus,
           termination_date: terminationDate,
           updated_at: new Date(),
+          profile_data: data.profile_data ?? undefined,
         },
         include: { department: true, position: true },
       });
