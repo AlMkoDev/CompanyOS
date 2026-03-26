@@ -7,6 +7,7 @@ import { TasksService } from './tasks.service';
 describe('TasksService', () => {
   let service: TasksService;
   const prisma: any = {
+    $queryRaw: jest.fn(),
     task: {
       create: jest.fn(),
       findFirst: jest.fn(),
@@ -105,6 +106,46 @@ describe('TasksService', () => {
         attachments: ['https://example.com/policy.pdf'],
       }),
     });
+  });
+
+  it('falls back to a legacy-safe insert when task_code is missing from the database', async () => {
+    prisma.task.create.mockRejectedValue(
+      Object.assign(new Error('missing task_code'), {
+        code: 'P2022',
+        meta: { column: 'Task.task_code' },
+        name: 'PrismaClientKnownRequestError',
+      }),
+    );
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'task-legacy',
+        title: 'Legacy task',
+        description: 'Created through fallback',
+        status: 'open',
+        priority: 'medium',
+        department_id: 'dept-1',
+        created_at: new Date('2026-03-26T00:00:00.000Z'),
+        due_date: null,
+        attachments: null,
+      },
+    ]);
+
+    const result = await service.create('company-1', 'user-1', {
+      title: 'Legacy task',
+      department_id: 'dept-1',
+      priority: 'medium',
+    } as any);
+
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(result.id).toBe('task-legacy');
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: 'company-1',
+        userId: 'user-1',
+        action: 'CREATED_TASK',
+        resourceId: 'task-legacy',
+      }),
+    );
   });
 
   it('audits scoped task status updates', async () => {

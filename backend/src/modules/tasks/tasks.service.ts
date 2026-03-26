@@ -18,6 +18,80 @@ export class TasksService {
     );
   }
 
+  private isMissingTaskTaskCodeColumn(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2022' &&
+      typeof error.meta?.column === 'string' &&
+      error.meta.column === 'Task.task_code'
+    );
+  }
+
+  private async createTaskWithLegacySchema(companyId: string, userId: string, data: CreateTaskDto) {
+    const dueDate = data.due_date ? new Date(data.due_date) : null;
+    const attachments = data.attachments?.length ? JSON.stringify(data.attachments) : null;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        status: string;
+        priority: string;
+        department_id: string;
+        created_at: Date;
+        due_date: Date | null;
+        attachments: unknown;
+      }>
+    >`
+      INSERT INTO "Task" (
+        "company_id",
+        "department_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "creator_id",
+        "assignee_id",
+        "due_date",
+        "attachments",
+        "created_at",
+        "updated_at"
+      )
+      VALUES (
+        ${companyId},
+        ${data.department_id},
+        ${data.title},
+        ${data.description ?? null},
+        ${data.status ?? 'open'},
+        ${data.priority ?? 'medium'},
+        ${userId},
+        ${data.assignee_id ?? null},
+        ${dueDate},
+        ${attachments}::jsonb,
+        NOW(),
+        NOW()
+      )
+      RETURNING
+        id,
+        title,
+        description,
+        status,
+        priority,
+        department_id,
+        created_at,
+        due_date,
+        attachments;
+    `;
+
+    const task = rows[0];
+    if (!task) {
+      throw new Error('Failed to create task.');
+    }
+
+    return task;
+  }
+
   private async getCompanyTask(companyId: string, id: string) {
     const task = await this.prisma.task.findFirst({
       where: { id, company_id: companyId },
@@ -27,16 +101,26 @@ export class TasksService {
   }
 
   async create(companyId: string, userId: string, data: CreateTaskDto) {
-    const task = await this.prisma.task.create({
-      data: {
-        ...data,
-        status: data.status ?? 'open',
-        company_id: companyId,
-        creator_id: userId,
-        due_date: data.due_date ? new Date(data.due_date) : undefined,
-        attachments: data.attachments?.length ? data.attachments : undefined,
-      },
-    });
+    let task;
+
+    try {
+      task = await this.prisma.task.create({
+        data: {
+          ...data,
+          status: data.status ?? 'open',
+          company_id: companyId,
+          creator_id: userId,
+          due_date: data.due_date ? new Date(data.due_date) : undefined,
+          attachments: data.attachments?.length ? data.attachments : undefined,
+        },
+      });
+    } catch (error) {
+      if (!this.isMissingTaskTaskCodeColumn(error)) {
+        throw error;
+      }
+
+      task = await this.createTaskWithLegacySchema(companyId, userId, data);
+    }
 
     await this.audit.log({
       companyId,
