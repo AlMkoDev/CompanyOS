@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
@@ -10,6 +10,8 @@ import {
 
 @Injectable()
 export class HrisService {
+  private readonly logger = new Logger(HrisService.name);
+
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
@@ -310,22 +312,34 @@ export class HrisService {
   }
 
   async getEmployees(companyId: string, filters?: any) {
-    const where: any = { company_id: companyId };
-    if (filters?.department_id) where.department_id = filters.department_id;
-    if (filters?.status) where.status = filters.status;
-    if (filters?.search) {
-      where.OR = [
-        { first_name: { contains: filters.search, mode: 'insensitive' } },
-        { last_name: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { emp_no: { contains: filters.search, mode: 'insensitive' } },
-      ];
+    try {
+      const where: any = { company_id: companyId };
+      if (filters?.department_id) where.department_id = filters.department_id;
+      if (filters?.status) where.status = filters.status;
+      if (filters?.search) {
+        where.OR = [
+          { first_name: { contains: filters.search, mode: 'insensitive' } },
+          { last_name: { contains: filters.search, mode: 'insensitive' } },
+          { email: { contains: filters.search, mode: 'insensitive' } },
+          { emp_no: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+      return await this.prisma.employee.findMany({
+        where,
+        include: {
+          department: true,
+          position: true,
+          manager: { select: { id: true, first_name: true, last_name: true } },
+        },
+        orderBy: { first_name: 'asc' },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to load employees for company ${companyId}`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+      return [];
     }
-    return this.prisma.employee.findMany({
-      where,
-      include: { department: true, position: true, manager: { select: { id: true, first_name: true, last_name: true } } },
-      orderBy: { first_name: 'asc' },
-    });
   }
 
   async getEmployeeById(companyId: string, id: string) {
@@ -440,18 +454,26 @@ export class HrisService {
   // ─── POSITIONS ───────────────────────────────────────────────────────────────
 
   async getPositions(companyId: string) {
-    const positions = await this.prisma.position.findMany({
-      where: { company_id: companyId },
-      include: {
-        department: true,
-        employees: { select: { id: true, status: true } },
-      },
-      orderBy: { title: 'asc' },
-    });
-    return positions.map((p) => ({
-      ...p,
-      actual_headcount: p.employees.filter((e) => e.status === 'active').length,
-    }));
+    try {
+      const positions = await this.prisma.position.findMany({
+        where: { company_id: companyId },
+        include: {
+          department: true,
+          employees: { select: { id: true, status: true } },
+        },
+        orderBy: { title: 'asc' },
+      });
+      return positions.map((p) => ({
+        ...p,
+        actual_headcount: p.employees.filter((e) => e.status === 'active').length,
+      }));
+    } catch (error) {
+      this.logger.error(
+        `Failed to load positions for company ${companyId}`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+      return [];
+    }
   }
 
   async createPosition(companyId: string, data: CreatePositionDto) {
@@ -464,28 +486,36 @@ export class HrisService {
   // ─── ORG CHART ───────────────────────────────────────────────────────────────
 
   async getOrgChart(companyId: string) {
-    const employees = await this.prisma.employee.findMany({
-      where: { company_id: companyId, status: 'active' },
-      include: {
-        department: true,
-        position: true,
-      },
-      orderBy: { first_name: 'asc' },
-    });
+    try {
+      const employees = await this.prisma.employee.findMany({
+        where: { company_id: companyId, status: 'active' },
+        include: {
+          department: true,
+          position: true,
+        },
+        orderBy: { first_name: 'asc' },
+      });
 
-    const buildTree = (managerId: string | null): any[] =>
-      employees
-        .filter((e) => e.manager_id === managerId)
-        .map((e) => ({
-          id: e.id,
-          name: `${e.first_name} ${e.last_name}`,
-          title: e.position?.title ?? 'No Position',
-          department: e.department?.name ?? '',
-          avatar: e.avatar_url,
-          children: buildTree(e.id),
-        }));
+      const buildTree = (managerId: string | null): any[] =>
+        employees
+          .filter((e) => e.manager_id === managerId)
+          .map((e) => ({
+            id: e.id,
+            name: `${e.first_name} ${e.last_name}`,
+            title: e.position?.title ?? 'No Position',
+            department: e.department?.name ?? '',
+            avatar: e.avatar_url,
+            children: buildTree(e.id),
+          }));
 
-    return buildTree(null);
+      return buildTree(null);
+    } catch (error) {
+      this.logger.error(
+        `Failed to load org chart for company ${companyId}`,
+        error instanceof Error ? error.stack : JSON.stringify(error),
+      );
+      return [];
+    }
   }
 
   // ─── DOCUMENTS ───────────────────────────────────────────────────────────────
