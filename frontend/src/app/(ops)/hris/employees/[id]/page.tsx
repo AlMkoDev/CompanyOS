@@ -7,6 +7,7 @@ import { ArrowLeft, Briefcase, Calendar, Download, FileText, Mail, MapPin, Phone
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
@@ -46,6 +47,25 @@ interface EmployeeDetail {
   employment_type_label?: string | null;
 }
 
+interface EmployeeSummary {
+  id: string;
+  first_name: string;
+  last_name: string;
+  emp_no: string;
+  status: string;
+}
+
+interface EmployeeEditFormState {
+  first_name: string;
+  last_name: string;
+  email: string;
+  hire_date: string;
+  department_id: string;
+  position_id: string;
+  manager_id: string;
+  status: string;
+}
+
 export default function EmployeeProfilePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -54,8 +74,22 @@ export default function EmployeeProfilePage() {
 
   const [activeTab, setActiveTab] = useState<'profile' | 'history' | 'documents'>('profile');
   const [employee, setEmployee] = useState<EmployeeDetail | null>(null);
+  const [managerOptions, setManagerOptions] = useState<EmployeeSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [form, setForm] = useState<EmployeeEditFormState>({
+    first_name: '',
+    last_name: '',
+    email: '',
+    hire_date: '',
+    department_id: '',
+    position_id: '',
+    manager_id: '',
+    status: 'active',
+  });
 
   useEffect(() => {
     if (!employeeId) {
@@ -69,25 +103,47 @@ export default function EmployeeProfilePage() {
       setError(null);
 
       try {
-        const response = await apiFetch(`/hris/employees/${employeeId}`);
+        const [employeeResponse, employeesResponse] = await Promise.all([
+          apiFetch(`/hris/employees/${employeeId}`),
+          apiFetch('/hris/employees'),
+        ]);
 
-        if (response.status === 401) {
+        if (employeeResponse.status === 401 || employeesResponse.status === 401) {
           logout();
           router.push('/login');
           return;
         }
 
-        if (response.status === 403) {
+        if (employeeResponse.status === 403 || employeesResponse.status === 403) {
           setError('You do not have permission to view this personnel file.');
           return;
         }
 
-        if (!response.ok) {
+        if (!employeeResponse.ok) {
           throw new Error('Failed to load employee record.');
         }
 
-        const data = (await response.json()) as EmployeeDetail;
+        const [data, employeeList] = await Promise.all([
+          employeeResponse.json(),
+          employeesResponse.ok ? employeesResponse.json() : Promise.resolve([]),
+        ]);
+
         setEmployee(data);
+        setManagerOptions(
+          (employeeList as EmployeeSummary[]).filter(
+            (summary) => summary.id !== data.id && summary.status !== 'terminated',
+          ),
+        );
+        setForm({
+          first_name: data.first_name ?? '',
+          last_name: data.last_name ?? '',
+          email: data.email ?? '',
+          hire_date: data.hire_date ? new Date(data.hire_date).toISOString().slice(0, 10) : '',
+          department_id: data.department?.id ?? '',
+          position_id: data.position?.id ?? '',
+          manager_id: data.manager?.id ?? '',
+          status: data.status ?? 'active',
+        });
       } catch (loadError) {
         console.error(loadError);
         setError(loadError instanceof Error ? loadError.message : 'Failed to load employee record.');
@@ -103,6 +159,71 @@ export default function EmployeeProfilePage() {
     if (!employee) return '??';
     return `${employee.first_name?.[0] ?? ''}${employee.last_name?.[0] ?? ''}`.toUpperCase();
   }, [employee]);
+
+  const handleSaveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!employee) {
+      return;
+    }
+
+    setEditError(null);
+    setIsSaving(true);
+
+    try {
+      const response = await apiFetch(`/hris/employees/${employee.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          first_name: form.first_name.trim(),
+          last_name: form.last_name.trim(),
+          email: form.email.trim(),
+          hire_date: form.hire_date,
+          department_id: form.department_id || undefined,
+          position_id: form.position_id || undefined,
+          manager_id: form.manager_id || undefined,
+          status: form.status || undefined,
+        }),
+      });
+
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
+      if (response.status === 403) {
+        setEditError('You do not have permission to update this employee.');
+        return;
+      }
+
+      if (!response.ok) {
+        let message = 'Failed to update employee.';
+        try {
+          const payload = await response.json();
+          if (typeof payload?.message === 'string') {
+            message = payload.message;
+          } else if (Array.isArray(payload?.message) && payload.message.length > 0) {
+            message = payload.message.join(', ');
+          }
+        } catch {
+          // Keep default.
+        }
+        throw new Error(message);
+      }
+
+      const updatedEmployee = (await response.json()) as EmployeeDetail;
+      setEmployee(updatedEmployee);
+      setIsEditModalOpen(false);
+    } catch (saveError) {
+      console.error(saveError);
+      setEditError(saveError instanceof Error ? saveError.message : 'Failed to update employee.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -192,8 +313,11 @@ export default function EmployeeProfilePage() {
                   </div>
                 </div>
               </div>
-              <Button className="w-full h-14 bg-brand-navy rounded-2xl font-bold shadow-lg" onClick={() => router.push(`/hris/employees/${employee.id}`)}>
-                Access Personnel File
+              <Button
+                className="w-full h-14 bg-brand-navy rounded-2xl font-bold shadow-lg text-white"
+                onClick={() => setIsEditModalOpen(true)}
+              >
+                Edit Employee
               </Button>
             </div>
           </Card>
@@ -251,6 +375,18 @@ export default function EmployeeProfilePage() {
                     <div className="space-y-1">
                       <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Position</label>
                       <div className="text-lg font-bold text-slate-700">{employee.position?.title ?? 'No Position'}</div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Reports To</label>
+                      <div className="text-lg font-bold text-slate-700">
+                        {employee.manager ? (
+                          <Link href={`/hris/employees/${employee.manager.id}`} className="text-brand-navy underline decoration-slate-200 underline-offset-4">
+                            {employee.manager.first_name} {employee.manager.last_name}
+                          </Link>
+                        ) : (
+                          'No manager assigned'
+                        )}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -340,6 +476,126 @@ export default function EmployeeProfilePage() {
           </Card>
         </div>
       </div>
+
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-4xl rounded-[32px] bg-white p-8 shadow-2xl">
+            <button
+              type="button"
+              className="absolute right-6 top-6 text-sm font-bold text-slate-400 transition-colors hover:text-slate-700"
+              onClick={() => {
+                setIsEditModalOpen(false);
+                setEditError(null);
+              }}
+            >
+              Close
+            </button>
+
+            <div className="mb-8 pr-16">
+              <h2 className="text-3xl font-heading font-black tracking-tight text-brand-navy">Edit Employee</h2>
+              <p className="mt-2 text-sm font-medium text-slate-500">
+                Update the personnel record, manager, department, and position.
+              </p>
+            </div>
+
+            <form className="space-y-6" onSubmit={handleSaveEmployee}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">First Name *</label>
+                  <Input
+                    value={form.first_name}
+                    onChange={(event) => setForm((current) => ({ ...current, first_name: event.target.value }))}
+                    className="h-12 rounded-2xl border-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Last Name *</label>
+                  <Input
+                    value={form.last_name}
+                    onChange={(event) => setForm((current) => ({ ...current, last_name: event.target.value }))}
+                    className="h-12 rounded-2xl border-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Email *</label>
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                    className="h-12 rounded-2xl border-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Hire Date *</label>
+                  <Input
+                    type="date"
+                    value={form.hire_date}
+                    onChange={(event) => setForm((current) => ({ ...current, hire_date: event.target.value }))}
+                    className="h-12 rounded-2xl border-slate-200"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Manager</label>
+                  <select
+                    value={form.manager_id}
+                    onChange={(event) => setForm((current) => ({ ...current, manager_id: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                  >
+                    <option value="">No manager assigned</option>
+                    {managerOptions.map((manager) => (
+                      <option key={manager.id} value={manager.id}>
+                        {manager.first_name} {manager.last_name} ({manager.emp_no})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">Status</label>
+                  <select
+                    value={form.status}
+                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                  >
+                    <option value="active">Active</option>
+                    <option value="probation">Probation</option>
+                    <option value="terminated">Terminated</option>
+                  </select>
+                </div>
+              </div>
+
+              {editError && (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {editError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 rounded-2xl px-6"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditError(null);
+                  }}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="h-12 rounded-2xl px-6 text-white" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
