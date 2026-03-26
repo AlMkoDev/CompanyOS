@@ -457,8 +457,8 @@ export default function EmployeeDirectoryPage() {
       </div>
     </div>
     {isCreateModalOpen && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-6 backdrop-blur-sm">
-        <div className="relative w-full max-w-3xl rounded-[32px] bg-white p-8 shadow-2xl">
+      <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/40 px-6 py-6 backdrop-blur-sm">
+        <div className="relative my-auto w-full max-w-3xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
           <button
             type="button"
             className="absolute right-6 top-6 text-sm font-bold text-slate-400 transition-colors hover:text-slate-700"
@@ -595,17 +595,15 @@ export default function EmployeeDirectoryPage() {
                   />
                 </label>
               </div>
-              <div>
-                <label className="mb-2 block text-sm font-bold text-slate-700">Additional Profile Details (JSON)</label>
-                <textarea
-                  value={profileDataJson}
-                  onChange={(event) => setProfileDataJson(event.target.value)}
-                  rows={14}
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
-                />
-                <p className="mt-2 text-xs font-medium text-slate-500">
-                  Store the full personnel profile here, including gender, emergency contacts, benefits, equipment, and declaration details.
+              <div className="rounded-[28px] border border-slate-100 bg-slate-50/80 p-5">
+                <div className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Personnel Profile</div>
+                <p className="mt-3 text-sm leading-6 text-slate-600">
+                  Structured profile details are stored behind the scenes so the form stays human-friendly.
+                  Complete the core HR fields and upload the passport photo here.
                 </p>
+                <div className="mt-4 rounded-[22px] bg-white px-4 py-3 text-xs font-medium text-slate-500 shadow-sm">
+                  More detailed profile data can be edited on the employee profile page after creation.
+                </div>
               </div>
             </div>
 

@@ -445,11 +445,34 @@ export default function EmployeeProfilePage() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
                       <Building2 size={18} />
                     </div>
-                    <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel File Snapshot</h3>
+                    <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel File Summary</h3>
                   </div>
-                  <pre className="overflow-auto rounded-[24px] bg-slate-950 p-5 text-xs leading-6 text-slate-100">
-                    {JSON.stringify(getProfileData(employee), null, 2)}
-                  </pre>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Profile Status</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-700">
+                        Rich personnel data is loaded from the structured profile record.
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Passport Photo</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-700">
+                        Upload or update the employee passport-sized photo from the edit modal.
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Reporting Line</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-700">
+                        The page shows who the employee reports to and links the manager profile.
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4">
+                      <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Editable Fields</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-700">
+                        Core HR fields remain editable in the modal without exposing raw JSON.
+                      </div>
+                    </div>
+                  </div>
                 </Card>
 
                 <Card className="rounded-[36px] border-slate-100 bg-brand-navy px-8 py-6 text-white shadow-2xl shadow-brand-navy/20">
@@ -471,8 +494,8 @@ export default function EmployeeProfilePage() {
             </div>
 
             {isEditModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-6 backdrop-blur-sm">
-                <div className="relative max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
+              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/40 px-6 py-6 backdrop-blur-sm">
+                <div className="relative my-auto max-h-[calc(100vh-3rem)] w-full max-w-5xl overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
                   <button
                     type="button"
                     className="absolute right-6 top-6 text-sm font-bold text-slate-400 transition-colors hover:text-slate-700"
@@ -613,14 +636,15 @@ export default function EmployeeProfilePage() {
                           />
                         </label>
                       </div>
-                      <div>
-                        <label className="mb-2 block text-sm font-bold text-slate-700">Personnel File JSON</label>
-                        <textarea
-                          value={profileDataJson}
-                          onChange={(event) => setProfileDataJson(event.target.value)}
-                          rows={18}
-                          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-xs leading-6 text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
-                        />
+                      <div className="rounded-[28px] border border-slate-100 bg-slate-50/80 p-5">
+                        <div className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Personnel Profile</div>
+                        <p className="mt-3 text-sm leading-6 text-slate-600">
+                          The detailed personnel record is already loaded for this employee and can be reviewed from the
+                          profile snapshot cards on the page.
+                        </p>
+                        <div className="mt-4 rounded-[22px] bg-white px-4 py-3 text-xs font-medium text-slate-500 shadow-sm">
+                          Use this modal for manager, department, position, status, and photo updates.
+                        </div>
                       </div>
                     </div>
 
