@@ -316,8 +316,8 @@ export default function TasksPage() {
       />
 
       {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 px-4 py-6 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[32px] bg-white p-8 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/40 px-4 py-6 backdrop-blur-sm">
+          <div className="relative my-auto w-full max-w-2xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-[32px] bg-white p-8 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Task Details</p>

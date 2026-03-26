@@ -54,8 +54,8 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments }: Crea
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/30 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 relative animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/30 px-4 py-6 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative my-auto w-full max-w-lg max-h-[calc(100vh-3rem)] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl animate-in zoom-in-95 duration-200">
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
