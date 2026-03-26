@@ -45,6 +45,7 @@ export class TasksService {
       }>
     >`
       INSERT INTO "Task" (
+        "id",
         "company_id",
         "department_id",
         "title",
@@ -59,6 +60,7 @@ export class TasksService {
         "updated_at"
       )
       VALUES (
+        gen_random_uuid(),
         ${companyId}::uuid,
         ${data.department_id}::uuid,
         ${data.title},
