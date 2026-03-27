@@ -14,7 +14,7 @@
     "start:prod": "node dist/src/main.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
-    "test:release1": "jest --runInBand modules/auth/auth.service.spec.ts modules/company/company.service.spec.ts modules/departments/departments.service.spec.ts modules/tasks/tasks.service.spec.ts modules/hris/hris.service.spec.ts modules/onboarding/onboarding.service.spec.ts",
+    "test:release1": "jest --runInBand release1.smoke.spec.ts modules/auth/auth.service.spec.ts modules/company/company.service.spec.ts modules/departments/departments.service.spec.ts modules/tasks/tasks.service.spec.ts modules/hris/hris.service.spec.ts modules/onboarding/onboarding.service.spec.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
