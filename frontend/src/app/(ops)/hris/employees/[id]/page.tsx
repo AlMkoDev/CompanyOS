@@ -116,6 +116,22 @@ function setProfileField(
   return next;
 }
 
+function setProfileFlag(profileData: EmployeeProfileData, sectionKey: string, fieldKey: string, value: boolean) {
+  const next = cloneProfileData(profileData);
+  const currentSection = isPlainObject(next[sectionKey]) ? (next[sectionKey] as Record<string, unknown>) : {};
+  currentSection[fieldKey] = value;
+  next[sectionKey] = currentSection;
+  return next;
+}
+
+function normalizeEmployeeProfileDraft(profileData: EmployeeProfileData, employee: EmployeeSummary | null, avatarUrl: string | null) {
+  let next = cloneProfileData(profileData);
+  next = setProfileField(next, 'personal_information', 'south_african_id_number', employee?.national_id ?? getStringSectionValue(next, 'personal_information', 'south_african_id_number'));
+  next = setProfileField(next, 'personal_information', 'employee_photo', avatarUrl ? 'Uploaded' : 'Not provided');
+  next = setProfileFlag(next, 'additional_information', 'employee_photo_uploaded', Boolean(avatarUrl));
+  return next;
+}
+
 function getProfileData(employee: EmployeeSummary | null) {
   if (employee?.profile_data && Object.keys(employee.profile_data).length > 0) {
     return employee.profile_data;
@@ -307,6 +323,11 @@ export default function EmployeeProfilePage() {
 
   const beginEdit = () => {
     if (!employee) return;
+    const initialProfileDraft = normalizeEmployeeProfileDraft(
+      cloneProfileData(getProfileData(employee)),
+      employee,
+      employee.avatar_url ?? null,
+    );
 
     setForm({
       emp_no: employee.emp_no ?? '',
@@ -325,7 +346,7 @@ export default function EmployeeProfilePage() {
       avatar_url: employee.avatar_url ?? '',
     });
     setAvatarPreview(employee.avatar_url ?? null);
-    setProfileDraft(cloneProfileData(getProfileData(employee)));
+    setProfileDraft(initialProfileDraft);
     setSaveError(null);
     setIsEditModalOpen(true);
   };
@@ -335,6 +356,9 @@ export default function EmployeeProfilePage() {
     const dataUrl = await fileToDataUrl(file);
     setAvatarPreview(dataUrl);
     setForm((current) => ({ ...current, avatar_url: dataUrl }));
+    setProfileDraft((current) =>
+      normalizeEmployeeProfileDraft(current, employee, dataUrl),
+    );
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -343,6 +367,7 @@ export default function EmployeeProfilePage() {
     setIsSaving(true);
 
     try {
+      const normalizedProfileDraft = normalizeEmployeeProfileDraft(profileDraft, employee, form.avatar_url.trim() || null);
       const response = await apiFetch(`/hris/employees/${employeeId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -361,7 +386,7 @@ export default function EmployeeProfilePage() {
           position_id: form.position_id || undefined,
           manager_id: form.manager_id || undefined,
           status: form.status || undefined,
-          profile_data: profileDraft ?? undefined,
+          profile_data: normalizedProfileDraft ?? undefined,
         }),
       });
 
@@ -383,7 +408,13 @@ export default function EmployeeProfilePage() {
       const updatedEmployee = await response.json();
       setEmployee(updatedEmployee);
       setAvatarPreview(updatedEmployee.avatar_url ?? null);
-      setProfileDraft(cloneProfileData(updatedEmployee.profile_data ?? createAvaEmployeeProfileData()));
+      setProfileDraft(
+        normalizeEmployeeProfileDraft(
+          cloneProfileData(updatedEmployee.profile_data ?? createAvaEmployeeProfileData()),
+          updatedEmployee,
+          updatedEmployee.avatar_url ?? null,
+        ),
+      );
       setIsEditModalOpen(false);
     } catch (submitError) {
       console.error(submitError);
@@ -591,8 +622,8 @@ export default function EmployeeProfilePage() {
                     <div className="grid gap-4 md:grid-cols-2">
                       {renderFieldRow('Gender', getProfileSection('personal_information').gender)}
                       {renderFieldRow('Date of Birth', getProfileSection('personal_information').date_of_birth)}
-                      {renderFieldRow('South African ID', getProfileSection('personal_information').south_african_id_number)}
-                      {renderFieldRow('Passport Photo', getProfileSection('personal_information').employee_photo)}
+                      {renderFieldRow('South African ID', employee?.national_id ?? getProfileSection('personal_information').south_african_id_number)}
+                      {renderFieldRow('Passport Photo', employee?.avatar_url ? 'Uploaded' : 'Not provided')}
                       {renderFieldRow('Tax Number', getProfileSection('tax_and_statutory').tax_number)}
                       {renderFieldRow('PAYE Reference', getProfileSection('tax_and_statutory').paye_reference)}
                       {renderFieldRow('Bank Name', getProfileSection('compensation').bank_name)}
@@ -720,7 +751,13 @@ export default function EmployeeProfilePage() {
                         <label className="mb-2 block text-sm font-bold text-slate-700">National ID</label>
                         <Input
                           value={form.national_id}
-                          onChange={(event) => setForm((current) => ({ ...current, national_id: event.target.value }))}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setForm((current) => ({ ...current, national_id: value }));
+                            setProfileDraft((current) =>
+                              setProfileField(current, 'personal_information', 'south_african_id_number', value),
+                            );
+                          }}
                           className="h-12 rounded-2xl border-slate-200"
                         />
                       </div>
