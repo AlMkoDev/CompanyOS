@@ -160,10 +160,44 @@ export class TasksService {
   }
 
   private async getCompanyTask(companyId: string, id: string) {
-    const task = await this.prisma.task.findFirst({
-      where: { id, company_id: companyId },
-    });
-    if (!task) throw new NotFoundException('Task not found');
+    try {
+      const task = await this.prisma.task.findFirst({
+        where: { id, company_id: companyId },
+      });
+      if (!task) throw new NotFoundException('Task not found');
+      return task;
+    } catch (error) {
+      if (!this.isSchemaDriftError(error)) {
+        throw error;
+      }
+
+      return this.getCompanyTaskWithLegacySchema(companyId, id);
+    }
+  }
+
+  private async getCompanyTaskWithLegacySchema(companyId: string, id: string) {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        company_id: string;
+        attachments: unknown;
+      }>
+    >`
+      SELECT
+        "id",
+        "company_id",
+        "attachments"
+      FROM "Task"
+      WHERE "id" = ${id}::uuid
+        AND "company_id" = ${companyId}::uuid
+      LIMIT 1;
+    `;
+
+    const task = rows[0];
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
     return task;
   }
 
