@@ -536,7 +536,7 @@ export default function EmployeeProfilePage() {
                     </div>
                     <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
                       <MapPin size={16} className="text-slate-400" />
-                      <span>{getProfileSection('employment_details').work_location || 'Not provided'}</span>
+                      <span>{getStringSectionValue(profileData, 'employment_details', 'work_location') || 'Not provided'}</span>
                     </div>
                   </div>
 
