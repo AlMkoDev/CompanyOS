@@ -359,9 +359,9 @@ export default function DashboardPage() {
 
       {/* Operational Gaps Tracking */}
       <section className="animate-in slide-in-from-bottom-5 duration-700 delay-150">
-         <div className="flex justify-between items-end mb-6 px-2">
+          <div className="flex justify-between items-end mb-6 px-2">
             <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
-              Operational Readiness & Gap Tracking
+              Operational Gaps
               <span className="text-[10px] bg-brand-gold/10 text-brand-gold px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-brand-gold/20">Phase 1/3</span>
             </h2>
          </div>
@@ -373,12 +373,12 @@ export default function DashboardPage() {
 
       {/* Main Structural Visualizer */}
       <section className="animate-in fade-in zoom-in-95 duration-1000">
-         <div className="flex justify-between items-end mb-6 px-2">
+        <div className="flex justify-between items-end mb-6 px-2">
             <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
-              Interactive Corporate Schematic
-              <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Live</span>
+              Department Map
+              <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Live view</span>
             </h2>
-            <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase font-bold opacity-50">Structural Schematic v5.0 // OPS_MODE_ENABLED</span>
+            <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase font-bold opacity-50">Updated from live department records</span>
          </div>
          <CorporateVisualizer
             departments={departments.map((department) => ({
@@ -398,13 +398,13 @@ export default function DashboardPage() {
               {bootError}
             </div>
            )}
-           <div className="flex items-center justify-between px-2">
-              <h3 className="text-xl font-heading">Active Workflows</h3>
+          <div className="flex items-center justify-between px-2">
+              <h3 className="text-xl font-heading">Open Tasks</h3>
               <button 
                 onClick={() => window.location.href = '/tasks'} 
                 className="text-[10px] font-bold text-brand-gold uppercase tracking-widest hover:underline"
               >
-                View All TaskBoards →
+                View all tasks →
               </button>
            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -420,7 +420,7 @@ export default function DashboardPage() {
                 ))
               ) : (
                 <div className="col-span-2 p-8 text-center bg-white border border-slate-100 rounded-2xl">
-                  <p className="text-slate-500 mb-2">No active workflows found.</p>
+                  <p className="text-slate-500 mb-2">No open tasks found.</p>
                   <button onClick={() => window.location.href = '/tasks'} className="text-sm font-bold text-brand-navy hover:text-brand-gold transition-colors">Create your first task →</button>
                 </div>
               )}

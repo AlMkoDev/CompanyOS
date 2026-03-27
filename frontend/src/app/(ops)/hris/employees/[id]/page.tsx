@@ -556,12 +556,13 @@ export default function EmployeeProfilePage() {
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
                         <Building2 size={18} />
                       </div>
-                      <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel Overview</h3>
+                      <h3 className="text-2xl font-heading font-black text-brand-navy">Personnel Details</h3>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       {renderFieldRow('Employee ID', employee?.emp_no)}
                       {renderFieldRow('Email', employee?.email)}
                       {renderFieldRow('Phone', employee?.phone)}
+                      {renderFieldRow('Start Date', getProfileSection('employment_details').start_date)}
                       {renderFieldRow('Department', employee?.department?.name ?? 'Unassigned')}
                       {renderFieldRow('Position', employee?.position?.title ?? 'No Position')}
                       {renderFieldRow('Reports To', reportsTo)}
@@ -571,6 +572,12 @@ export default function EmployeeProfilePage() {
                       {renderFieldRow('Status', getProfileSection('employment_details').status ?? employee?.status)}
                       {renderFieldRow('Basic Salary', getProfileSection('compensation').basic_salary)}
                       {renderFieldRow('Work Location', getProfileSection('employment_details').work_location)}
+                      {renderFieldRow('Physical Address', getProfileSection('personal_information').physical_address)}
+                      {renderFieldRow('Postal Address', getProfileSection('personal_information').postal_address)}
+                      {renderFieldRow('Primary Contact', getProfileSection('emergency_contact').primary_contact_name)}
+                      {renderFieldRow('Secondary Contact', getProfileSection('emergency_contact').secondary_contact_name)}
+                      {renderFieldRow('Secondary Phone', getProfileSection('emergency_contact').secondary_phone)}
+                      {renderFieldRow('Secondary Email', getProfileSection('emergency_contact').secondary_email)}
                     </div>
                   </Card>
 
@@ -579,7 +586,7 @@ export default function EmployeeProfilePage() {
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-brand-navy">
                         <User size={18} />
                       </div>
-                      <h3 className="text-2xl font-heading font-black text-brand-navy">Profile Highlights</h3>
+                      <h3 className="text-2xl font-heading font-black text-brand-navy">Profile Fields</h3>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       {renderFieldRow('Gender', getProfileSection('personal_information').gender)}
