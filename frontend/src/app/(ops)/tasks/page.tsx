@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { CreateTaskModal } from '@/components/tasks/CreateTaskModal';
@@ -35,6 +35,12 @@ interface EmployeeOption {
   status?: string;
 }
 
+interface ToastMessage {
+  id: string;
+  message: string;
+  tone: 'success' | 'error' | 'info';
+}
+
 type CreateTaskInput = React.ComponentProps<typeof CreateTaskModal>['onSubmit'] extends (
   data: infer T,
 ) => void
@@ -61,11 +67,33 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
   const [isCommentSaving, setIsCommentSaving] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [recentlyMovedTask, setRecentlyMovedTask] = useState<{ id: string; status: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Drag state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const toastTimers = useRef<number[]>([]);
+
+  const addToast = (message: string, tone: ToastMessage['tone'] = 'success') => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((current) => [...current, { id, message, tone }]);
+
+    const timer = window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+      toastTimers.current = toastTimers.current.filter((activeTimer) => activeTimer !== timer);
+    }, 3200);
+
+    toastTimers.current.push(timer);
+  };
+
+  useEffect(() => {
+    return () => {
+      toastTimers.current.forEach((timer) => window.clearTimeout(timer));
+      toastTimers.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -117,23 +145,27 @@ export default function TasksPage() {
 
       if (res.status === 401) {
         setError('Your session may have expired or been rejected. Please refresh and try again.');
+        addToast('Task could not be created. Please refresh and try again.', 'error');
         return;
       }
 
       if (res.status === 403) {
         setError('You do not have permission to create tasks in this workspace.');
+        addToast('Task creation blocked by access control.', 'error');
         return;
       }
 
       if (res.ok) {
         const newTask = await res.json();
         setTasks(prev => [newTask, ...prev]);
+        addToast(`Task "${newTask.title}" created.`, 'success');
       } else {
         throw new Error('Failed to create task.');
       }
     } catch (error) {
       console.error('Failed to create task:', error);
       setError(error instanceof Error ? error.message : 'Failed to create task.');
+      addToast('Task creation failed.', 'error');
     }
   };
 
@@ -141,6 +173,7 @@ export default function TasksPage() {
     if (!draggedTaskId) return;
 
     const previousTasks = tasks;
+    const movedTaskId = draggedTaskId;
 
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === draggedTaskId ? { ...t, status } : t));
@@ -157,6 +190,7 @@ export default function TasksPage() {
       if (response.status === 401) {
         setError('Your session may have expired or been rejected. Please refresh and try again.');
         setTasks(previousTasks);
+        addToast('Task move failed. Please refresh and try again.', 'error');
         return;
       }
 
@@ -167,10 +201,18 @@ export default function TasksPage() {
       if (!response.ok) {
         throw new Error('Failed to update task status.');
       }
+
+      setRecentlyMovedTask({ id: movedTaskId, status });
+      addToast(`Task moved to ${COLUMNS.find((column) => column.id === status)?.title ?? status}.`, 'success');
+      window.setTimeout(
+        () => setRecentlyMovedTask((current) => (current?.id === movedTaskId ? null : current)),
+        900,
+      );
     } catch (error) {
       console.error('Failed to update status:', error);
       setTasks(previousTasks);
       setError(error instanceof Error ? error.message : 'Failed to update task status.');
+      addToast('Task move failed.', 'error');
     }
     
     setDraggedTaskId(null);
@@ -238,11 +280,13 @@ export default function TasksPage() {
 
       if (response.status === 401) {
         setError('Your session may have expired or been rejected. Please refresh and try again.');
+        addToast('Comment could not be saved. Please refresh and try again.', 'error');
         return;
       }
 
       if (response.status === 403) {
         setError('You do not have permission to comment on this task.');
+        addToast('Comment blocked by access control.', 'error');
         return;
       }
 
@@ -254,9 +298,11 @@ export default function TasksPage() {
       setTasks((current) => current.map((task) => (task.id === updatedTask.id ? updatedTask : task)));
       setSelectedTask(updatedTask);
       setCommentDraft('');
+      addToast('Comment added.', 'success');
     } catch (submitError) {
       console.error('Failed to add task comment:', submitError);
       setError(submitError instanceof Error ? submitError.message : 'Failed to add task comment.');
+      addToast('Comment failed to save.', 'error');
     } finally {
       setIsCommentSaving(false);
     }
@@ -274,6 +320,25 @@ export default function TasksPage() {
       }
     >
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-50 overflow-hidden">
+      {toasts.length > 0 && (
+        <div className="fixed right-6 top-6 z-[120] flex w-[min(24rem,calc(100vw-3rem))] flex-col gap-3">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`rounded-2xl border px-4 py-3 text-sm shadow-2xl backdrop-blur-sm transition-all duration-300 ${
+                toast.tone === 'success'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : toast.tone === 'error'
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-slate-200 bg-white text-slate-700'
+              }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-slate-200 shrink-0">
         <div>
           <h1 className="text-2xl font-heading text-brand-navy">Operational TaskBoard</h1>
@@ -317,7 +382,19 @@ export default function TasksPage() {
                     key={task.id}
                     draggable
                     onDragStart={() => setDraggedTaskId(task.id)}
-                    className={`bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-brand-gold/50 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden ${isTaskOverdue(task) ? 'ring-1 ring-red-200' : ''}`}
+                    className={`bg-white rounded-xl p-4 shadow-sm border cursor-grab active:cursor-grabbing transition-all duration-700 group relative overflow-hidden ${
+                      isTaskOverdue(task) ? 'ring-1 ring-red-200' : 'border-slate-200 hover:shadow-md hover:border-brand-gold/50'
+                    } ${
+                      recentlyMovedTask?.id === task.id
+                        ? recentlyMovedTask.status === 'done'
+                          ? 'bg-emerald-50/90 ring-2 ring-emerald-300/70 shadow-lg'
+                          : recentlyMovedTask.status === 'review'
+                          ? 'bg-amber-50/90 ring-2 ring-amber-300/70 shadow-lg'
+                          : recentlyMovedTask.status === 'in-progress'
+                          ? 'bg-blue-50/90 ring-2 ring-blue-300/70 shadow-lg'
+                          : 'bg-slate-50/90 ring-2 ring-slate-300/70 shadow-lg'
+                        : ''
+                    }`}
                     onClick={() => {
                       setSelectedTask(task);
                       setCommentDraft('');
