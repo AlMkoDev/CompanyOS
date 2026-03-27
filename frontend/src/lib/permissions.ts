@@ -27,6 +27,8 @@ const moduleRoleMatrix: Record<AppModule, string[]> = {
   setup: ['super_admin'],
 };
 
+const fullHrisAccessRoles = new Set(['super_admin', 'chro', 'hr_director', 'administration_manager']);
+
 export function normalizeRoleName(role?: string | null) {
   if (!role) {
     return null;
@@ -55,4 +57,9 @@ export function canAccessModule(user: PermissionUser | null | undefined, module:
 
   const roles = getNormalizedRoles(user);
   return roles.some((role) => allowedRoles.includes(role));
+}
+
+export function canViewSensitiveHrisData(user?: PermissionUser | null) {
+  const roles = getNormalizedRoles(user);
+  return roles.some((role) => fullHrisAccessRoles.has(role));
 }

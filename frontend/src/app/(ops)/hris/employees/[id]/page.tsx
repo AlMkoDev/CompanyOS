@@ -18,6 +18,7 @@ import {
   fileToDataUrl,
   type EmployeeProfileData,
 } from '@/lib/hris/profileData';
+import { canViewSensitiveHrisData } from '@/lib/permissions';
 
 type EmployeeSummary = {
   id: string;
@@ -148,7 +149,7 @@ export default function EmployeeProfilePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const employeeId = Array.isArray(params?.id) ? params.id[0] : params?.id;
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
 
   const [employee, setEmployee] = useState<EmployeeSummary | null>(null);
   const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
@@ -177,6 +178,7 @@ export default function EmployeeProfilePage() {
     status: 'active',
     avatar_url: '',
   });
+  const canSeeSensitiveFields = useMemo(() => canViewSensitiveHrisData(user), [user]);
 
   const loadEmployee = async () => {
     if (!employeeId) {
@@ -469,7 +471,7 @@ export default function EmployeeProfilePage() {
           </div>
         ) : (
           <div className="mx-auto flex max-w-[1600px] flex-col gap-8">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-4">
                 <Button variant="outline" className="h-12 rounded-2xl border-slate-200 px-4" onClick={() => router.push('/hris')}>
                   <ArrowLeft size={16} />
@@ -488,7 +490,13 @@ export default function EmployeeProfilePage() {
                 <Edit3 size={16} className="mr-2 text-brand-gold" />
                 Edit Employee
               </Button>
-            </div>
+                </div>
+
+                {!canSeeSensitiveFields && (
+                  <RestrictedRecord
+                    message="Sensitive employee fields are masked for your role. You can still review the personnel file and reporting line."
+                  />
+                )}
 
             <div className="grid gap-8 lg:grid-cols-[360px,1fr]">
               <Card className="overflow-hidden rounded-[36px] border-slate-100 bg-white shadow-sm">

@@ -55,18 +55,15 @@ describe('HrisService', () => {
         update: jest.fn(),
         create: jest.fn(),
       },
+      department: tx.department,
+      task: tx.task,
       employeeDocument: {
         create: jest.fn(),
       },
-      onboardingPlan: {
-        create: jest.fn(),
-      },
-      onboardingTask: {
-        createMany: jest.fn(),
-      },
-      milestone: {
-        createMany: jest.fn(),
-      },
+      onboardingPlan: tx.onboardingPlan,
+      onboardingTask: tx.onboardingTask,
+      milestone: tx.milestone,
+      offboardingPlan: tx.offboardingPlan,
       position: {
         findMany: jest.fn(),
         create: jest.fn(),
@@ -99,6 +96,83 @@ describe('HrisService', () => {
     await expect(service.getEmployeeById('company-1', 'emp-1')).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it('masks sensitive employee data for non-HR viewer roles', async () => {
+    prisma.employee.findFirst.mockResolvedValue({
+      id: 'emp-1',
+      company_id: 'company-1',
+      first_name: 'Ava',
+      last_name: 'Ndlovu',
+      email: 'ava.ndlovu@example.com',
+      phone: '+27 82 456 7890',
+      national_id: '9508150234087',
+      salary_grade: 'R420,000 ZAR per annum',
+      status: 'probation',
+      avatar_url: 'https://files/avatar.png',
+      profile_data: {
+        personal_information: {
+          south_african_id_number: '9508150234087',
+        },
+        compensation: {
+          basic_salary: 'R420,000 ZAR per annum',
+          account_number: '6212345678901234',
+        },
+        tax_and_statutory: {
+          tax_number: '9876543210',
+          paye_reference: '1234567890',
+          uif_number: '1234567890123',
+          sdl_reference: '9876543210',
+        },
+        benefits_and_statutory_contributions: {
+          medical_aid_number: 'DH123456789',
+          policy_number: 'OM987654321',
+        },
+        emergency_contact: {
+          primary_contact: {
+            id_number: '6504125089087',
+            phone: '+27 82 123 4567',
+            email: 'thabo@example.com',
+          },
+        },
+      },
+    });
+
+    const result = await service.getEmployeeById('company-1', 'emp-1', ['Manager']);
+
+    expect(result.national_id).toMatch(/•+/);
+    expect(result.phone).toMatch(/•+/);
+    expect(result.salary_grade).toBe('Restricted');
+    expect(result.profile_data.personal_information.south_african_id_number).toMatch(/•+/);
+    expect(result.profile_data.compensation.basic_salary).toBe('Restricted');
+    expect(result.profile_data.tax_and_statutory.tax_number).toMatch(/•+/);
+    expect(result.profile_data.benefits_and_statutory_contributions.medical_aid_number).toMatch(/•+/);
+    expect(result.profile_data.emergency_contact.primary_contact.email).toBe('Restricted');
+  });
+
+  it('preserves sensitive employee data for full-access HR viewer roles', async () => {
+    prisma.employee.findFirst.mockResolvedValue({
+      id: 'emp-1',
+      company_id: 'company-1',
+      first_name: 'Ava',
+      last_name: 'Ndlovu',
+      email: 'ava.ndlovu@example.com',
+      phone: '+27 82 456 7890',
+      national_id: '9508150234087',
+      salary_grade: 'R420,000 ZAR per annum',
+      status: 'probation',
+      avatar_url: 'https://files/avatar.png',
+      profile_data: {
+        personal_information: {
+          south_african_id_number: '9508150234087',
+        },
+      },
+    });
+
+    const result = await service.getEmployeeById('company-1', 'emp-1', ['HR Director']);
+
+    expect(result.national_id).toBe('9508150234087');
+    expect(result.profile_data.personal_information.south_african_id_number).toBe('9508150234087');
   });
 
   it('rejects employee updates outside the caller company', async () => {

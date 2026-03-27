@@ -47,9 +47,10 @@ describe('HrisController', () => {
   });
 
   it('passes company context to employee detail, update, and document upload', async () => {
-    const req = { user: { companyId: 'company-1' } };
+    const req = { user: { companyId: 'company-1', userId: 'user-1', roles: ['Manager'] } };
 
     await controller.getEmployee(req, 'emp-1');
+    await controller.getEmployees(req, { search: 'Ava' });
     await controller.updateEmployee(req, 'emp-1', { first_name: 'Alex' });
     await controller.uploadDocument(req, 'emp-1', {
       file_name: 'contract.pdf',
@@ -57,8 +58,9 @@ describe('HrisController', () => {
       document_type: 'contract',
     });
 
-    expect(service.getEmployeeById).toHaveBeenCalledWith('company-1', 'emp-1');
-    expect(service.updateEmployee).toHaveBeenCalledWith('company-1', 'emp-1', {
+    expect(service.getEmployees).toHaveBeenCalledWith('company-1', { search: 'Ava' }, ['Manager']);
+    expect(service.getEmployeeById).toHaveBeenCalledWith('company-1', 'emp-1', ['Manager']);
+    expect(service.updateEmployee).toHaveBeenCalledWith('company-1', 'user-1', 'emp-1', {
       first_name: 'Alex',
     });
     expect(service.uploadDocument).toHaveBeenCalledWith('company-1', 'emp-1', {

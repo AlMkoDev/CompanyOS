@@ -11,6 +11,12 @@ import {
 @Injectable()
 export class HrisService {
   private readonly logger = new Logger(HrisService.name);
+  private readonly fullAccessRoles = new Set([
+    'Super Admin',
+    'Chief Human Resources Officer',
+    'HR Director',
+    'Administration Manager',
+  ]);
 
   constructor(
     private prisma: PrismaService,
@@ -45,6 +51,103 @@ export class HrisService {
     if (status === 'blocked') return 'blocked';
     if (status === 'in_progress') return 'in-progress';
     return 'open';
+  }
+
+  private normalizeRole(role?: string | null) {
+    return role?.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  private canViewSensitiveHrisData(viewerRoles?: string[]) {
+    return (viewerRoles || []).some((role) => {
+      const normalizedRole = this.normalizeRole(role);
+      return normalizedRole
+        ? Array.from(this.fullAccessRoles).some((allowedRole) => this.normalizeRole(allowedRole) === normalizedRole)
+        : false;
+    });
+  }
+
+  private maskString(value: string, visibleTail = 4) {
+    if (!value) {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length <= visibleTail) {
+      return '••••';
+    }
+
+    return `${'•'.repeat(Math.max(4, trimmed.length - visibleTail))}${trimmed.slice(-visibleTail)}`;
+  }
+
+  private maskProfileData(profileData: Record<string, any>, allowSensitive: boolean) {
+    if (allowSensitive) {
+      return profileData;
+    }
+
+    const next = JSON.parse(JSON.stringify(profileData || {})) as Record<string, any>;
+    const personal = next.personal_information || {};
+    const compensation = next.compensation || {};
+    const tax = next.tax_and_statutory || {};
+    const benefits = next.benefits_and_statutory_contributions || {};
+    const emergency = next.emergency_contact || {};
+
+    next.personal_information = {
+      ...personal,
+      south_african_id_number: personal.south_african_id_number ? this.maskString(String(personal.south_african_id_number)) : personal.south_african_id_number,
+    };
+
+    next.compensation = {
+      ...compensation,
+      basic_salary: compensation.basic_salary ? 'Restricted' : compensation.basic_salary,
+      account_number: compensation.account_number ? this.maskString(String(compensation.account_number)) : compensation.account_number,
+    };
+
+    next.tax_and_statutory = {
+      ...tax,
+      tax_number: tax.tax_number ? this.maskString(String(tax.tax_number)) : tax.tax_number,
+      paye_reference: tax.paye_reference ? this.maskString(String(tax.paye_reference)) : tax.paye_reference,
+      uif_number: tax.uif_number ? this.maskString(String(tax.uif_number)) : tax.uif_number,
+      sdl_reference: tax.sdl_reference ? this.maskString(String(tax.sdl_reference)) : tax.sdl_reference,
+    };
+
+    next.benefits_and_statutory_contributions = {
+      ...benefits,
+      medical_aid_number: benefits.medical_aid_number ? this.maskString(String(benefits.medical_aid_number)) : benefits.medical_aid_number,
+      policy_number: benefits.policy_number ? this.maskString(String(benefits.policy_number)) : benefits.policy_number,
+    };
+
+    if (emergency.primary_contact) {
+      emergency.primary_contact = {
+        ...emergency.primary_contact,
+        id_number: emergency.primary_contact.id_number ? this.maskString(String(emergency.primary_contact.id_number)) : emergency.primary_contact.id_number,
+        phone: emergency.primary_contact.phone ? this.maskString(String(emergency.primary_contact.phone), 3) : emergency.primary_contact.phone,
+        email: emergency.primary_contact.email ? 'Restricted' : emergency.primary_contact.email,
+      };
+    }
+
+    if (emergency.secondary_contact) {
+      emergency.secondary_contact = {
+        ...emergency.secondary_contact,
+        id_number: emergency.secondary_contact.id_number ? this.maskString(String(emergency.secondary_contact.id_number)) : emergency.secondary_contact.id_number,
+        phone: emergency.secondary_contact.phone ? this.maskString(String(emergency.secondary_contact.phone), 3) : emergency.secondary_contact.phone,
+        email: emergency.secondary_contact.email ? 'Restricted' : emergency.secondary_contact.email,
+      };
+    }
+
+    next.emergency_contact = emergency;
+    return next;
+  }
+
+  private maskEmployeeRecord(employee: any, viewerRoles?: string[]) {
+    const allowSensitive = this.canViewSensitiveHrisData(viewerRoles);
+
+    return {
+      ...employee,
+      national_id: allowSensitive ? employee.national_id : employee.national_id ? this.maskString(String(employee.national_id)) : employee.national_id,
+      phone: allowSensitive ? employee.phone : employee.phone ? this.maskString(String(employee.phone), 3) : employee.phone,
+      salary_grade: allowSensitive ? employee.salary_grade : employee.salary_grade ? 'Restricted' : employee.salary_grade,
+      profile_data: employee.profile_data ? this.maskProfileData(employee.profile_data, allowSensitive) : employee.profile_data,
+    };
   }
 
   private async resolveDepartmentIdByTemplateOrName(
@@ -329,7 +432,7 @@ export class HrisService {
     return employee;
   }
 
-  async getEmployees(companyId: string, filters?: any) {
+  async getEmployees(companyId: string, filters?: any, viewerRoles?: string[]) {
     try {
       const where: any = { company_id: companyId };
       if (filters?.department_id) where.department_id = filters.department_id;
@@ -342,7 +445,7 @@ export class HrisService {
           { emp_no: { contains: filters.search, mode: 'insensitive' } },
         ];
       }
-      return await this.prisma.employee.findMany({
+      const employees = await this.prisma.employee.findMany({
         where,
         include: {
           department: true,
@@ -351,6 +454,7 @@ export class HrisService {
         },
         orderBy: { first_name: 'asc' },
       });
+      return employees.map((employee) => this.maskEmployeeRecord(employee, viewerRoles));
     } catch (error) {
       this.logger.error(
         `Failed to load employees for company ${companyId}`,
@@ -360,7 +464,7 @@ export class HrisService {
     }
   }
 
-  async getEmployeeById(companyId: string, id: string) {
+  async getEmployeeById(companyId: string, id: string, viewerRoles?: string[]) {
     const emp = await this.prisma.employee.findFirst({
       where: {
         id,
@@ -376,7 +480,7 @@ export class HrisService {
       },
     });
     if (!emp) throw new NotFoundException(`Employee ${id} not found`);
-    return emp;
+    return this.maskEmployeeRecord(emp, viewerRoles);
   }
 
   async updateEmployee(companyId: string, userId: string, id: string, data: UpdateEmployeeDto) {

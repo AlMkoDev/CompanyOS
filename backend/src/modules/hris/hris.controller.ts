@@ -28,13 +28,13 @@ export class HrisController {
   @Get('employees')
   @Roles('Super Admin', 'Dept Admin', 'Manager', 'Chief Human Resources Officer', 'HR Director', 'Administration Manager')
   getEmployees(@Req() req: any, @Query() query: any) {
-    return this.hrisService.getEmployees(req.user.companyId, query);
+    return this.hrisService.getEmployees(req.user.companyId, query, req.user.roles);
   }
 
   @Get('employees/:id')
   @Roles('Super Admin', 'Dept Admin', 'Manager', 'Chief Human Resources Officer', 'HR Director', 'Administration Manager')
   getEmployee(@Req() req: any, @Param('id') id: string) {
-    return this.hrisService.getEmployeeById(req.user.companyId, id);
+    return this.hrisService.getEmployeeById(req.user.companyId, id, req.user.roles);
   }
 
   @Patch('employees/:id')
