@@ -376,6 +376,13 @@ export default function DepartmentWizard() {
     }
   };
 
+  const workflowPreview = data.workflows
+    .map((workflow) => workflow.trim())
+    .filter(Boolean);
+
+  const coreResponsibilitiesPreview = data.core_responsibilities.trim() || 'No core responsibilities defined yet.';
+  const deliverablesPreview = data.deliverables.trim() || 'No deliverables defined yet.';
+
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-heading text-2xl">Initializing Wizard...</div>;
 
   if (!isAuthenticated) {
@@ -440,6 +447,16 @@ export default function DepartmentWizard() {
                 <span className="block text-white/40 mb-1 uppercase font-bold tracking-tighter">BUDGET</span>
                 <span className="text-lg font-heading text-brand-gold">R{data.budget || '0'}</span>
               </div>
+            </div>
+            <div>
+              <span className="block text-white/40 mb-1 uppercase font-bold tracking-tighter">OPERATING MODEL</span>
+              <p className="text-white/70 text-[10px] leading-tight">
+                {coreResponsibilitiesPreview.replace(/<[^>]*>/g, '').slice(0, 120)}
+                {coreResponsibilitiesPreview.length > 120 ? '…' : ''}
+              </p>
+              <p className="mt-2 text-white/50 text-[10px] leading-tight">
+                {workflowPreview.length} workflows and {data.roles.length} positions defined.
+              </p>
             </div>
           </div>
         </div>
@@ -771,6 +788,57 @@ export default function DepartmentWizard() {
               <p className="text-slate-500 max-w-md mx-auto mb-12 text-lg">
                 The {data.name} department is now structurally and strategically codified.
               </p>
+              <div className="w-full max-w-4xl mb-12 text-left">
+                <div className="bg-white border border-slate-100 rounded-[2rem] shadow-xl p-8 md:p-10">
+                  <div className="flex items-center justify-between gap-4 mb-6">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Operating Model Snapshot</div>
+                      <h3 className="text-2xl font-heading text-brand-navy">Review the configured department before finishing</h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStep(3)}
+                      className="text-xs font-bold uppercase tracking-widest text-brand-gold hover:underline"
+                    >
+                      Review Sections
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/70">
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Core Responsibilities</div>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        {coreResponsibilitiesPreview.replace(/<[^>]*>/g, '')}
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/70">
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Deliverables</div>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        {deliverablesPreview.replace(/<[^>]*>/g, '')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 p-5 rounded-2xl border border-slate-100 bg-white">
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Workflows</div>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{workflowPreview.length} defined steps</span>
+                    </div>
+                    {workflowPreview.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {workflowPreview.map((workflow, index) => (
+                          <div key={`${workflow}-${index}`} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <div className="w-7 h-7 rounded-lg bg-brand-navy text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                              {index + 1}
+                            </div>
+                            <div className="text-sm text-slate-600 leading-relaxed">{workflow}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-400 italic">No workflow definitions captured yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
               <button 
                 onClick={handleFinish} 
                 className="btn-premium px-12 py-5 text-xl scale-110 shadow-2xl hover:scale-125 transition-all"
