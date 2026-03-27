@@ -20,6 +20,7 @@ interface PaymentRun {
   status: string;
   run_date: string;
   total_amount: number | string;
+  invoice_count?: number;
 }
 
 interface PaymentRunsResponse {
@@ -137,7 +138,10 @@ export default function PaymentRunsPage() {
                        <h3 className="text-xl font-heading text-brand-navy">Run #{run.id.slice(0, 8).toUpperCase()}</h3>
                        <StatusBadge status={run.status} />
                     </div>
-                    <p className="text-slate-400 text-sm mb-4">Executed on {new Date(run.run_date).toLocaleDateString()} — Includes 12 Invoices</p>
+                    <p className="text-slate-400 text-sm mb-4">
+                      Executed on {new Date(run.run_date).toLocaleDateString()}
+                      {typeof run.invoice_count === 'number' ? ` — ${run.invoice_count} invoices` : ' — invoice count not loaded'}
+                    </p>
                     <div className="text-2xl font-heading text-brand-navy font-bold">R {Number(run.total_amount).toLocaleString()}</div>
                  </div>
                  <div className="flex gap-3">
@@ -162,15 +166,15 @@ export default function PaymentRunsPage() {
            <div className="bg-white rounded-[40px] border border-slate-100 p-10 shadow-sm relative overflow-hidden">
               <h3 className="text-xl font-heading text-brand-navy mb-8">Bank Connectivity</h3>
               <div className="space-y-8">
-                 <BankStatus system="FNB Business" status="Connected" color="bg-brand-gold" />
-                 <BankStatus system="Standard Bank" status="Standby" color="bg-emerald-500" />
+                 <BankStatus system="Primary banking feed" status="Not connected" color="bg-brand-gold" />
+                 <BankStatus system="Secondary banking feed" status="Not connected" color="bg-emerald-500" />
                  
                  <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                     <div className="flex items-center gap-3 mb-4">
                        <AlertCircle size={18} className="text-brand-gold" />
                        <span className="text-xs font-bold text-slate-700">Security Requirement</span>
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">Runs exceeding R 500,000 require dual-authorization from both the Finance Director and CFO.</p>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">Disbursement approval rules are configured separately from the run screen and will appear here once live bank controls are connected.</p>
                  </div>
 
                  <button className="w-full py-5 bg-brand-navy/5 text-brand-navy rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-brand-navy/10 transition-all">
