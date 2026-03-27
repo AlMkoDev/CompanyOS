@@ -126,6 +126,75 @@ export class TasksService {
     return task;
   }
 
+  private async createTaskWithLegacySchemaWithoutAssignee(
+    companyId: string,
+    userId: string,
+    data: CreateTaskDto,
+  ) {
+    const dueDate = data.due_date ? new Date(data.due_date) : null;
+    const attachments = JSON.stringify(this.normalizeTaskMetadata(data));
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        status: string;
+        priority: string;
+        department_id: string;
+        created_at: Date;
+        due_date: Date | null;
+        attachments: unknown;
+      }>
+    >`
+      INSERT INTO "Task" (
+        "id",
+        "company_id",
+        "department_id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "creator_id",
+        "due_date",
+        "attachments",
+        "created_at",
+        "updated_at"
+      )
+      VALUES (
+        gen_random_uuid(),
+        ${companyId}::uuid,
+        ${data.department_id}::uuid,
+        ${data.title},
+        ${data.description ?? null},
+        ${data.status ?? 'open'},
+        ${data.priority ?? 'medium'},
+        ${userId}::uuid,
+        ${dueDate},
+        ${attachments}::jsonb,
+        NOW(),
+        NOW()
+      )
+      RETURNING
+        id,
+        title,
+        description,
+        status,
+        priority,
+        department_id,
+        created_at,
+        due_date,
+        attachments;
+    `;
+
+    const task = rows[0];
+    if (!task) {
+      throw new Error('Failed to create task.');
+    }
+
+    return task;
+  }
+
   private async appendTaskCommentWithLegacySchema(
     companyId: string,
     id: string,
@@ -269,7 +338,19 @@ export class TasksService {
         throw error;
       }
 
-      task = await this.createTaskWithLegacySchema(companyId, userId, data, assigneeId);
+      try {
+        task = await this.createTaskWithLegacySchema(companyId, userId, data, assigneeId);
+      } catch (legacyError) {
+        if (
+          legacyError instanceof Error &&
+          'code' in legacyError &&
+          (legacyError as { code?: string }).code === 'P2010'
+        ) {
+          task = await this.createTaskWithLegacySchemaWithoutAssignee(companyId, userId, data);
+        } else {
+          throw legacyError;
+        }
+      }
     }
 
     await this.audit.log({

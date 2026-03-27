@@ -179,6 +179,48 @@ describe('TasksService', () => {
     );
   });
 
+  it('retries legacy task creation without assignee when the foreign key rejects it', async () => {
+    prisma.user.findUnique.mockResolvedValue({ id: 'user-1', company_id: 'company-1' });
+    prisma.task.create.mockRejectedValue(
+      Object.assign(new Error('missing task_code'), {
+        code: 'P2022',
+        meta: { column: 'Task.task_code' },
+        name: 'PrismaClientKnownRequestError',
+      }),
+    );
+    prisma.$queryRaw
+      .mockRejectedValueOnce(
+        Object.assign(new Error('fk violation'), {
+          code: 'P2010',
+          meta: { code: '23503' },
+          name: 'PrismaClientKnownRequestError',
+        }),
+      )
+      .mockResolvedValueOnce([
+        {
+          id: 'task-no-assignee',
+          title: 'Legacy task',
+          description: 'Created through fallback',
+          status: 'open',
+          priority: 'medium',
+          department_id: 'dept-1',
+          created_at: new Date('2026-03-26T00:00:00.000Z'),
+          due_date: null,
+          attachments: null,
+        },
+      ]);
+
+    const result = await service.create('company-1', 'user-1', {
+      title: 'Legacy task',
+      department_id: 'dept-1',
+      priority: 'medium',
+      assignee_id: 'employee-id-that-will-not-resolve',
+    } as any);
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(result.id).toBe('task-no-assignee');
+  });
+
   it('audits scoped task status updates', async () => {
     prisma.task.findFirst.mockResolvedValue({ id: 'task-1', company_id: 'company-1' });
     prisma.task.update.mockResolvedValue({ id: 'task-1', status: 'blocked' });
