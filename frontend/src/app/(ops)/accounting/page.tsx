@@ -4,14 +4,18 @@ import React from 'react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { 
-  Calculator, 
   ArrowUpRight, 
   ArrowDownLeft, 
   Plus, 
   FileText, 
   Upload,
   PieChart,
-  History
+  History,
+  BookOpen,
+  Lock,
+  Building2,
+  Users,
+  RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -20,6 +24,29 @@ interface TrialBalanceRow {
   name: string;
   debit: number;
   credit: number;
+}
+
+interface ApDashboardData {
+  totalOutstanding?: number;
+  vendorCount?: number;
+  recentPOs?: unknown[];
+}
+
+interface ArDashboardData {
+  totalAr?: number;
+  customerCount?: number;
+}
+
+interface AccountingPeriod {
+  id: string;
+  year: number;
+  month: number;
+  status: string;
+}
+
+interface BankStatementSummary {
+  id: string;
+  statement_date: string;
 }
 
 interface StatCardProps {
@@ -39,6 +66,10 @@ interface ReportLinkProps {
 export default function AccountingDashboardPage() {
   const { isAuthenticated } = useAuthStore();
   const [tb, setTb] = React.useState<TrialBalanceRow[]>([]);
+  const [ap, setAp] = React.useState<ApDashboardData | null>(null);
+  const [ar, setAr] = React.useState<ArDashboardData | null>(null);
+  const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
+  const [statements, setStatements] = React.useState<BankStatementSummary[]>([]);
   const totalDebit = tb.reduce((sum, row) => sum + Number(row.debit || 0), 0);
   const totalCredit = tb.reduce((sum, row) => sum + Number(row.credit || 0), 0);
   const netDifference = Math.abs(totalDebit - totalCredit);
@@ -47,10 +78,27 @@ export default function AccountingDashboardPage() {
   React.useEffect(() => {
     const fetchAccountingData = async () => {
       try {
-        const res = await apiFetch('/accounting/trial-balance');
-        if (res.ok) {
-          const data = await res.json();
-          setTb(Array.isArray(data) ? data : []);
+        const [tbRes, apRes, arRes, periodsRes, statementsRes] = await Promise.all([
+          apiFetch('/accounting/trial-balance'),
+          apiFetch('/ap/dashboard'),
+          apiFetch('/ar/dashboard'),
+          apiFetch('/accounting/periods'),
+          apiFetch('/accounting/bank-statements'),
+        ]);
+
+        if (tbRes.ok) {
+          const tbData = await tbRes.json();
+          setTb(Array.isArray(tbData) ? tbData : []);
+        }
+        if (apRes.ok) setAp(await apRes.json());
+        if (arRes.ok) setAr(await arRes.json());
+        if (periodsRes.ok) {
+          const periodData = await periodsRes.json();
+          setPeriods(Array.isArray(periodData) ? periodData : []);
+        }
+        if (statementsRes.ok) {
+          const statementData = await statementsRes.json();
+          setStatements(Array.isArray(statementData) ? statementData : []);
         }
       } catch (err) {
         console.error('Failed to fetch accounting data:', err);
@@ -69,9 +117,9 @@ export default function AccountingDashboardPage() {
           <p className="text-slate-500">Track live ledger totals, journals, and close status.</p>
         </div>
         <div className="flex gap-3">
-          <Link href="/accounting/bank-import" className="btn-secondary flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-slate-50 transition-all text-sm font-bold">
+          <Link href="/accounting/bank-reconciliation" className="btn-secondary flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-slate-50 transition-all text-sm font-bold">
             <Upload size={16} />
-            Import CSV
+            Bank Reconciliation
           </Link>
           <Link href="/accounting/journal" className="btn-primary bg-brand-navy text-white flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-brand-navy/90 transition-all shadow-lg text-sm font-bold">
             <Plus size={16} />
@@ -80,15 +128,109 @@ export default function AccountingDashboardPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
         <StatCard 
           label="Ledger Accounts"
           value={`${tb.length}`}
-          change="Live"
+          change="Chart of accounts"
           isPositive={true} 
-          icon={<Calculator className="text-emerald-600" />} 
+          icon={<BookOpen className="text-emerald-600" />} 
         />
+        <StatCard 
+          label="AP Outstanding"
+          value={`R ${(ap?.totalOutstanding || 0).toLocaleString()}`}
+          change={`${ap?.vendorCount ?? 0} vendors`}
+          isPositive={true} 
+          icon={<Building2 className="text-rose-600" />} 
+        />
+        <StatCard 
+          label="AR Outstanding"
+          value={`R ${(ar?.totalAr || 0).toLocaleString()}`}
+          change={`${ar?.customerCount ?? 0} customers`}
+          isPositive={true} 
+          icon={<Users className="text-brand-navy" />} 
+        />
+        <StatCard 
+          label="Open Periods"
+          value={`${periods.filter((period) => period.status !== 'closed').length}`}
+          change="Period close"
+          isPositive={true}
+          icon={<Lock className="text-brand-gold" />} 
+        />
+        <StatCard 
+          label="Bank Statements"
+          value={`${statements.length}`}
+          change="Imported files"
+          isPositive={true}
+          icon={<RefreshCw className="text-brand-gold" />} 
+        />
+        <StatCard 
+          label="Trial Difference"
+          value={`R ${netDifference.toLocaleString()}`}
+          change={isBalanced ? 'Balanced' : 'Needs review'}
+          isPositive={isBalanced}
+          icon={<PieChart className="text-brand-gold" />} 
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <Link href="/accounting/chart-of-accounts" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><BookOpen className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Setup</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Chart of Accounts</h3>
+          <p className="text-sm text-slate-500">Create and organize ledger accounts used by journals and reports.</p>
+        </Link>
+
+        <Link href="/accounting/journal" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><FileText className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Posting</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Journal Entries</h3>
+          <p className="text-sm text-slate-500">Record and post balanced transactions to the general ledger.</p>
+        </Link>
+
+        <Link href="/accounting/bank-reconciliation" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><RefreshCw className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Reconciliation</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Bank Reconciliation</h3>
+          <p className="text-sm text-slate-500">Import statements and review uploaded lines against cash activity.</p>
+        </Link>
+
+        <Link href="/accounting/close" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><Lock className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Controls</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Period Close</h3>
+          <p className="text-sm text-slate-500">Lock a month once journals and sub-ledgers are ready.</p>
+        </Link>
+
+        <Link href="/ap" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><Building2 className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">AP</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Accounts Payable</h3>
+          <p className="text-sm text-slate-500">Manage vendors, invoices, approvals, and payment runs.</p>
+        </Link>
+
+        <Link href="/ar" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><Users className="text-brand-gold" /></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">AR</span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Accounts Receivable</h3>
+          <p className="text-sm text-slate-500">Manage customers, collections, aging, and receipts.</p>
+        </Link>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard 
           label="Total Debit"
           value={`R ${totalDebit.toLocaleString()}`}

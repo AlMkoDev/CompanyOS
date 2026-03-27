@@ -31,6 +31,11 @@ export class CreateAccountDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(36)
+  parent_id?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(4000)
   description?: string;
 }

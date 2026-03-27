@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { Decimal } from '@prisma/client/runtime/library';
 import {
   CreateAccountDto,
   CreateJournalEntryDto,
@@ -11,10 +10,38 @@ import {
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
+  private getPeriodFromDate(date: Date) {
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+    };
+  }
+
+  private async ensureAccountingPeriod(companyId: string, date: Date) {
+    const { year, month } = this.getPeriodFromDate(date);
+
+    return this.prisma.accountingPeriod.upsert({
+      where: {
+        company_id_year_month: {
+          company_id: companyId,
+          year,
+          month,
+        },
+      },
+      update: {},
+      create: {
+        company_id: companyId,
+        year,
+        month,
+        status: 'open',
+      },
+    });
+  }
+
   private async getCompanyJournalEntry(companyId: string, entryId: string) {
     const entry = await this.prisma.journalEntry.findFirst({
       where: { id: entryId, company_id: companyId },
-      include: { lines: true },
+      include: { lines: true, period: true },
     });
     if (!entry) throw new NotFoundException('Journal entry not found');
     return entry;
@@ -42,6 +69,12 @@ export class AccountingService {
 
   async createJournalEntry(companyId: string, data: CreateJournalEntryDto) {
     const { lines, ...entryData } = data;
+    const entryDate = entryData.entry_date ? new Date(entryData.entry_date) : new Date();
+    const period = await this.ensureAccountingPeriod(companyId, entryDate);
+
+    if (period.status === 'closed') {
+      throw new BadRequestException('The selected accounting period is closed');
+    }
 
     // Validate debits = credits
     const totalDebit = lines.reduce((sum: number, line: any) => sum + (line.debit || 0), 0);
@@ -54,7 +87,9 @@ export class AccountingService {
     return this.prisma.journalEntry.create({
       data: {
         ...entryData,
+        entry_date: entryDate,
         company_id: companyId,
+        period_id: period.id,
         lines: {
           create: lines.map((line: any) => ({
             account_id: line.account_id,
@@ -71,6 +106,9 @@ export class AccountingService {
   async postJournalEntry(companyId: string, entryId: string) {
     const entry = await this.getCompanyJournalEntry(companyId, entryId);
     if (entry.status === 'posted') throw new BadRequestException('Entry is already posted');
+    if (entry.period?.status === 'closed') {
+      throw new BadRequestException('The accounting period is closed');
+    }
 
     return this.prisma.journalEntry.update({
       where: { id: entryId },
@@ -87,10 +125,11 @@ export class AccountingService {
       const reversal = await tx.journalEntry.create({
         data: {
           company_id: companyId,
-          entry_date: new Date(),
+          entry_date: new Date(original.entry_date),
           description: `Reversal of entry: ${original.reference || original.id}`,
           reference: `REV-${original.reference || original.id}`,
           status: 'posted',
+          period_id: original.period_id,
           lines: {
             create: original.lines.map((line) => ({
               account_id: line.account_id,
@@ -217,8 +256,18 @@ export class AccountingService {
     return Object.values(balances);
   }
 
+  async getPeriods(companyId: string) {
+    return this.prisma.accountingPeriod.findMany({
+      where: { company_id: companyId },
+      orderBy: [
+        { year: 'desc' },
+        { month: 'desc' },
+      ],
+    });
+  }
+
   async closePeriod(companyId: string, year: number, month: number, userId: string) {
-    return this.prisma.accountingPeriod.update({
+    return this.prisma.accountingPeriod.upsert({
       where: {
         company_id_year_month: {
           company_id: companyId,
@@ -226,12 +275,38 @@ export class AccountingService {
           month,
         },
       },
-      data: {
+      update: {
+        status: 'closed',
+        closed_at: new Date(),
+        closed_by: userId,
+      },
+      create: {
+        company_id: companyId,
+        year,
+        month,
         status: 'closed',
         closed_at: new Date(),
         closed_by: userId,
       },
     });
+  }
+
+  async getBankStatements(companyId: string) {
+    return this.prisma.bankStatement.findMany({
+      where: { company_id: companyId },
+      orderBy: { statement_date: 'desc' },
+      include: { lines: true },
+    });
+  }
+
+  async getBankStatement(companyId: string, statementId: string) {
+    const statement = await this.prisma.bankStatement.findFirst({
+      where: { id: statementId, company_id: companyId },
+      include: { lines: true },
+    });
+
+    if (!statement) throw new NotFoundException('Bank statement not found');
+    return statement;
   }
 
   async importBankStatement(companyId: string, data: ImportBankStatementDto) {

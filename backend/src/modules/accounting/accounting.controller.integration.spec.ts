@@ -9,20 +9,26 @@ describe('AccountingController integration', () => {
   let app: INestApplication;
   let guardSpy: jest.SpyInstance;
   let accountingService: {
+    getPeriods: jest.Mock;
     getAccounts: jest.Mock;
     postJournalEntry: jest.Mock;
     reverseJournalEntry: jest.Mock;
     closePeriod: jest.Mock;
     getBalanceSheet: jest.Mock;
+    getBankStatements: jest.Mock;
+    getBankStatement: jest.Mock;
   };
 
   beforeEach(async () => {
     accountingService = {
+      getPeriods: jest.fn(),
       getAccounts: jest.fn(),
       postJournalEntry: jest.fn(),
       reverseJournalEntry: jest.fn(),
       closePeriod: jest.fn(),
       getBalanceSheet: jest.fn(),
+      getBankStatements: jest.fn(),
+      getBankStatement: jest.fn(),
     };
 
     guardSpy = jest
@@ -106,5 +112,27 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.getBalanceSheet).toHaveBeenCalledWith('company-1', new Date('2026-03-27'));
     expect(response.body).toEqual([{ type: 'asset', name: 'Cash', balance: 1200 }]);
+  });
+
+  it('loads accounting periods through company-scoped context', async () => {
+    accountingService.getPeriods.mockResolvedValue([
+      { year: 2026, month: 3, status: 'open' },
+    ]);
+
+    const response = await request(app.getHttpServer()).get('/accounting/periods').expect(200);
+
+    expect(accountingService.getPeriods).toHaveBeenCalledWith('company-1');
+    expect(response.body).toEqual([{ year: 2026, month: 3, status: 'open' }]);
+  });
+
+  it('loads bank statements through company-scoped context', async () => {
+    accountingService.getBankStatements.mockResolvedValue([
+      { id: 'stmt-1', lines: [{ id: 'line-1' }] },
+    ]);
+
+    const response = await request(app.getHttpServer()).get('/accounting/bank-statements').expect(200);
+
+    expect(accountingService.getBankStatements).toHaveBeenCalledWith('company-1');
+    expect(response.body).toEqual([{ id: 'stmt-1', lines: [{ id: 'line-1' }] }]);
   });
 });

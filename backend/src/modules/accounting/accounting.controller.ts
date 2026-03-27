@@ -47,6 +47,11 @@ export class AccountingController {
     return this.accountingService.getTrialBalance(req.user.companyId);
   }
 
+  @Get('periods')
+  async getPeriods(@Req() req: any) {
+    return this.accountingService.getPeriods(req.user.companyId);
+  }
+
   @Post('journal-entries/:id/reverse')
   async reverseJournalEntry(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.reverseJournalEntry(req.user.companyId, id);
@@ -92,5 +97,15 @@ export class AccountingController {
   @Post('bank-statements/import')
   async importBankStatement(@Req() req: any, @Body() data: ImportBankStatementDto) {
     return this.accountingService.importBankStatement(req.user.companyId, data);
+  }
+
+  @Get('bank-statements')
+  async getBankStatements(@Req() req: any) {
+    return this.accountingService.getBankStatements(req.user.companyId);
+  }
+
+  @Get('bank-statements/:id')
+  async getBankStatement(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.getBankStatement(req.user.companyId, id);
   }
 }
