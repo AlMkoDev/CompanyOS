@@ -116,14 +116,7 @@ export default function TasksPage() {
       });
 
       if (res.status === 401) {
-        const authCheck = await apiFetch('/auth/me');
-        if (authCheck.ok) {
-          setError('Your session is still active, but task creation was rejected. Please try again.');
-          return;
-        }
-
-        logout();
-        router.push('/login');
+        setError('Your session may have expired or been rejected. Please refresh and try again.');
         return;
       }
 
@@ -162,15 +155,8 @@ export default function TasksPage() {
       });
 
       if (response.status === 401) {
-        const authCheck = await apiFetch('/auth/me');
-        if (authCheck.ok) {
-          setError('Your session is still active, but this task could not be updated right now.');
-          setTasks(previousTasks);
-          return;
-        }
-
-        logout();
-        router.push('/login');
+        setError('Your session may have expired or been rejected. Please refresh and try again.');
+        setTasks(previousTasks);
         return;
       }
 
@@ -251,14 +237,7 @@ export default function TasksPage() {
       });
 
       if (response.status === 401) {
-        const authCheck = await apiFetch('/auth/me');
-        if (authCheck.ok) {
-          setError('Your session is still active, but this comment could not be saved right now.');
-          return;
-        }
-
-        logout();
-        router.push('/login');
+        setError('Your session may have expired or been rejected. Please refresh and try again.');
         return;
       }
 
