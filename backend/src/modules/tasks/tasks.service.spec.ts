@@ -194,6 +194,36 @@ describe('TasksService', () => {
     expect(result.status).toBe('blocked');
   });
 
+  it('falls back to a legacy-safe status update when task_code is missing from the database', async () => {
+    prisma.task.findFirst.mockResolvedValue({ id: 'task-legacy', company_id: 'company-1' });
+    prisma.task.update.mockRejectedValue(
+      Object.assign(new Error('missing task_code'), {
+        code: 'P2022',
+        meta: { column: 'Task.task_code' },
+        name: 'PrismaClientKnownRequestError',
+      }),
+    );
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'task-legacy',
+        status: 'done',
+      },
+    ]);
+
+    const result = await service.updateStatus('company-1', 'user-9', 'task-legacy', 'done');
+
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(result.status).toBe('done');
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: 'company-1',
+        userId: 'user-9',
+        action: 'UPDATED_TASK_STATUS_DONE',
+        resourceId: 'task-legacy',
+      }),
+    );
+  });
+
   it('appends comments to task attachments metadata', async () => {
     prisma.task.findFirst.mockResolvedValue({
       id: 'task-1',

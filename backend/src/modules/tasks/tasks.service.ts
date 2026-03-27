@@ -131,6 +131,27 @@ export class TasksService {
     return task;
   }
 
+  private async updateTaskStatusWithLegacySchema(companyId: string, id: string, status: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; status: string }>>`
+      UPDATE "Task"
+      SET
+        "status" = ${status},
+        "updated_at" = NOW()
+      WHERE "id" = ${id}::uuid
+        AND "company_id" = ${companyId}::uuid
+      RETURNING
+        id,
+        status;
+    `;
+
+    const task = rows[0];
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    return task;
+  }
+
   private normalizeTaskMetadata(data: CreateTaskDto) {
     const attachments = Array.isArray(data.attachments) ? data.attachments.filter((item) => typeof item === 'string' && item.trim()) : [];
     const dependencies = Array.isArray(data.dependencies)
@@ -282,10 +303,16 @@ export class TasksService {
   ) {
     await this.getCompanyTask(companyId, id);
 
-    const task = await this.prisma.task.update({
-      where: { id },
-      data: { status },
-    });
+    let task;
+
+    try {
+      task = await this.prisma.task.update({
+        where: { id },
+        data: { status },
+      });
+    } catch (error) {
+      task = await this.updateTaskStatusWithLegacySchema(companyId, id, status);
+    }
 
     await this.audit.log({
       companyId,
