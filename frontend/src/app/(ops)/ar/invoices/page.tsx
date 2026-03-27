@@ -9,6 +9,7 @@ import {
   Filter,
   ChevronLeft,
   Mail,
+  CreditCard,
   Download,
   MoreVertical,
   CheckCircle2,
@@ -40,6 +41,8 @@ export default function ArInvoicesPage() {
   const [customers, setCustomers] = React.useState<ArCustomer[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showForm, setShowForm] = React.useState(false);
+  const [showPaymentForm, setShowPaymentForm] = React.useState(false);
+  const [selectedInvoice, setSelectedInvoice] = React.useState<ArInvoice | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [form, setForm] = React.useState({
@@ -48,6 +51,12 @@ export default function ArInvoicesPage() {
     amount: '',
     invoice_date: new Date().toISOString().split('T')[0],
     due_date: '',
+  });
+  const [paymentForm, setPaymentForm] = React.useState({
+    amount: '',
+    payment_date: new Date().toISOString().split('T')[0],
+    method: 'Bank Transfer',
+    reference: '',
   });
 
   const fetchInvoices = React.useCallback(async () => {
@@ -116,6 +125,64 @@ export default function ArInvoicesPage() {
     }
   };
 
+  const handlePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInvoice) return;
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const res = await apiFetch('/ar/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_id: selectedInvoice.id,
+          amount: Number(paymentForm.amount),
+          payment_date: paymentForm.payment_date ? new Date(paymentForm.payment_date).toISOString() : undefined,
+          method: paymentForm.method || undefined,
+          reference: paymentForm.reference || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setMessage('Payment recorded successfully.');
+        setShowPaymentForm(false);
+        setSelectedInvoice(null);
+        setPaymentForm({
+          amount: '',
+          payment_date: new Date().toISOString().split('T')[0],
+          method: 'Bank Transfer',
+          reference: '',
+        });
+        await fetchInvoices();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to record payment.');
+      }
+    } catch {
+      setMessage('Connection error while recording payment.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendInvoice = async (invoice: ArInvoice) => {
+    try {
+      const res = await apiFetch(`/ar/invoices/${invoice.id}/send`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        setMessage(`Invoice ${invoice.invoice_no} sent successfully.`);
+        await fetchInvoices();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to send invoice.');
+      }
+    } catch {
+      setMessage('Connection error while sending invoice.');
+    }
+  };
+
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
       <div className="flex justify-between items-center">
@@ -180,11 +247,12 @@ export default function ArInvoicesPage() {
                     <div className="text-[10px] text-emerald-500 font-bold">PAID R {Number(inv.paid_amount).toLocaleString()}</div>
                   </td>
                   <td className="py-6 px-8">
-                    <StatusBadge status={inv.status} />
+                       <StatusBadge status={inv.status} />
                   </td>
                   <td className="py-6 px-8 text-right">
                     <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
-                      <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Mail size={16} /></button>
+                      <button onClick={() => handleSendInvoice(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Mail size={16} /></button>
+                      <button onClick={() => { setSelectedInvoice(inv); setPaymentForm((prev) => ({ ...prev, amount: String(Number(inv.amount) - Number(inv.paid_amount)) })); setShowPaymentForm(true); }} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><CreditCard size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Download size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><MoreVertical size={16} /></button>
                     </div>
@@ -247,6 +315,72 @@ export default function ArInvoicesPage() {
           </div>
         </div>
       )}
+
+      {showPaymentForm && selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-3xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Record Customer Payment</h2>
+                <p className="text-sm text-slate-400">Apply a payment against invoice #{selectedInvoice.invoice_no}.</p>
+              </div>
+              <button onClick={() => setShowPaymentForm(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handlePayment} className="grid grid-cols-2 gap-6 p-8">
+              <Field label="Amount">
+                <input
+                  value={paymentForm.amount}
+                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  required
+                />
+              </Field>
+              <Field label="Payment Date">
+                <input
+                  value={paymentForm.payment_date}
+                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, payment_date: e.target.value }))}
+                  type="date"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                />
+              </Field>
+              <Field label="Method">
+                <select
+                  value={paymentForm.method}
+                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, method: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                >
+                  <option>Bank Transfer</option>
+                  <option>Card</option>
+                  <option>Cash</option>
+                  <option>Cheque</option>
+                </select>
+              </Field>
+              <Field label="Reference">
+                <input
+                  value={paymentForm.reference}
+                  onChange={(e) => setPaymentForm((prev) => ({ ...prev, reference: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  placeholder="Optional payment reference"
+                />
+              </Field>
+              <div className="col-span-2 text-sm text-slate-500">{message}</div>
+              <div className="col-span-2 flex justify-end gap-4">
+                <button type="button" onClick={() => setShowPaymentForm(false)} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving} className="rounded-2xl bg-brand-navy px-10 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                  {saving ? 'Saving...' : 'Record Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -282,4 +416,3 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
-

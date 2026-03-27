@@ -10,7 +10,8 @@ import {
   ChevronLeft,
   FileSpreadsheet,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -23,12 +24,24 @@ interface PaymentRun {
 
 interface PaymentRunsResponse {
   recentPaymentRuns?: PaymentRun[];
+  pendingInvoices?: {
+    id: string;
+    invoice_no: string;
+    amount: number | string;
+    status: string;
+    vendor?: { name?: string };
+  }[];
 }
 
 export default function PaymentRunsPage() {
   const { isAuthenticated } = useAuthStore();
   const [runs, setRuns] = React.useState<PaymentRun[]>([]);
+  const [dashboardInvoices, setDashboardInvoices] = React.useState<PaymentRunsResponse['pendingInvoices']>([]);
   const [loading, setLoading] = React.useState(true);
+  const [showForm, setShowForm] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = React.useState<string[]>([]);
 
   const fetchRuns = React.useCallback(async () => {
     try {
@@ -36,6 +49,7 @@ export default function PaymentRunsPage() {
       if (res.ok) {
         const data: PaymentRunsResponse = await res.json();
         setRuns(data.recentPaymentRuns || []);
+        setDashboardInvoices(data.pendingInvoices || []);
       }
     } catch (err) {
       console.error('Failed to fetch payment runs:', err);
@@ -47,6 +61,47 @@ export default function PaymentRunsPage() {
   React.useEffect(() => {
     if (isAuthenticated) fetchRuns();
   }, [fetchRuns, isAuthenticated]);
+
+  const selectedTotal = React.useMemo(() => {
+    const selected = new Set(selectedInvoiceIds);
+    return (dashboardInvoices || [])
+      .filter((invoice) => selected.has(invoice.id))
+      .reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
+  }, [dashboardInvoices, selectedInvoiceIds]);
+
+  const toggleInvoice = (invoiceId: string) => {
+    setSelectedInvoiceIds((prev) =>
+      prev.includes(invoiceId) ? prev.filter((id) => id !== invoiceId) : [...prev, invoiceId]
+    );
+  };
+
+  const handleRunCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const res = await apiFetch('/ap/payment-runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceIds: selectedInvoiceIds }),
+      });
+
+      if (res.ok) {
+        setMessage('Payment run initiated successfully.');
+        setShowForm(false);
+        setSelectedInvoiceIds([]);
+        await fetchRuns();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to initiate payment run.');
+      }
+    } catch {
+      setMessage('Connection error while initiating payment run.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
@@ -61,6 +116,7 @@ export default function PaymentRunsPage() {
           </div>
         </div>
         <button 
+          onClick={() => setShowForm(true)}
           className="flex items-center gap-2 px-8 py-4 bg-brand-gold text-brand-navy rounded-[24px] font-heading text-lg shadow-xl shadow-brand-gold/20 hover:scale-105 transition-all"
         >
           <CreditCard size={20} />
@@ -138,9 +194,77 @@ export default function PaymentRunsPage() {
               <div className="absolute top-0 right-0 p-8 opacity-10">
                  <CreditCard size={120} />
               </div>
-           </div>
+          </div>
         </div>
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-4xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Initiate Payment Run</h2>
+                <p className="text-sm text-slate-400">Select approved invoices to bundle into a disbursement run.</p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleRunCreate} className="space-y-6 p-8">
+              <div className="grid gap-4 md:grid-cols-2">
+                {(dashboardInvoices || []).map((invoice) => {
+                  const selected = selectedInvoiceIds.includes(invoice.id);
+                  const selectable = invoice.status === 'approved';
+                  return (
+                    <label
+                      key={invoice.id}
+                      className={`flex cursor-pointer items-center justify-between rounded-3xl border p-4 transition-all ${
+                        selected ? 'border-brand-gold bg-brand-gold/5 shadow-sm' : 'border-slate-200 bg-slate-50'
+                      } ${!selectable ? 'opacity-60' : ''}`}
+                    >
+                      <div className="space-y-1">
+                        <div className="font-bold text-brand-navy">{invoice.vendor?.name || 'Vendor'}</div>
+                        <div className="text-xs text-slate-400">#{invoice.invoice_no}</div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{invoice.status}</div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-brand-navy">R {Number(invoice.amount).toLocaleString()}</div>
+                          <div className="text-[10px] text-slate-400">Approved invoices only</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!selectable}
+                          onChange={() => toggleInvoice(invoice.id)}
+                          className="h-5 w-5 rounded border-slate-300 text-brand-gold focus:ring-brand-gold disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
+                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selected total</div>
+                <div className="text-2xl font-heading text-brand-navy">R {selectedTotal.toLocaleString()}</div>
+              </div>
+              <div className="text-sm text-slate-500">{message}</div>
+              <div className="flex justify-end gap-4">
+                <button type="button" onClick={() => setShowForm(false)} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving || selectedInvoiceIds.length === 0}
+                  className="rounded-2xl bg-brand-navy px-10 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? 'Running...' : 'Start Run'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
