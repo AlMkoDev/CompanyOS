@@ -206,7 +206,7 @@ export default function TasksPage() {
       addToast(`Task moved to ${COLUMNS.find((column) => column.id === status)?.title ?? status}.`, 'success');
       window.setTimeout(
         () => setRecentlyMovedTask((current) => (current?.id === movedTaskId ? null : current)),
-        900,
+        1500,
       );
     } catch (error) {
       console.error('Failed to update status:', error);
@@ -321,7 +321,7 @@ export default function TasksPage() {
     >
     <div className="h-[calc(100vh-4rem)] flex flex-col bg-slate-50 overflow-hidden">
       {toasts.length > 0 && (
-        <div className="fixed right-6 top-6 z-[120] flex w-[min(24rem,calc(100vw-3rem))] flex-col gap-3">
+        <div className="fixed right-6 top-[5.75rem] z-[220] flex w-[min(24rem,calc(100vw-3rem))] flex-col gap-3">
           {toasts.map((toast) => (
             <div
               key={toast.id}
@@ -387,12 +387,12 @@ export default function TasksPage() {
                     } ${
                       recentlyMovedTask?.id === task.id
                         ? recentlyMovedTask.status === 'done'
-                          ? 'bg-emerald-50/90 ring-2 ring-emerald-300/70 shadow-lg'
+                          ? 'bg-emerald-50/95 ring-4 ring-emerald-300/80 ring-offset-2 ring-offset-white shadow-[0_0_0_1px_rgba(16,185,129,0.18),0_20px_45px_rgba(16,185,129,0.18)] scale-[1.03] animate-pulse'
                           : recentlyMovedTask.status === 'review'
-                          ? 'bg-amber-50/90 ring-2 ring-amber-300/70 shadow-lg'
+                          ? 'bg-amber-50/95 ring-4 ring-amber-300/80 ring-offset-2 ring-offset-white shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_20px_45px_rgba(245,158,11,0.18)] scale-[1.03] animate-pulse'
                           : recentlyMovedTask.status === 'in-progress'
-                          ? 'bg-blue-50/90 ring-2 ring-blue-300/70 shadow-lg'
-                          : 'bg-slate-50/90 ring-2 ring-slate-300/70 shadow-lg'
+                          ? 'bg-blue-50/95 ring-4 ring-blue-300/80 ring-offset-2 ring-offset-white shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_20px_45px_rgba(59,130,246,0.18)] scale-[1.03] animate-pulse'
+                          : 'bg-slate-50/95 ring-4 ring-slate-300/80 ring-offset-2 ring-offset-white shadow-[0_0_0_1px_rgba(148,163,184,0.18),0_20px_45px_rgba(148,163,184,0.18)] scale-[1.03] animate-pulse'
                         : ''
                     }`}
                     onClick={() => {
