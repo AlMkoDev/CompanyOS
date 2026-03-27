@@ -56,6 +56,7 @@ interface KpiRowProps {
   label: string;
   value: string;
   progress: number;
+  source: string;
 }
 
 const PRIORITY_COLORS = {
@@ -319,7 +320,16 @@ export default function DashboardPage() {
   const overdueTasks = tasks.filter(
     (task) => task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date(),
   ).length;
-  const departmentCoverage = departments.length > 0 ? Math.min(100, Math.round((departments.length / 9) * 100)) : 0;
+  const configuredDepartments = departments.filter((department) => Boolean(normalizeDepartmentTemplateKey(department.template_key))).length;
+  const tasksWithoutDepartments = tasks.filter((task) => !task.department_id).length;
+  const activeTasksWithDueDates = tasks.filter((task) => task.status !== 'done' && Boolean(task.due_date)).length;
+  const departmentCoverage = departments.length > 0 ? Math.round((configuredDepartments / departments.length) * 100) : 0;
+  const operationalSignals = [
+    bootError ? `Bootstrap error: ${bootError}` : null,
+    tasksWithoutDepartments > 0 ? `${tasksWithoutDepartments} active tasks have no department assigned` : null,
+    activeTasksWithDueDates === 0 && activeTasks > 0 ? 'Active tasks do not yet have due dates for SLA tracking' : null,
+    overdueTasks > 0 ? `${overdueTasks} tasks are overdue` : 'No overdue tasks detected',
+  ].filter(Boolean) as string[];
 
   return (
     <AppPermissionGuard module="dashboard">
@@ -421,21 +431,41 @@ export default function DashboardPage() {
         <aside className="space-y-6">
           <div className="glass-card p-8 rounded-3xl border-slate-100 shadow-sm">
             <h3 className="font-heading text-2xl mb-8 flex justify-between items-center">
-              Master KPIs
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Q1 Performance</span>
+              Live Operational Signals
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Source-backed</span>
             </h3>
             <div className="space-y-8">
-              <KpiRow label="Department Coverage" value={`${departments.length}/9`} progress={departmentCoverage} />
-              <KpiRow label="Open Workload" value={`${activeTasks}`} progress={Math.min(100, activeTasks * 10)} />
-              <KpiRow label="Overdue Tasks" value={`${overdueTasks}`} progress={Math.max(5, 100 - Math.min(100, overdueTasks * 15))} />
+              <KpiRow
+                label="Configured Departments"
+                value={`${configuredDepartments}/${departments.length}`}
+                progress={departmentCoverage}
+                source="/departments"
+              />
+              <KpiRow
+                label="Active Tasks"
+                value={`${activeTasks}`}
+                progress={Math.min(100, activeTasks * 10)}
+                source="/tasks"
+              />
+              <KpiRow
+                label="Overdue Tasks"
+                value={`${overdueTasks}`}
+                progress={Math.max(5, 100 - Math.min(100, overdueTasks * 15))}
+                source="/tasks"
+              />
             </div>
           </div>
 
           <div className="glass-card p-8 rounded-3xl border-l-4 border-brand-gold bg-white">
-            <h3 className="font-heading text-lg mb-6 text-brand-navy">Latest Audit Trail</h3>
+            <h3 className="font-heading text-lg mb-6 text-brand-navy">Live Exception Feed</h3>
             <div className="text-[11px] text-slate-500 space-y-6">
-              <AuditItem time="Now" action="Department Sync" details={`${departments.length} active departments visible in the current company view`} />
-              <AuditItem time="Now" action="Operational Status" details={`${activeTasks} active task items currently in execution`} />
+              {operationalSignals.length > 0 ? (
+                operationalSignals.map((signal) => (
+                  <AuditItem key={signal} time="Now" action="Signal" details={signal} />
+                ))
+              ) : (
+                <AuditItem time="Now" action="Signal" details="No active exceptions detected from the current dashboard sources." />
+              )}
               <AuditItem time="Now" action="Access Context" details={`Signed in as ${user.roles.join(', ') || 'Standard User'}`} />
             </div>
           </div>
@@ -473,13 +503,14 @@ function AuditItem({ time, action, details }: AuditItemProps) {
   );
 }
 
-function KpiRow({ label, value, progress }: KpiRowProps) {
+function KpiRow({ label, value, progress, source }: KpiRowProps) {
   return (
     <div>
       <div className="flex justify-between text-sm mb-2">
         <span className="font-medium text-slate-600">{label}</span>
         <span className="font-bold text-brand-navy">{value}</span>
       </div>
+      <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-slate-400">{source}</div>
       <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
         <div className="bg-brand-gold h-full transition-all duration-1000" style={{ width: `${progress}%` }}></div>
       </div>
