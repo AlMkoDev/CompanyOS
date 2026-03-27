@@ -8,6 +8,9 @@ describe('TasksService', () => {
   let service: TasksService;
   const prisma: any = {
     $queryRaw: jest.fn(),
+    user: {
+      findUnique: jest.fn(),
+    },
     task: {
       create: jest.fn(),
       findFirst: jest.fn(),
@@ -84,6 +87,7 @@ describe('TasksService', () => {
   });
 
   it('persists task attachments when provided', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
     prisma.task.create.mockResolvedValue({
       id: 'task-2',
       title: 'Upload policy',
@@ -110,6 +114,7 @@ describe('TasksService', () => {
   });
 
   it('persists dependency and comment metadata in task attachments', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
     prisma.task.create.mockResolvedValue({
       id: 'task-3',
       title: 'Review launch plan',
@@ -134,6 +139,7 @@ describe('TasksService', () => {
   });
 
   it('falls back to a legacy-safe insert when task_code is missing from the database', async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
     prisma.task.create.mockRejectedValue(
       Object.assign(new Error('missing task_code'), {
         code: 'P2022',

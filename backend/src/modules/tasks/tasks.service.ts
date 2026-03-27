@@ -37,7 +37,29 @@ export class TasksService {
     );
   }
 
-  private async createTaskWithLegacySchema(companyId: string, userId: string, data: CreateTaskDto) {
+  private async resolveTaskAssigneeId(companyId: string, assigneeId?: string) {
+    if (!assigneeId) {
+      return null;
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: assigneeId },
+      select: { id: true, company_id: true },
+    });
+
+    if (!user || user.company_id !== companyId) {
+      return null;
+    }
+
+    return user.id;
+  }
+
+  private async createTaskWithLegacySchema(
+    companyId: string,
+    userId: string,
+    data: CreateTaskDto,
+    assigneeId: string | null,
+  ) {
     const dueDate = data.due_date ? new Date(data.due_date) : null;
     const attachments = JSON.stringify(this.normalizeTaskMetadata(data));
 
@@ -78,7 +100,7 @@ export class TasksService {
         ${data.status ?? 'open'},
         ${data.priority ?? 'medium'},
         ${userId}::uuid,
-        ${data.assignee_id ?? null}::uuid,
+        ${assigneeId ?? null}::uuid,
         ${dueDate},
         ${attachments}::jsonb,
         NOW(),
@@ -225,6 +247,7 @@ export class TasksService {
   async create(companyId: string, userId: string, data: CreateTaskDto) {
     let task;
     const attachments = this.normalizeTaskMetadata(data);
+    const assigneeId = await this.resolveTaskAssigneeId(companyId, data.assignee_id);
 
     try {
       task = await this.prisma.task.create({
@@ -232,7 +255,7 @@ export class TasksService {
           title: data.title,
           description: data.description,
           department_id: data.department_id,
-          assignee_id: data.assignee_id,
+          assignee_id: assigneeId ?? undefined,
           attachments: attachments.length ? attachments : undefined,
           status: data.status ?? 'open',
           company_id: companyId,
@@ -246,7 +269,7 @@ export class TasksService {
         throw error;
       }
 
-      task = await this.createTaskWithLegacySchema(companyId, userId, data);
+      task = await this.createTaskWithLegacySchema(companyId, userId, data, assigneeId);
     }
 
     await this.audit.log({
