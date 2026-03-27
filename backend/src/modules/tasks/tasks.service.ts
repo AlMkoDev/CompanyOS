@@ -155,10 +155,6 @@ export class TasksService {
       const enriched = await this.loadTaskWithRelations(task.id);
       return enriched || task;
     } catch (error) {
-      if (!this.isSchemaDriftError(error)) {
-        return task;
-      }
-
       return task;
     }
   }
@@ -287,10 +283,6 @@ export class TasksService {
         },
       });
     } catch (error) {
-      if (!this.isSchemaDriftError(error)) {
-        throw error;
-      }
-
       task = await this.appendTaskCommentWithLegacySchema(companyId, id, cleanedComment);
     }
 
