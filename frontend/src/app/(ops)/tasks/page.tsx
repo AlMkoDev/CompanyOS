@@ -48,6 +48,9 @@ const COLUMNS = [
   { id: 'done', title: 'Completed', color: 'border-emerald-200' },
 ];
 
+const COMMENT_PREFIX = 'comment:';
+const DEPENDENCY_PREFIX = 'dependency:';
+
 export default function TasksPage() {
   const { isAuthenticated, logout } = useAuthStore();
   const router = useRouter();
@@ -56,6 +59,8 @@ export default function TasksPage() {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [isCommentSaving, setIsCommentSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,6 +193,20 @@ export default function TasksPage() {
   const formatTaskDate = (value?: string) => (value ? new Date(value).toLocaleDateString() : 'Not provided');
 
   const getTaskAttachments = (task: Task) => (Array.isArray(task.attachments) ? task.attachments : []);
+  const getTaskDependencies = (task: Task) =>
+    getTaskAttachments(task)
+      .filter((entry) => entry.startsWith(DEPENDENCY_PREFIX))
+      .map((entry) => entry.slice(DEPENDENCY_PREFIX.length).trim())
+      .filter(Boolean);
+
+  const getTaskComments = (task: Task) =>
+    getTaskAttachments(task)
+      .filter((entry) => entry.startsWith(COMMENT_PREFIX))
+      .map((entry) => entry.slice(COMMENT_PREFIX.length).trim())
+      .filter(Boolean);
+
+  const getTaskLinks = (task: Task) =>
+    getTaskAttachments(task).filter((entry) => !entry.startsWith(COMMENT_PREFIX) && !entry.startsWith(DEPENDENCY_PREFIX));
 
   if (loading) {
     return (
@@ -201,6 +220,49 @@ export default function TasksPage() {
   }
 
   const overdueCount = tasks.filter((task) => task.due_date && task.status !== 'done' && new Date(task.due_date) < new Date()).length;
+
+  const handleCommentSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!selectedTask || !commentDraft.trim()) {
+      return;
+    }
+
+    setIsCommentSaving(true);
+
+    try {
+      const response = await apiFetch(`/tasks/${selectedTask.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment: commentDraft.trim() }),
+      });
+
+      if (response.status === 401) {
+        logout();
+        router.push('/login');
+        return;
+      }
+
+      if (response.status === 403) {
+        setError('You do not have permission to comment on this task.');
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to add task comment.');
+      }
+
+      const updatedTask = await response.json();
+      setTasks((current) => current.map((task) => (task.id === updatedTask.id ? updatedTask : task)));
+      setSelectedTask(updatedTask);
+      setCommentDraft('');
+    } catch (submitError) {
+      console.error('Failed to add task comment:', submitError);
+      setError(submitError instanceof Error ? submitError.message : 'Failed to add task comment.');
+    } finally {
+      setIsCommentSaving(false);
+    }
+  };
 
   return (
     <AppPermissionGuard
@@ -258,7 +320,10 @@ export default function TasksPage() {
                     draggable
                     onDragStart={() => setDraggedTaskId(task.id)}
                     className={`bg-white rounded-xl p-4 shadow-sm border border-slate-200 hover:shadow-md hover:border-brand-gold/50 cursor-grab active:cursor-grabbing transition-all group relative overflow-hidden ${isTaskOverdue(task) ? 'ring-1 ring-red-200' : ''}`}
-                    onClick={() => setSelectedTask(task)}
+                    onClick={() => {
+                      setSelectedTask(task);
+                      setCommentDraft('');
+                    }}
                   >
                     <div className={`absolute top-0 left-0 w-1 h-full ${getDepartmentColor(task.department_id)}`}></div>
                     
@@ -282,16 +347,16 @@ export default function TasksPage() {
                         Due {formatTaskDate(task.due_date)}{isTaskOverdue(task) ? ' · Overdue' : ''}
                       </div>
                     )}
-                    {getTaskAttachments(task).length > 0 && (
+                    {getTaskLinks(task).length > 0 && (
                       <div className="mb-3 flex flex-wrap gap-2 pl-2">
-                        {getTaskAttachments(task).slice(0, 3).map((attachment, index) => (
+                        {getTaskLinks(task).slice(0, 3).map((attachment, index) => (
                           <span key={`${task.id}-attachment-${index}`} className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
                             Attachment {index + 1}
                           </span>
                         ))}
-                        {getTaskAttachments(task).length > 3 && (
+                        {getTaskLinks(task).length > 3 && (
                           <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">
-                            +{getTaskAttachments(task).length - 3} more
+                            +{getTaskLinks(task).length - 3} more
                           </span>
                         )}
                       </div>
@@ -338,7 +403,10 @@ export default function TasksPage() {
               <button
                 type="button"
                 className="text-sm font-bold text-slate-400 hover:text-slate-700"
-                onClick={() => setSelectedTask(null)}
+                onClick={() => {
+                  setSelectedTask(null);
+                  setCommentDraft('');
+                }}
               >
                 Close
               </button>
@@ -377,6 +445,19 @@ export default function TasksPage() {
               </div>
             </div>
 
+            {getTaskDependencies(selectedTask).length > 0 && (
+              <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
+                <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Dependencies</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {getTaskDependencies(selectedTask).map((dependency, index) => (
+                    <span key={`${selectedTask.id}-dependency-${index}`} className="rounded-full bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                      {dependency}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {selectedTask.description && (
               <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
                 <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Description</div>
@@ -386,9 +467,9 @@ export default function TasksPage() {
 
             <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
               <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Attachments</div>
-              {getTaskAttachments(selectedTask).length > 0 ? (
+              {getTaskLinks(selectedTask).length > 0 ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {getTaskAttachments(selectedTask).map((attachment, index) => (
+                  {getTaskLinks(selectedTask).map((attachment, index) => (
                     <span key={`${selectedTask.id}-modal-attachment-${index}`} className="rounded-full bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
                       {attachment}
                     </span>
@@ -397,6 +478,40 @@ export default function TasksPage() {
               ) : (
                 <p className="mt-2 text-sm text-slate-500">No attachments provided.</p>
               )}
+            </div>
+
+            <div className="mt-6 rounded-[24px] border border-slate-100 bg-white p-4">
+              <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Comments</div>
+              {getTaskComments(selectedTask).length > 0 ? (
+                <div className="mt-3 space-y-3">
+                  {getTaskComments(selectedTask).map((comment, index) => (
+                    <div key={`${selectedTask.id}-comment-${index}`} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      {comment}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">No comments yet.</p>
+              )}
+
+              <form className="mt-4 space-y-3" onSubmit={handleCommentSubmit}>
+                <textarea
+                  value={commentDraft}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30"
+                  minLength={1}
+                  placeholder="Add a comment"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isCommentSaving || !commentDraft.trim()}
+                    className="rounded-2xl bg-brand-navy px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {isCommentSaving ? 'Saving...' : 'Add Comment'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

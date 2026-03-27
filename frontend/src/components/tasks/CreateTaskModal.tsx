@@ -12,6 +12,8 @@ interface CreateTaskModalProps {
     due_date?: string;
     attachments?: string[];
     assignee_id?: string;
+    dependencies?: string[];
+    comment?: string;
   }) => void;
   departments: { id: string; name: string }[];
   assignees: { id: string; first_name: string; last_name: string }[];
@@ -24,6 +26,8 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments, assign
   const [priority, setPriority] = useState('medium');
   const [dueDate, setDueDate] = useState('');
   const [attachments, setAttachments] = useState('');
+  const [dependencies, setDependencies] = useState('');
+  const [comment, setComment] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
 
   if (!isOpen) return null;
@@ -42,6 +46,11 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments, assign
       status: 'open',
       due_date: dueDate || undefined,
       assignee_id: assigneeId || undefined,
+      dependencies: dependencies
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
+      comment: comment.trim() || undefined,
       attachments: attachments
         .split(',')
         .map((value) => value.trim())
@@ -54,6 +63,8 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments, assign
     setPriority('medium');
     setDueDate('');
     setAttachments('');
+    setDependencies('');
+    setComment('');
     setAssigneeId('');
     onClose();
   };
@@ -160,6 +171,30 @@ export const CreateTaskModal = ({ isOpen, onClose, onSubmit, departments, assign
             <p className="mt-2 text-xs text-slate-500">
               Example: Google Drive link, document URL, or file reference.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Dependencies</label>
+            <input
+              type="text"
+              value={dependencies}
+              onChange={(e) => setDependencies(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
+              placeholder="Comma-separated task dependencies"
+            />
+            <p className="mt-2 text-xs text-slate-500">
+              Example: Waiting on design approval, Procurement sign-off, Legal review.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Initial Comment</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm min-h-[90px] focus:outline-none focus:ring-2 focus:ring-brand-gold/30 focus:border-brand-gold transition-all"
+              placeholder="Optional initial note for the task"
+            />
           </div>
 
           <div className="pt-6 flex justify-end gap-3">

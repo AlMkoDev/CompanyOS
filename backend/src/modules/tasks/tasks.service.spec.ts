@@ -11,6 +11,7 @@ describe('TasksService', () => {
     task: {
       create: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -108,6 +109,30 @@ describe('TasksService', () => {
     });
   });
 
+  it('persists dependency and comment metadata in task attachments', async () => {
+    prisma.task.create.mockResolvedValue({
+      id: 'task-3',
+      title: 'Review launch plan',
+      status: 'open',
+      attachments: ['https://example.com/brief.pdf', 'dependency:Legal review', 'comment:Initial note'],
+    });
+
+    await service.create('company-1', 'user-1', {
+      title: 'Review launch plan',
+      department_id: 'dept-1',
+      priority: 'medium',
+      attachments: ['https://example.com/brief.pdf'],
+      dependencies: ['Legal review'],
+      comment: 'Initial note',
+    } as any);
+
+    expect(prisma.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        attachments: ['https://example.com/brief.pdf', 'dependency:Legal review', 'comment:Initial note'],
+      }),
+    });
+  });
+
   it('falls back to a legacy-safe insert when task_code is missing from the database', async () => {
     prisma.task.create.mockRejectedValue(
       Object.assign(new Error('missing task_code'), {
@@ -167,5 +192,35 @@ describe('TasksService', () => {
       }),
     );
     expect(result.status).toBe('blocked');
+  });
+
+  it('appends comments to task attachments metadata', async () => {
+    prisma.task.findFirst.mockResolvedValue({
+      id: 'task-1',
+      company_id: 'company-1',
+      attachments: ['https://example.com/brief.pdf'],
+    });
+    prisma.task.update.mockResolvedValue({
+      id: 'task-1',
+      attachments: ['https://example.com/brief.pdf', 'comment:Followed up with legal'],
+    });
+
+    const result = await service.addComment('company-1', 'user-9', 'task-1', 'Followed up with legal');
+
+    expect(prisma.task.update).toHaveBeenCalledWith({
+      where: { id: 'task-1' },
+      data: {
+        attachments: ['https://example.com/brief.pdf', 'comment:Followed up with legal'],
+      },
+    });
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId: 'company-1',
+        userId: 'user-9',
+        action: 'ADDED_TASK_COMMENT',
+        resourceId: 'task-1',
+      }),
+    );
+    expect(result.attachments).toEqual(['https://example.com/brief.pdf', 'comment:Followed up with legal']);
   });
 });

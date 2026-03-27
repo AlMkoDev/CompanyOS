@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateTaskDto } from './dto/task.dto';
@@ -11,25 +10,36 @@ export class TasksService {
     private audit: AuditService,
   ) {}
 
-  private isSchemaDriftError(error: unknown) {
+  private isPrismaKnownRequestError(error: unknown) {
     return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      (error.code === 'P2021' || error.code === 'P2022')
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof (error as { code?: unknown }).code === 'string'
+    );
+  }
+
+  private isSchemaDriftError(error: unknown) {
+    const prismaError = error as { code?: string };
+    return (
+      this.isPrismaKnownRequestError(error) &&
+      (prismaError.code === 'P2021' || prismaError.code === 'P2022')
     );
   }
 
   private isMissingTaskTaskCodeColumn(error: unknown) {
+    const prismaError = error as { code?: string; meta?: { column?: unknown } };
     return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2022' &&
-      typeof error.meta?.column === 'string' &&
-      error.meta.column === 'Task.task_code'
+      this.isPrismaKnownRequestError(error) &&
+      prismaError.code === 'P2022' &&
+      typeof prismaError.meta?.column === 'string' &&
+      prismaError.meta.column === 'Task.task_code'
     );
   }
 
   private async createTaskWithLegacySchema(companyId: string, userId: string, data: CreateTaskDto) {
     const dueDate = data.due_date ? new Date(data.due_date) : null;
-    const attachments = data.attachments?.length ? JSON.stringify(data.attachments) : null;
+    const attachments = JSON.stringify(this.normalizeTaskMetadata(data));
 
     const rows = await this.prisma.$queryRaw<
       Array<{
@@ -94,6 +104,25 @@ export class TasksService {
     return task;
   }
 
+  private normalizeTaskMetadata(data: CreateTaskDto) {
+    const attachments = Array.isArray(data.attachments) ? data.attachments.filter((item) => typeof item === 'string' && item.trim()) : [];
+    const dependencies = Array.isArray(data.dependencies)
+      ? data.dependencies
+          .filter((item) => typeof item === 'string' && item.trim())
+          .map((item) => `dependency:${item.trim()}`)
+      : [];
+    const comment = data.comment?.trim() ? [`comment:${data.comment.trim()}`] : [];
+
+    return [...attachments, ...dependencies, ...comment];
+  }
+
+  private async loadTaskWithRelations(id: string) {
+    return this.prisma.task.findUnique({
+      where: { id },
+      include: { assignee: true, creator: true },
+    });
+  }
+
   private async getCompanyTask(companyId: string, id: string) {
     const task = await this.prisma.task.findFirst({
       where: { id, company_id: companyId },
@@ -104,16 +133,21 @@ export class TasksService {
 
   async create(companyId: string, userId: string, data: CreateTaskDto) {
     let task;
+    const attachments = this.normalizeTaskMetadata(data);
 
     try {
       task = await this.prisma.task.create({
         data: {
-          ...data,
+          title: data.title,
+          description: data.description,
+          department_id: data.department_id,
+          assignee_id: data.assignee_id,
+          attachments: attachments.length ? attachments : undefined,
           status: data.status ?? 'open',
           company_id: companyId,
           creator_id: userId,
           due_date: data.due_date ? new Date(data.due_date) : undefined,
-          attachments: data.attachments?.length ? data.attachments : undefined,
+          priority: data.priority ?? 'medium',
         },
       });
     } catch (error) {
@@ -133,7 +167,7 @@ export class TasksService {
       details: { title: task.title },
     });
 
-    return task;
+    return (await this.loadTaskWithRelations(task.id)) || task;
   }
 
   async findAll(companyId: string, departmentId?: string) {
@@ -191,6 +225,33 @@ export class TasksService {
       resourceId: task.id,
     });
 
-    return task;
+    return (await this.loadTaskWithRelations(task.id)) || task;
+  }
+
+  async addComment(companyId: string, userId: string, id: string, comment: string) {
+    const cleanedComment = comment.trim();
+    if (!cleanedComment) {
+      throw new Error('Comment cannot be empty.');
+    }
+
+    const currentTask = await this.getCompanyTask(companyId, id);
+    const currentAttachments = Array.isArray(currentTask.attachments) ? currentTask.attachments : [];
+
+    const task = await this.prisma.task.update({
+      where: { id },
+      data: {
+        attachments: [...currentAttachments, `comment:${cleanedComment}`],
+      },
+    });
+
+    await this.audit.log({
+      companyId,
+      userId,
+      action: 'ADDED_TASK_COMMENT',
+      resourceType: 'TASK',
+      resourceId: task.id,
+    });
+
+    return (await this.loadTaskWithRelations(task.id)) || task;
   }
 }

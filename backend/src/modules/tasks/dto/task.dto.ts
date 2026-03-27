@@ -46,6 +46,16 @@ export class CreateTaskDto {
   @IsArray()
   @IsString({ each: true })
   attachments?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dependencies?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  comment?: string;
 }
 
 export class UpdateTaskStatusDto {
