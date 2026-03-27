@@ -361,8 +361,8 @@ export default function DashboardPage() {
       <section className="animate-in slide-in-from-bottom-5 duration-700 delay-150">
           <div className="flex justify-between items-end mb-6 px-2">
             <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
-              Operational Gaps
-              <span className="text-[10px] bg-brand-gold/10 text-brand-gold px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-brand-gold/20">Phase 1/3</span>
+              Live Operational Gaps
+              <span className="text-[10px] bg-brand-gold/10 text-brand-gold px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-brand-gold/20">Live</span>
             </h2>
          </div>
          <OperationalGapDashboard 
@@ -375,10 +375,10 @@ export default function DashboardPage() {
       <section className="animate-in fade-in zoom-in-95 duration-1000">
         <div className="flex justify-between items-end mb-6 px-2">
             <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
-              Department Map
-              <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Live view</span>
+              Live Department Map
+              <span className="text-[10px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">Direct view</span>
             </h2>
-            <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase font-bold opacity-50">Updated from live department records</span>
+            <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase font-bold opacity-50">Direct from department records</span>
          </div>
          <CorporateVisualizer
             departments={departments.map((department) => ({
@@ -431,8 +431,8 @@ export default function DashboardPage() {
         <aside className="space-y-6">
           <div className="glass-card p-8 rounded-3xl border-slate-100 shadow-sm">
             <h3 className="font-heading text-2xl mb-8 flex justify-between items-center">
-              Current Signals
-              <span className="text-[10px] text-slate-400 font-bold uppercase">From live sources</span>
+              Live Signals
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Source-backed</span>
             </h3>
             <div className="space-y-8">
               <KpiRow
@@ -457,7 +457,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="glass-card p-8 rounded-3xl border-l-4 border-brand-gold bg-white">
-            <h3 className="font-heading text-lg mb-6 text-brand-navy">Current Exceptions</h3>
+            <h3 className="font-heading text-lg mb-6 text-brand-navy">Operational Exceptions</h3>
             <div className="text-[11px] text-slate-500 space-y-6">
               {operationalSignals.length > 0 ? (
                 operationalSignals.map((signal) => (
