@@ -39,6 +39,10 @@ interface ReportLinkProps {
 export default function AccountingDashboardPage() {
   const { isAuthenticated } = useAuthStore();
   const [tb, setTb] = React.useState<TrialBalanceRow[]>([]);
+  const totalDebit = tb.reduce((sum, row) => sum + Number(row.debit || 0), 0);
+  const totalCredit = tb.reduce((sum, row) => sum + Number(row.credit || 0), 0);
+  const netDifference = Math.abs(totalDebit - totalCredit);
+  const isBalanced = netDifference < 0.01;
 
   React.useEffect(() => {
     const fetchAccountingData = async () => {
@@ -61,8 +65,8 @@ export default function AccountingDashboardPage() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-heading text-brand-navy">Accounting Dashboard</h1>
-          <p className="text-slate-500">Manage your general ledger, journals, and financial reports.</p>
+          <h1 className="text-3xl font-heading text-brand-navy">Accounting Workspace</h1>
+          <p className="text-slate-500">Track live ledger totals, journals, and close status.</p>
         </div>
         <div className="flex gap-3">
           <Link href="/accounting/bank-import" className="btn-secondary flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-slate-50 transition-all text-sm font-bold">
@@ -79,31 +83,31 @@ export default function AccountingDashboardPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          label="Total Cash" 
-          value="R 1,240,000" 
-          change="+12%" 
+          label="Ledger Accounts"
+          value={`${tb.length}`}
+          change="Live"
           isPositive={true} 
           icon={<Calculator className="text-emerald-600" />} 
         />
         <StatCard 
-          label="Accounts Receivable" 
-          value="R 450,000" 
-          change="+5%" 
+          label="Total Debit"
+          value={`R ${totalDebit.toLocaleString()}`}
+          change="Trial balance"
           isPositive={true} 
           icon={<ArrowUpRight className="text-blue-600" />} 
         />
         <StatCard 
-          label="Accounts Payable" 
-          value="R 180,000" 
-          change="-2%" 
+          label="Total Credit"
+          value={`R ${totalCredit.toLocaleString()}`}
+          change="Trial balance"
           isPositive={false} 
           icon={<ArrowDownLeft className="text-rose-600" />} 
         />
         <StatCard 
-          label="Net Profit (YTD)" 
-          value="R 850,000" 
-          change="+18%" 
-          isPositive={true} 
+          label="Trial Difference"
+          value={`R ${netDifference.toLocaleString()}`}
+          change={isBalanced ? 'Balanced' : 'Needs review'}
+          isPositive={isBalanced}
           icon={<PieChart className="text-brand-gold" />} 
         />
       </div>

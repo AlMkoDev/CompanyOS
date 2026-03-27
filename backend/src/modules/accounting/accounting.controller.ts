@@ -65,6 +65,17 @@ export class AccountingController {
     );
   }
 
+  @Get('reports/balance-sheet')
+  async getBalanceSheet(
+    @Req() req: any,
+    @Query('toDate') toDate?: string,
+  ) {
+    return this.accountingService.getBalanceSheet(
+      req.user.companyId,
+      toDate ? new Date(toDate) : new Date(),
+    );
+  }
+
   @Post('periods/close')
   async closePeriod(
     @Req() req: any,

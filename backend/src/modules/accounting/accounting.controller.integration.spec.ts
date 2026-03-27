@@ -13,6 +13,7 @@ describe('AccountingController integration', () => {
     postJournalEntry: jest.Mock;
     reverseJournalEntry: jest.Mock;
     closePeriod: jest.Mock;
+    getBalanceSheet: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -21,6 +22,7 @@ describe('AccountingController integration', () => {
       postJournalEntry: jest.fn(),
       reverseJournalEntry: jest.fn(),
       closePeriod: jest.fn(),
+      getBalanceSheet: jest.fn(),
     };
 
     guardSpy = jest
@@ -91,5 +93,18 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.closePeriod).toHaveBeenCalledWith('company-1', 2026, 3, 'user-1');
     expect(response.body).toEqual({ status: 'closed' });
+  });
+
+  it('loads balance sheet reports through company-scoped context', async () => {
+    accountingService.getBalanceSheet.mockResolvedValue([
+      { type: 'asset', name: 'Cash', balance: 1200 },
+    ]);
+
+    const response = await request(app.getHttpServer())
+      .get('/accounting/reports/balance-sheet?toDate=2026-03-27')
+      .expect(200);
+
+    expect(accountingService.getBalanceSheet).toHaveBeenCalledWith('company-1', new Date('2026-03-27'));
+    expect(response.body).toEqual([{ type: 'asset', name: 'Cash', balance: 1200 }]);
   });
 });

@@ -50,6 +50,16 @@ interface TrialBalanceViewProps {
   data: TrialBalanceRow[];
 }
 
+interface BalanceSheetRow {
+  type: string;
+  name: string;
+  balance: number;
+}
+
+interface BalanceSheetViewProps {
+  data: BalanceSheetRow[];
+}
+
 interface FinancialRowProps {
   label: string;
   value?: number;
@@ -62,7 +72,7 @@ function ReportsContent() {
   
   const { isAuthenticated } = useAuthStore();
   const [reportType, setReportType] = React.useState(initialType);
-  const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | null>(null);
+  const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | BalanceSheetRow[] | null>(null);
   const [loading, setLoading] = React.useState(false);
 
   const fetchReport = React.useCallback(async () => {
@@ -72,7 +82,7 @@ function ReportsContent() {
       if (reportType === 'pnl') {
         url = apiUrl('/accounting/reports/pnl?fromDate=2026-01-01&toDate=2026-12-31');
       } else if (reportType === 'bs') {
-        url = apiUrl('/accounting/trial-balance');
+        url = apiUrl('/accounting/reports/balance-sheet?toDate=2026-12-31');
       } else {
         url = apiUrl('/accounting/trial-balance');
       }
@@ -141,8 +151,8 @@ function ReportsContent() {
             <ReportHeader title={reportType === 'pnl' ? 'Income Statement (P&L)' : reportType === 'bs' ? 'Balance Sheet' : 'Trial Balance'} />
             
             {reportType === 'pnl' && data && !Array.isArray(data) && <PnLView data={data} />}
-            {reportType === 'tb' && Array.isArray(data) && <TrialBalanceView data={data} />}
-            {reportType === 'bs' && Array.isArray(data) && <TrialBalanceView data={data} />} {/* Placeholder for BS */}
+            {reportType === 'tb' && Array.isArray(data) && <TrialBalanceView data={data as unknown as TrialBalanceRow[]} />}
+            {reportType === 'bs' && Array.isArray(data) && <BalanceSheetView data={data as unknown as BalanceSheetRow[]} />}
             
             {!data && <div className="text-center py-20 text-slate-400 italic">No data available for the selected period.</div>}
           </div>
@@ -265,6 +275,55 @@ function TrialBalanceView({ data }: TrialBalanceViewProps) {
            </tr>
         </tfoot>
       </table>
+    </div>
+  );
+}
+
+function BalanceSheetView({ data }: BalanceSheetViewProps) {
+  const grouped = data.reduce<Record<string, BalanceSheetRow[]>>((acc, row) => {
+    const key = row.type || 'other';
+    acc[key] = acc[key] || [];
+    acc[key].push(row);
+    return acc;
+  }, {});
+
+  const typeLabel = (type: string) => {
+    if (type === 'asset') return 'Assets';
+    if (type === 'liability') return 'Liabilities';
+    if (type === 'equity') return 'Equity';
+    return 'Other';
+  };
+
+  return (
+    <div className="space-y-10 max-w-4xl mx-auto">
+      {Object.entries(grouped).map(([type, rows]) => (
+        <div key={type}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">{typeLabel(type)}</h3>
+            <span className="text-[10px] uppercase font-bold text-slate-400">{rows.length} accounts</span>
+          </div>
+          <div className="bg-slate-50/70 rounded-3xl border border-slate-100 overflow-hidden">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100">
+                  <th className="py-4 px-5">Account</th>
+                  <th className="py-4 px-5 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((row) => (
+                  <tr key={`${type}-${row.name}`} className="text-sm">
+                    <td className="py-4 px-5 font-medium text-slate-700">{row.name}</td>
+                    <td className="py-4 px-5 text-right font-mono text-brand-navy">
+                      R {Math.abs(row.balance).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
