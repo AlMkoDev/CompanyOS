@@ -69,12 +69,21 @@ export default function ArDashboardPage() {
   const { isAuthenticated } = useAuthStore();
   const [dashboard, setDashboard] = React.useState<ArDashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [collectionCount, setCollectionCount] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const res = await apiFetch('/ar/dashboard');
-        if (res.ok) setDashboard(await res.json());
+        const [dashboardRes, collectionsRes] = await Promise.all([
+          apiFetch('/ar/dashboard'),
+          apiFetch('/ar/collections'),
+        ]);
+
+        if (dashboardRes.ok) setDashboard(await dashboardRes.json());
+        if (collectionsRes.ok) {
+          const collections = await collectionsRes.json();
+          setCollectionCount(Array.isArray(collections) ? collections.length : null);
+        }
       } catch (err) {
         console.error('Failed to fetch AR dashboard:', err);
       } finally {
@@ -113,7 +122,7 @@ export default function ArDashboardPage() {
           value={`R ${(dashboard?.totalAr || 0).toLocaleString()}`} 
           subtext="Outstanding Debt"
           icon={<TrendingUp className="text-emerald-600" />}
-          trend="+8%"
+          trend="Live"
           isPositive
         />
         <StatCard 
@@ -121,20 +130,22 @@ export default function ArDashboardPage() {
           value={dashboard?.customerCount || 0} 
           subtext="Revenue Sources"
           icon={<Users className="text-brand-navy" />}
+          trend="Live"
         />
         <StatCard 
           label="Overdue (90 Days+)" 
           value={`R ${(dashboard?.aging?.['90plus'] || 0).toLocaleString()}`} 
           subtext="Critical Risk"
           icon={<AlertCircle className="text-rose-600" />}
-          trend="Escalating"
+          trend="Live"
           isWarning
         />
         <StatCard 
           label="Collection cases" 
-          value="4" 
+          value={collectionCount ?? 0} 
           subtext="Active Recoveries"
           icon={<Clock className="text-brand-gold" />}
+          trend="Live"
         />
       </div>
 

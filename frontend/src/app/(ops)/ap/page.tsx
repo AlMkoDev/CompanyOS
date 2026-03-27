@@ -66,6 +66,9 @@ export default function ApDashboardPage() {
   const [dashboard, setDashboard] = React.useState<ApDashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const latestRun = dashboard?.recentPaymentRuns?.[0] ?? null;
+  const pendingInvoices = dashboard?.pendingInvoices || [];
+  const matchedInvoices = pendingInvoices.filter((invoice) => invoice.status === 'matched');
+  const matchedRatio = pendingInvoices.length > 0 ? Math.round((matchedInvoices.length / pendingInvoices.length) * 100) : null;
 
   React.useEffect(() => {
     const fetchDashboard = async () => {
@@ -108,7 +111,7 @@ export default function ApDashboardPage() {
           value={dashboard ? `R ${(dashboard.totalOutstanding || 0).toLocaleString()}` : "R 0"} 
           subtext="Unpaid Invoices"
           icon={<CreditCard className="text-rose-600" />}
-          trend="-4.2%"
+          trend="Live"
           isNeutral
         />
         <StatCard 
@@ -116,7 +119,7 @@ export default function ApDashboardPage() {
           value={dashboard?.vendorCount ?? 0} 
           subtext="Onboarded Partners"
           icon={<Building2 className="text-brand-navy" />}
-          trend="+2"
+          trend="Live"
           isPositive
         />
         <StatCard 
@@ -124,15 +127,15 @@ export default function ApDashboardPage() {
           value={dashboard?.recentPOs?.length ?? 0} 
           subtext="Awaiting Approval"
           icon={<ShoppingCart className="text-brand-gold" />}
-          trend="8 High"
+          trend={`${dashboard?.recentPOs?.filter((po) => ['high', 'urgent'].includes(String(po.status).toLowerCase())).length ?? 0} High`}
           isWarning
         />
         <StatCard 
           label="Matched Ratio" 
-          value="92%" 
+          value={matchedRatio !== null ? `${matchedRatio}%` : 'Live'}
           subtext="3-Way Match Success"
           icon={<FileCheck className="text-emerald-600" />}
-          trend="+5%"
+          trend={matchedRatio !== null ? `${matchedInvoices.length}/${pendingInvoices.length}` : 'Live'}
           isPositive
         />
       </div>
