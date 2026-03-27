@@ -123,6 +123,19 @@ export class TasksService {
     });
   }
 
+  private async loadTaskWithRelationsFallback<T extends { id: string }>(task: T) {
+    try {
+      const enriched = await this.loadTaskWithRelations(task.id);
+      return enriched || task;
+    } catch (error) {
+      if (!this.isSchemaDriftError(error)) {
+        return task;
+      }
+
+      return task;
+    }
+  }
+
   private async getCompanyTask(companyId: string, id: string) {
     const task = await this.prisma.task.findFirst({
       where: { id, company_id: companyId },
@@ -167,7 +180,7 @@ export class TasksService {
       details: { title: task.title },
     });
 
-    return (await this.loadTaskWithRelations(task.id)) || task;
+    return this.loadTaskWithRelationsFallback(task);
   }
 
   async findAll(companyId: string, departmentId?: string) {
@@ -225,7 +238,7 @@ export class TasksService {
       resourceId: task.id,
     });
 
-    return (await this.loadTaskWithRelations(task.id)) || task;
+    return this.loadTaskWithRelationsFallback(task);
   }
 
   async addComment(companyId: string, userId: string, id: string, comment: string) {
@@ -252,6 +265,6 @@ export class TasksService {
       resourceId: task.id,
     });
 
-    return (await this.loadTaskWithRelations(task.id)) || task;
+    return this.loadTaskWithRelationsFallback(task);
   }
 }
