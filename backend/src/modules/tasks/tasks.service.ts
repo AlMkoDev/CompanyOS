@@ -104,6 +104,33 @@ export class TasksService {
     return task;
   }
 
+  private async appendTaskCommentWithLegacySchema(
+    companyId: string,
+    id: string,
+    comment: string,
+  ) {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; attachments: unknown }>>`
+      UPDATE "Task"
+      SET
+        "attachments" = COALESCE("attachments", '[]'::jsonb) || ${JSON.stringify([
+          `comment:${comment}`,
+        ])}::jsonb,
+        "updated_at" = NOW()
+      WHERE "id" = ${id}::uuid
+        AND "company_id" = ${companyId}::uuid
+      RETURNING
+        id,
+        attachments;
+    `;
+
+    const task = rows[0];
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    return task;
+  }
+
   private normalizeTaskMetadata(data: CreateTaskDto) {
     const attachments = Array.isArray(data.attachments) ? data.attachments.filter((item) => typeof item === 'string' && item.trim()) : [];
     const dependencies = Array.isArray(data.dependencies)
@@ -250,12 +277,22 @@ export class TasksService {
     const currentTask = await this.getCompanyTask(companyId, id);
     const currentAttachments = Array.isArray(currentTask.attachments) ? currentTask.attachments : [];
 
-    const task = await this.prisma.task.update({
-      where: { id },
-      data: {
-        attachments: [...currentAttachments, `comment:${cleanedComment}`],
-      },
-    });
+    let task;
+
+    try {
+      task = await this.prisma.task.update({
+        where: { id },
+        data: {
+          attachments: [...currentAttachments, `comment:${cleanedComment}`],
+        },
+      });
+    } catch (error) {
+      if (!this.isSchemaDriftError(error)) {
+        throw error;
+      }
+
+      task = await this.appendTaskCommentWithLegacySchema(companyId, id, cleanedComment);
+    }
 
     await this.audit.log({
       companyId,
