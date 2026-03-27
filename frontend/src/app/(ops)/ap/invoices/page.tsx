@@ -12,7 +12,9 @@ import {
   Eye,
   CheckCircle,
   Clock,
-  ExternalLink
+  ExternalLink,
+  Plus,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -32,6 +34,7 @@ interface InvoiceRecord {
 
 interface ApDashboardResponse {
   pendingInvoices?: InvoiceRecord[];
+  recentPOs?: { id: string; vendor?: VendorSummary; status: string }[];
 }
 
 interface StatusConfig {
@@ -44,6 +47,18 @@ export default function InvoicesPage() {
   const { isAuthenticated } = useAuthStore();
   const [invoices, setInvoices] = React.useState<InvoiceRecord[]>([]);
   const [selectedInvoice, setSelectedInvoice] = React.useState<InvoiceRecord | null>(null);
+  const [vendors, setVendors] = React.useState<{ id: string; name: string }[]>([]);
+  const [showForm, setShowForm] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  const [form, setForm] = React.useState({
+    vendor_id: '',
+    invoice_no: '',
+    amount: '',
+    invoice_date: new Date().toISOString().split('T')[0],
+    due_date: '',
+    po_id: '',
+  });
 
   const fetchInvoices = React.useCallback(async () => {
     try {
@@ -57,9 +72,62 @@ export default function InvoicesPage() {
     }
   }, []);
 
+  const fetchVendors = React.useCallback(async () => {
+    try {
+      const res = await apiFetch('/ap/vendors');
+      if (res.ok) setVendors(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch vendors:', err);
+    }
+  }, []);
+
   React.useEffect(() => {
-    if (isAuthenticated) fetchInvoices();
-  }, [fetchInvoices, isAuthenticated]);
+    if (isAuthenticated) {
+      fetchInvoices();
+      fetchVendors();
+    }
+  }, [fetchInvoices, fetchVendors, isAuthenticated]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await apiFetch('/ap/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vendor_id: form.vendor_id,
+          invoice_no: form.invoice_no || undefined,
+          amount: Number(form.amount),
+          invoice_date: form.invoice_date ? new Date(form.invoice_date).toISOString() : undefined,
+          due_date: form.due_date ? new Date(form.due_date).toISOString() : undefined,
+          po_id: form.po_id || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setMessage('Invoice recorded successfully.');
+        setShowForm(false);
+        setForm({
+          vendor_id: '',
+          invoice_no: '',
+          amount: '',
+          invoice_date: new Date().toISOString().split('T')[0],
+          due_date: '',
+          po_id: '',
+        });
+        await fetchInvoices();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to record invoice.');
+      }
+    } catch {
+      setMessage('Connection error while recording invoice.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleMatch = async (id: string) => {
      try {
@@ -87,9 +155,9 @@ export default function InvoicesPage() {
               <Filter size={18} />
               Advanced Filters
            </button>
-           <button className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all">
+           <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all">
               <ExternalLink size={18} />
-              Export Batch
+              Record Invoice
            </button>
         </div>
       </div>
@@ -199,6 +267,88 @@ export default function InvoicesPage() {
            </div>
         </div>
       </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/60 backdrop-blur-sm p-6">
+          <div className="bg-white rounded-[40px] w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-8 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Record AP Invoice</h2>
+                <p className="text-slate-400 text-sm">Capture a vendor bill for approval and matching.</p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleCreate} className="p-10 grid grid-cols-2 gap-6">
+              <Field label="Vendor">
+                <select
+                  value={form.vendor_id}
+                  onChange={(e) => setForm((prev) => ({ ...prev, vendor_id: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  required
+                >
+                  <option value="">Select vendor</option>
+                  {vendors.map((vendor) => (
+                    <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Invoice No">
+                <input
+                  value={form.invoice_no}
+                  onChange={(e) => setForm((prev) => ({ ...prev, invoice_no: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  placeholder="INV-0001"
+                />
+              </Field>
+              <Field label="Amount">
+                <input
+                  value={form.amount}
+                  onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  placeholder="0.00"
+                  required
+                />
+              </Field>
+              <Field label="PO Reference">
+                <input
+                  value={form.po_id}
+                  onChange={(e) => setForm((prev) => ({ ...prev, po_id: e.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  placeholder="Optional purchase order id"
+                />
+              </Field>
+              <Field label="Invoice Date">
+                <input
+                  value={form.invoice_date}
+                  onChange={(e) => setForm((prev) => ({ ...prev, invoice_date: e.target.value }))}
+                  type="date"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                />
+              </Field>
+              <Field label="Due Date">
+                <input
+                  value={form.due_date}
+                  onChange={(e) => setForm((prev) => ({ ...prev, due_date: e.target.value }))}
+                  type="date"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                />
+              </Field>
+              <div className="col-span-2 text-sm text-slate-500">{message}</div>
+              <div className="col-span-2 flex justify-end gap-4">
+                <button type="button" onClick={() => setShowForm(false)} className="px-8 py-4 font-bold text-slate-400">Cancel</button>
+                <button type="submit" disabled={saving} className="px-10 py-4 bg-brand-navy text-white rounded-2xl font-heading text-lg shadow-xl hover:opacity-90 transition-all disabled:opacity-60">
+                  {saving ? 'Saving...' : 'Save Invoice'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -228,5 +378,14 @@ function MatchItem({ label, status, value }: { label: string, status: 'verified'
        </div>
        <div className="text-xs font-mono text-slate-400">{value}</div>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs font-black uppercase tracking-widest text-slate-400">{label}</span>
+      {children}
+    </label>
   );
 }

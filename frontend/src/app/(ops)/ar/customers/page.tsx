@@ -31,20 +31,55 @@ export default function CustomersPage() {
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showForm, setShowForm] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  const [form, setForm] = React.useState({
+    name: '',
+    email: '',
+    phone: '',
+  });
+
+  const fetchCustomers = React.useCallback(async () => {
+    try {
+      const res = await apiFetch('/ar/customers');
+      if (res.ok) setCustomers(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch customers:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   React.useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-        const res = await apiFetch('/ar/customers');
-        if (res.ok) setCustomers(await res.json());
-      } catch (err) {
-        console.error('Failed to fetch customers:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     if (isAuthenticated) fetchCustomers();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchCustomers]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      const res = await apiFetch('/ar/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+
+      if (res.ok) {
+        setMessage('Customer onboarded successfully.');
+        setForm({ name: '', email: '', phone: '' });
+        setShowForm(false);
+        await fetchCustomers();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to onboard customer.');
+      }
+    } catch {
+      setMessage('Connection error while onboarding customer.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8 pb-20">
@@ -102,37 +137,38 @@ export default function CustomersPage() {
                  </button>
               </div>
               <div className="p-10">
-                 <form className="grid grid-cols-2 gap-8">
+                 <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-8">
                     <div className="space-y-2 text-slate-400 font-black uppercase text-[10px] tracking-widest">
                        <label>Legal Entity Name</label>
-                       <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold text-slate-700 font-medium" placeholder="Global Logistics Inc." />
+                       <input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold text-slate-700 font-medium" placeholder="Global Logistics Inc." required />
                     </div>
                     <div className="space-y-2 text-slate-400 font-black uppercase text-[10px] tracking-widest">
-                       <label>Tax Registration No.</label>
-                       <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold text-slate-700 font-medium" placeholder="TAX-998-102" />
+                       <label>Email</label>
+                       <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} type="email" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold text-slate-700 font-medium" placeholder="accounts@client.com" />
                     </div>
                     <div className="col-span-2 grid grid-cols-3 gap-8 p-6 bg-brand-navy/5 rounded-3xl border border-brand-navy/10">
                        <div className="space-y-2 text-brand-navy font-black uppercase text-[10px] tracking-widest">
-                          <label>Credit Limit (ZAR)</label>
-                          <input type="number" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="500,000" />
+                          <label>Phone</label>
+                          <input value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} type="text" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="+27..." />
                        </div>
                        <div className="space-y-2 text-brand-navy font-black uppercase text-[10px] tracking-widest">
                           <label>Default Terms</label>
-                          <select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none">
+                          <select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" defaultValue="Net 30">
                              <option>Net 30</option>
                              <option>Net 60</option>
                              <option>Net 90</option>
                           </select>
                        </div>
                        <div className="space-y-2 text-brand-navy font-black uppercase text-[10px] tracking-widest">
-                          <label>Industry</label>
-                          <input type="text" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="Logistics" />
+                          <label>Address</label>
+                          <input type="text" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="Physical or postal address" />
                        </div>
                     </div>
+                    <div className="col-span-2 text-sm text-slate-500">{message}</div>
                     <div className="col-span-2 flex justify-end gap-4 mt-4">
                        <button type="button" onClick={() => setShowForm(false)} className="px-8 py-4 font-bold text-slate-400">Cancel</button>
-                       <button type="submit" className="px-10 py-4 bg-brand-navy text-white rounded-2xl font-heading text-lg shadow-xl hover:opacity-90 transition-all">
-                          Finalize Onboarding
+                       <button type="submit" disabled={saving} className="px-10 py-4 bg-brand-navy text-white rounded-2xl font-heading text-lg shadow-xl hover:opacity-90 transition-all disabled:opacity-60">
+                          {saving ? 'Saving...' : 'Finalize Onboarding'}
                        </button>
                     </div>
                  </form>

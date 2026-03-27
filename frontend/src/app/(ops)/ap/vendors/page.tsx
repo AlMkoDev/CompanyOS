@@ -30,9 +30,16 @@ export default function VendorsPage() {
   const [vendors, setVendors] = React.useState<VendorRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showForm, setShowForm] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
+  const [form, setForm] = React.useState({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+  });
 
-  React.useEffect(() => {
-    const fetchVendors = async () => {
+  const fetchVendors = React.useCallback(async () => {
       try {
         const res = await apiFetch('/ap/vendors');
         if (res.ok) setVendors(await res.json());
@@ -41,9 +48,39 @@ export default function VendorsPage() {
       } finally {
         setLoading(false);
       }
-    };
+  }, []);
+
+  React.useEffect(() => {
     if (isAuthenticated) fetchVendors();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchVendors]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const res = await apiFetch('/ap/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+
+      if (res.ok) {
+        setMessage('Vendor onboarded successfully.');
+        setForm({ name: '', email: '', phone: '', address: '' });
+        setShowForm(false);
+        await fetchVendors();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to onboard vendor.');
+      }
+    } catch {
+      setMessage('Connection error while onboarding vendor.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
@@ -106,37 +143,30 @@ export default function VendorsPage() {
                  </button>
               </div>
               <div className="p-10">
-                 <form className="grid grid-cols-2 gap-8">
+                 <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-8">
                     <div className="space-y-2">
                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Legal Entity Name</label>
-                       <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold" placeholder="e.g. Agri-Fuel Global Inc." />
+                       <input type="text" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold" placeholder="e.g. Agri-Fuel Global Inc." required />
                     </div>
                     <div className="space-y-2">
-                       <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Tax PIN / Registration</label>
-                       <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold" placeholder="e.g. TAX-884-299" />
+                       <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Email</label>
+                       <input type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold" placeholder="accounts@vendor.com" />
                     </div>
-                    <div className="col-span-2 grid grid-cols-3 gap-8 p-6 bg-brand-navy/5 rounded-3xl border border-brand-navy/10">
+                  <div className="col-span-2 grid grid-cols-2 gap-8 p-6 bg-brand-navy/5 rounded-3xl border border-brand-navy/10">
                        <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase text-brand-navy tracking-widest">Bank Name</label>
-                          <input type="text" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="e.g. First National" />
+                          <label className="text-[10px] font-black uppercase text-brand-navy tracking-widest">Phone</label>
+                          <input type="text" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="Phone number" />
                        </div>
                        <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase text-brand-navy tracking-widest">Account Number</label>
-                          <input type="text" className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="e.g. 1044992003" />
+                          <label className="text-[10px] font-black uppercase text-brand-navy tracking-widest">Address</label>
+                          <input type="text" value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none" placeholder="Postal or physical address" />
                        </div>
-                       <div className="space-y-2">
-                          <label className="text-[10px] font-black uppercase text-brand-navy tracking-widest">Payment Terms</label>
-                          <select className="w-full p-4 bg-white border border-slate-200 rounded-2xl outline-none">
-                             <option>Net 30</option>
-                             <option>Due on Receipt</option>
-                             <option>Net 60</option>
-                          </select>
-                       </div>
-                    </div>
+                   </div>
+                    <div className="col-span-2 text-sm text-slate-500">{message}</div>
                     <div className="col-span-2 flex justify-end gap-4 mt-4">
                        <button type="button" onClick={() => setShowForm(false)} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">Cancel</button>
-                       <button type="submit" className="px-10 py-4 bg-brand-navy text-white rounded-2xl font-heading text-lg shadow-xl hover:opacity-90 transition-all">
-                          Finalize Onboarding
+                       <button type="submit" disabled={saving} className="px-10 py-4 bg-brand-navy text-white rounded-2xl font-heading text-lg shadow-xl hover:opacity-90 transition-all disabled:opacity-60">
+                          {saving ? 'Saving...' : 'Finalize Onboarding'}
                        </button>
                     </div>
                  </form>

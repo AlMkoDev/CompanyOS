@@ -87,7 +87,7 @@ export default function ApDashboardPage() {
             <Building2 size={18} />
             Vendor Directory
           </Link>
-          <Link href="/ap/invoices/new" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
+          <Link href="/ap/invoices" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
             <Plus size={18} />
             Record Invoice
           </Link>
