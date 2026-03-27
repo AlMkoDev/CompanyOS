@@ -42,6 +42,12 @@ interface ApDashboardData {
   vendorCount?: number;
   pendingInvoices?: PendingInvoice[];
   recentPOs?: RecentPurchaseOrder[];
+  recentPaymentRuns?: {
+    id: string;
+    status: string;
+    run_date: string;
+    total_amount: number | string;
+  }[];
 }
 
 interface StatCardProps {
@@ -59,6 +65,7 @@ export default function ApDashboardPage() {
   const { isAuthenticated } = useAuthStore();
   const [dashboard, setDashboard] = React.useState<ApDashboardData | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const latestRun = dashboard?.recentPaymentRuns?.[0] ?? null;
 
   React.useEffect(() => {
     const fetchDashboard = async () => {
@@ -184,7 +191,9 @@ export default function ApDashboardPage() {
             </table>
           </div>
           <div className="p-6 bg-slate-50/50 border-t border-slate-50 text-center">
-             <Link href="/ap/invoices" className="text-xs font-bold text-brand-gold uppercase tracking-widest hover:underline">Batch Process 24 Invoices →</Link>
+             <Link href="/ap/invoices" className="text-xs font-bold text-brand-gold uppercase tracking-widest hover:underline">
+                Batch Process {dashboard?.pendingInvoices?.length ?? 0} Invoices →
+             </Link>
           </div>
         </div>
 
@@ -217,12 +226,30 @@ export default function ApDashboardPage() {
               <h3 className="text-lg font-heading text-brand-navy mb-6">Payment Scheduling</h3>
               <div className="space-y-6">
                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 border-l-4 border-l-brand-gold">
-                    <div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Next Payment Run</div>
-                    <div className="text-xl font-heading text-brand-navy font-bold">Tuesday, 10:00 AM</div>
-                    <div className="mt-3 flex justify-between items-center text-[10px]">
-                       <span className="text-slate-500 font-bold">42 INVOICES</span>
-                       <span className="text-brand-navy font-black italic">R 235,500 TOTAL</span>
-                    </div>
+                    <div className="text-xs text-slate-400 font-bold uppercase tracking-widest mb-1">Latest Payment Run</div>
+                    {latestRun ? (
+                      <>
+                        <div className="text-xl font-heading text-brand-navy font-bold">
+                          {new Date(latestRun.run_date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="mt-3 flex justify-between items-center text-[10px]">
+                           <span className="text-slate-500 font-bold">{latestRun.status.toUpperCase()}</span>
+                           <span className="text-brand-navy font-black italic">
+                              R {Number(latestRun.total_amount).toLocaleString()} TOTAL
+                           </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-xl font-heading text-brand-navy font-bold">No payment run yet</div>
+                        <div className="mt-3 flex justify-between items-center text-[10px]">
+                           <span className="text-slate-500 font-bold">
+                              {dashboard?.pendingInvoices?.length ?? 0} INVOICES READY
+                           </span>
+                           <span className="text-brand-navy font-black italic">READY TO BATCH</span>
+                        </div>
+                      </>
+                    )}
                  </div>
                  <Link href="/ap/payment-runs" className="block w-full text-center py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-bold text-xs hover:bg-emerald-100 transition-all">
                     Initiate Bulk Payment Run
