@@ -738,6 +738,26 @@ export default function EmployeeProfilePage() {
                       </div>
                     </div>
 
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="mb-2 block text-sm font-bold text-slate-700">Start Date</label>
+                        <Input
+                          type="date"
+                          value={getStringSectionValue(profileDraft, 'employment_details', 'start_date')}
+                          onChange={(event) => updateProfileDraft('employment_details', 'start_date', event.target.value)}
+                          className="h-12 rounded-2xl border-slate-200"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-bold text-slate-700">Reports To</label>
+                        <Input
+                          value={getStringSectionValue(profileDraft, 'employment_details', 'reports_to')}
+                          onChange={(event) => updateProfileDraft('employment_details', 'reports_to', event.target.value)}
+                          className="h-12 rounded-2xl border-slate-200"
+                        />
+                      </div>
+                    </div>
+
                     <div className="grid gap-4 md:grid-cols-[160px,1fr] items-start">
                       <div className="space-y-3">
                         <div className="h-36 w-36 overflow-hidden rounded-[28px] border border-slate-100 bg-slate-50 shadow-sm">
@@ -828,6 +848,46 @@ export default function EmployeeProfilePage() {
                             <Input
                               value={getStringSectionValue(profileDraft, 'emergency_contact', 'primary_contact_name')}
                               onChange={(event) => updateProfileDraft('emergency_contact', 'primary_contact_name', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Physical Address</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'personal_information', 'physical_address')}
+                              onChange={(event) => updateProfileDraft('personal_information', 'physical_address', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Postal Address</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'personal_information', 'postal_address')}
+                              onChange={(event) => updateProfileDraft('personal_information', 'postal_address', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Secondary Contact</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'emergency_contact', 'secondary_contact_name')}
+                              onChange={(event) => updateProfileDraft('emergency_contact', 'secondary_contact_name', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Secondary Phone</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'emergency_contact', 'secondary_phone')}
+                              onChange={(event) => updateProfileDraft('emergency_contact', 'secondary_phone', event.target.value)}
+                              className="h-11 rounded-2xl border-slate-200"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-2 block text-xs font-black uppercase tracking-[0.2em] text-slate-400">Secondary Email</label>
+                            <Input
+                              value={getStringSectionValue(profileDraft, 'emergency_contact', 'secondary_email')}
+                              onChange={(event) => updateProfileDraft('emergency_contact', 'secondary_email', event.target.value)}
                               className="h-11 rounded-2xl border-slate-200"
                             />
                           </div>

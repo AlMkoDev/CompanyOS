@@ -431,8 +431,8 @@ export default function DashboardPage() {
         <aside className="space-y-6">
           <div className="glass-card p-8 rounded-3xl border-slate-100 shadow-sm">
             <h3 className="font-heading text-2xl mb-8 flex justify-between items-center">
-              Live Operational Signals
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Source-backed</span>
+              Current Signals
+              <span className="text-[10px] text-slate-400 font-bold uppercase">From live sources</span>
             </h3>
             <div className="space-y-8">
               <KpiRow
@@ -457,7 +457,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="glass-card p-8 rounded-3xl border-l-4 border-brand-gold bg-white">
-            <h3 className="font-heading text-lg mb-6 text-brand-navy">Live Exception Feed</h3>
+            <h3 className="font-heading text-lg mb-6 text-brand-navy">Current Exceptions</h3>
             <div className="text-[11px] text-slate-500 space-y-6">
               {operationalSignals.length > 0 ? (
                 operationalSignals.map((signal) => (
