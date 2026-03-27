@@ -69,12 +69,15 @@ export default function TasksPage() {
   const [isCommentSaving, setIsCommentSaving] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [recentlyMovedTask, setRecentlyMovedTask] = useState<{ id: string; status: string } | null>(null);
+  const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+  const [recentlyDroppedColumn, setRecentlyDroppedColumn] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Drag state
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const toastTimers = useRef<number[]>([]);
+  const columnTimers = useRef<number[]>([]);
 
   const addToast = (message: string, tone: ToastMessage['tone'] = 'success') => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -92,6 +95,8 @@ export default function TasksPage() {
     return () => {
       toastTimers.current.forEach((timer) => window.clearTimeout(timer));
       toastTimers.current = [];
+      columnTimers.current.forEach((timer) => window.clearTimeout(timer));
+      columnTimers.current = [];
     };
   }, []);
 
@@ -203,11 +208,17 @@ export default function TasksPage() {
       }
 
       setRecentlyMovedTask({ id: movedTaskId, status });
+      setRecentlyDroppedColumn(status);
       addToast(`Task moved to ${COLUMNS.find((column) => column.id === status)?.title ?? status}.`, 'success');
       window.setTimeout(
         () => setRecentlyMovedTask((current) => (current?.id === movedTaskId ? null : current)),
         1500,
       );
+      const columnTimer = window.setTimeout(
+        () => setRecentlyDroppedColumn((current) => (current === status ? null : current)),
+        1400,
+      );
+      columnTimers.current.push(columnTimer);
     } catch (error) {
       console.error('Failed to update status:', error);
       setTasks(previousTasks);
@@ -365,13 +376,36 @@ export default function TasksPage() {
           {COLUMNS.map(col => (
             <div 
               key={col.id} 
-              className={`flex flex-col w-80 bg-slate-100/50 rounded-2xl border-t-4 ${col.color} shrink-0`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); handleDrop(col.id); }}
+              className={`flex flex-col w-80 rounded-2xl border-t-4 transition-all duration-300 shrink-0 ${
+                col.color
+              } ${
+                hoveredColumn === col.id
+                  ? 'bg-slate-100/80 ring-4 ring-brand-gold/60 shadow-[0_18px_45px_rgba(245,194,68,0.2)] scale-[1.01]'
+                  : recentlyDroppedColumn === col.id
+                  ? 'bg-emerald-50/90 ring-4 ring-emerald-300/70 shadow-[0_18px_45px_rgba(16,185,129,0.16)]'
+                  : 'bg-slate-100/50'
+              }`}
+              onDragEnter={() => setHoveredColumn(col.id)}
+              onDragLeave={() => setHoveredColumn((current) => (current === col.id ? null : current))}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (hoveredColumn !== col.id) {
+                  setHoveredColumn(col.id);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setHoveredColumn(null);
+                handleDrop(col.id);
+              }}
             >
               <div className="p-4 flex justify-between items-center shrink-0">
-                <h3 className="font-heading text-slate-700">{col.title}</h3>
-                <span className="bg-white text-slate-500 text-xs font-bold px-2.5 py-1 rounded-full shadow-sm">
+                <h3 className={`font-heading transition-colors duration-300 ${hoveredColumn === col.id ? 'text-brand-navy' : 'text-slate-700'}`}>
+                  {col.title}
+                </h3>
+                <span className={`bg-white text-slate-500 text-xs font-bold px-2.5 py-1 rounded-full shadow-sm transition-all duration-300 ${
+                  hoveredColumn === col.id || recentlyDroppedColumn === col.id ? 'scale-110 text-brand-navy' : ''
+                }`}>
                   {tasks.filter(t => t.status === col.id).length}
                 </span>
               </div>
