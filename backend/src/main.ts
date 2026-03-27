@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { getEnableHsts, getFrontendOrigins, getPort } from './common/env';
 import { isAllowedFrontendOrigin } from './common/env';
 import { applySecurityHeaders } from './common/security-headers';
@@ -13,6 +14,9 @@ async function bootstrap() {
   const frontendOrigins = getFrontendOrigins();
   const enableHsts = getEnableHsts();
   const port = getPort();
+
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
   
   // Enable CORS
   app.enableCors({
