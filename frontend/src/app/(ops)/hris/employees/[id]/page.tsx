@@ -261,7 +261,9 @@ export default function EmployeeProfilePage() {
     return (details?.reports_to as string) || 'Not provided';
   })();
 
-  const managerName = employee?.manager ? `${employee.manager.first_name} ${employee.manager.last_name}` : 'No manager assigned';
+  const managerName = employee?.manager
+    ? `${employee.manager.first_name} ${employee.manager.last_name}`
+    : reportsTo;
   const profileData = employee ? getProfileData(employee) : createBlankEmployeeProfileData();
   const getProfileSection = (sectionKey: string) =>
     (isPlainObject(profileData[sectionKey]) ? (profileData[sectionKey] as Record<string, unknown>) : {});
@@ -534,13 +536,13 @@ export default function EmployeeProfilePage() {
                     </div>
                     <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
                       <MapPin size={16} className="text-slate-400" />
-                      <span>{reportsTo}</span>
+                      <span>{getProfileSection('employment_details').work_location || 'Not provided'}</span>
                     </div>
                   </div>
 
                   <div className="mt-8 rounded-[28px] border border-slate-100 bg-slate-50 p-5">
                     <div className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Manager</div>
-                    <div className="mt-2 text-lg font-heading font-black text-brand-navy">{managerName}</div>
+                    <div className="mt-2 text-lg font-heading font-black text-brand-navy">{managerName || 'No manager assigned'}</div>
                     {employee?.manager ? (
                       <Link
                         href={`/hris/employees/${employee.manager.id}`}
@@ -548,6 +550,10 @@ export default function EmployeeProfilePage() {
                       >
                         View manager profile
                       </Link>
+                    ) : reportsTo ? (
+                      <div className="mt-3 text-sm font-medium text-slate-500">
+                        Reporting line is set in the personnel file, but no manager record is linked yet.
+                      </div>
                     ) : null}
                   </div>
                 </div>
