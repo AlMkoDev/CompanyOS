@@ -280,7 +280,7 @@ export default function ConfigureHub() {
                       onClick={() => handleConfigure(id)}
                       className="px-6 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-black transition-all"
                     >
-                      {hasQuickTemplate ? 'Review Template' : 'Begin Wizard'}
+                      {hasQuickTemplate ? 'Review Operating Model' : 'Begin Wizard'}
                     </button>
                   )}
                   {isDone && (
@@ -288,7 +288,7 @@ export default function ConfigureHub() {
                       onClick={() => handleConfigure(id)}
                       className="px-4 py-2 text-slate-400 text-sm font-medium hover:text-brand-navy underline"
                     >
-                      Edit Config
+                      Edit Operating Model
                     </button>
                   )}
                 </div>
@@ -307,8 +307,8 @@ export default function ConfigureHub() {
             {autoApplying
               ? 'Applying Templates...'
               : allSelectedUseQuickTemplates
-              ? 'Launch Dashboard With Templates →'
-              : 'Review Corporate Structure →'}
+              ? 'Launch Dashboard With Operating Models →'
+              : 'Review Operating Model →'}
           </button>
         </div>
       </div>

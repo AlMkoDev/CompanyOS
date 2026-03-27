@@ -326,7 +326,7 @@ export default function DepartmentDetailPage() {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: resolvedData.color }}></div>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Functional Command</span>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Department Operating Model</span>
             </div>
             <h1 className="text-4xl font-heading text-brand-navy">{resolvedData.name}</h1>
           </div>
@@ -400,7 +400,7 @@ export default function DepartmentDetailPage() {
                     <Target size={24} className="text-brand-gold" />
                     Operating Model Snapshot
                   </h2>
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Source: Department Config</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">From Department Setup</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -451,9 +451,9 @@ export default function DepartmentDetailPage() {
                  <div className="flex items-center justify-between px-2">
                     <h2 className="text-2xl font-heading text-brand-navy flex items-center gap-3">
                       <Users size={24} className="text-brand-gold" />
-                      Command Structure
+                      Reporting Structure
                     </h2>
-                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{resolvedData.roles?.length || 0} Officers</span>
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{resolvedData.roles?.length || 0} Roles</span>
                  </div>
 
                  {/* Visual Summary */}

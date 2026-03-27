@@ -784,23 +784,23 @@ export default function DepartmentWizard() {
               <div className="w-24 h-24 rounded-full bg-brand-gold flex items-center justify-center text-white mb-8 shadow-2xl animate-bounce">
                 <Zap size={48} />
               </div>
-              <h2 className="text-5xl font-heading mb-4 text-brand-navy">Constitution Ready</h2>
+              <h2 className="text-5xl font-heading mb-4 text-brand-navy">Operating Model Ready</h2>
               <p className="text-slate-500 max-w-md mx-auto mb-12 text-lg">
-                The {data.name} department is now structurally and strategically codified.
+                The {data.name} department is now structurally and operationally defined.
               </p>
               <div className="w-full max-w-4xl mb-12 text-left">
                 <div className="bg-white border border-slate-100 rounded-[2rem] shadow-xl p-8 md:p-10">
                   <div className="flex items-center justify-between gap-4 mb-6">
                     <div>
                       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">Operating Model Snapshot</div>
-                      <h3 className="text-2xl font-heading text-brand-navy">Review the configured department before finishing</h3>
+                      <h3 className="text-2xl font-heading text-brand-navy">Review the operating model before finishing</h3>
                     </div>
                     <button
                       type="button"
                       onClick={() => setStep(3)}
                       className="text-xs font-bold uppercase tracking-widest text-brand-gold hover:underline"
                     >
-                      Review Sections
+                      Review Operating Model
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -819,7 +819,7 @@ export default function DepartmentWizard() {
                   </div>
                   <div className="mt-4 p-5 rounded-2xl border border-slate-100 bg-white">
                     <div className="flex items-center justify-between gap-4 mb-4">
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Workflows</div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Operational Workflows</div>
                       <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{workflowPreview.length} defined steps</span>
                     </div>
                     {workflowPreview.length > 0 ? (
@@ -843,7 +843,7 @@ export default function DepartmentWizard() {
                 onClick={handleFinish} 
                 className="btn-premium px-12 py-5 text-xl scale-110 shadow-2xl hover:scale-125 transition-all"
               >
-                Finalize {data.name} Configuration →
+                Complete {data.name} Operating Model →
               </button>
             </div>
           )}
