@@ -54,6 +54,13 @@ interface InvoiceReceiptSummary {
   payment_count: number;
 }
 
+interface InvoiceActionButtonProps {
+  label: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}
+
 export default function ArInvoicesPage() {
   const { isAuthenticated } = useAuthStore();
   const [invoices, setInvoices] = React.useState<ArInvoice[]>([]);
@@ -258,6 +265,10 @@ export default function ArInvoicesPage() {
     }
   };
 
+  const handleComingSoonAction = (label: string) => {
+    setMessage(`${label} is queued for a later refinement pass.`);
+  };
+
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
       <div className="flex justify-between items-center">
@@ -333,12 +344,31 @@ export default function ArInvoicesPage() {
                   </td>
                   <td className="py-6 px-8 text-right">
                     <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => handleSendInvoice(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Mail size={16} /></button>
-                      <button onClick={() => { setSelectedInvoice(inv); setPaymentForm((prev) => ({ ...prev, amount: String(Number(inv.amount) - Number(inv.paid_amount)) })); setShowPaymentForm(true); }} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><CreditCard size={16} /></button>
-                      <button onClick={() => handleViewReceipts(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><History size={16} /></button>
-                      <button onClick={() => handleOpenCollectionCase(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><AlertCircle size={16} /></button>
-                      <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Download size={16} /></button>
-                      <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><MoreVertical size={16} /></button>
+                      <InvoiceActionButton label="Send invoice" onClick={() => handleSendInvoice(inv)}>
+                        <Mail size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton
+                        label="Record payment"
+                        onClick={() => {
+                          setSelectedInvoice(inv);
+                          setPaymentForm((prev) => ({ ...prev, amount: String(Number(inv.amount) - Number(inv.paid_amount)) }));
+                          setShowPaymentForm(true);
+                        }}
+                      >
+                        <CreditCard size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="View receipt allocation" onClick={() => handleViewReceipts(inv)}>
+                        <History size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="Open collection case" onClick={() => handleOpenCollectionCase(inv)}>
+                        <AlertCircle size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="Download invoice PDF (Coming soon)" onClick={() => handleComingSoonAction('Invoice PDF download')} disabled>
+                        <Download size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="More invoice actions (Coming soon)" onClick={() => handleComingSoonAction('Additional invoice actions')} disabled>
+                        <MoreVertical size={16} />
+                      </InvoiceActionButton>
                     </div>
                   </td>
                 </tr>
@@ -535,6 +565,28 @@ function ReceiptMetric({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</div>
       <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
     </div>
+  );
+}
+
+function InvoiceActionButton({ label, onClick, children, disabled = false }: InvoiceActionButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      title={label}
+      aria-label={label}
+      aria-disabled={disabled}
+      className={`relative group/action p-2.5 rounded-xl border shadow-sm transition-all ${
+        disabled
+          ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+          : 'border-slate-100 bg-white text-slate-400 hover:text-brand-navy'
+      }`}
+    >
+      {children}
+      <span className="pointer-events-none absolute -top-11 right-1/2 translate-x-1/2 whitespace-nowrap rounded-xl bg-brand-navy px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white opacity-0 shadow-xl transition-opacity group-hover/action:opacity-100 group-focus-visible/action:opacity-100">
+        {label}
+      </span>
+    </button>
   );
 }
 
