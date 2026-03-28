@@ -4,6 +4,7 @@ import {
   CreateAccountDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
+  UpdateAccountDto,
 } from './dto/accounting.dto';
 
 @Injectable()
@@ -52,16 +53,50 @@ export class AccountingService {
   async createAccount(companyId: string, data: CreateAccountDto) {
     return this.prisma.gLAccount.create({
       data: {
-        ...data,
+        code: data.code,
+        name: data.name,
+        type: data.type,
+        parent_id: data.parent_id || null,
         company_id: companyId,
       },
     });
+  }
+
+  private async getCompanyAccount(companyId: string, accountId: string) {
+    const account = await this.prisma.gLAccount.findFirst({
+      where: { id: accountId, company_id: companyId },
+    });
+    if (!account) throw new NotFoundException('Account not found');
+    return account;
   }
 
   async getAccounts(companyId: string) {
     return this.prisma.gLAccount.findMany({
       where: { company_id: companyId },
       orderBy: { code: 'asc' },
+    });
+  }
+
+  async updateAccount(companyId: string, accountId: string, data: UpdateAccountDto) {
+    const current = await this.getCompanyAccount(companyId, accountId);
+
+    if (data.parent_id && data.parent_id === accountId) {
+      throw new BadRequestException('An account cannot be its own parent');
+    }
+
+    if (data.parent_id) {
+      await this.getCompanyAccount(companyId, data.parent_id);
+    }
+
+    return this.prisma.gLAccount.update({
+      where: { id: current.id },
+      data: {
+        code: data.code ?? undefined,
+        name: data.name ?? undefined,
+        type: data.type ?? undefined,
+        parent_id: data.parent_id === '' ? null : data.parent_id ?? undefined,
+        is_active: typeof data.is_active === 'boolean' ? data.is_active : undefined,
+      },
     });
   }
 

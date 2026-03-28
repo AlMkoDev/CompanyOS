@@ -18,6 +18,8 @@ describe('AccountingService', () => {
     gLAccount: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
     },
     journalEntry: {
       findFirst: jest.fn(),
@@ -124,5 +126,30 @@ describe('AccountingService', () => {
       }),
     );
     expect(result).toHaveLength(1);
+  });
+
+  it('updates company accounts while preserving scope', async () => {
+    prisma.gLAccount.findFirst
+      .mockResolvedValueOnce({ id: 'acct-1', company_id: 'company-1' })
+      .mockResolvedValueOnce({ id: 'parent-1', company_id: 'company-1' });
+    prisma.gLAccount.update.mockResolvedValue({ id: 'acct-1', name: 'Updated Cash' });
+
+    const result = await service.updateAccount('company-1', 'acct-1', {
+      name: 'Updated Cash',
+      parent_id: 'parent-1',
+      is_active: false,
+    });
+
+    expect(prisma.gLAccount.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'acct-1' },
+        data: expect.objectContaining({
+          name: 'Updated Cash',
+          parent_id: 'parent-1',
+          is_active: false,
+        }),
+      }),
+    );
+    expect(result).toEqual({ id: 'acct-1', name: 'Updated Cash' });
   });
 });

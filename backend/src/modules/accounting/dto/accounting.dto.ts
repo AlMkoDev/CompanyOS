@@ -33,11 +33,35 @@ export class CreateAccountDto {
   @IsString()
   @MaxLength(36)
   parent_id?: string;
+}
+
+export class UpdateAccountDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  code?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(4000)
-  description?: string;
+  @MinLength(1)
+  @MaxLength(160)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  parent_id?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  is_active?: boolean;
 }
 
 export class JournalEntryLineDto {

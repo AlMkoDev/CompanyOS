@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Patch,
   Post,
   Body,
   Param,
@@ -15,6 +16,7 @@ import {
   CreateAccountDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
+  UpdateAccountDto,
 } from './dto/accounting.dto';
 
 @Controller('accounting')
@@ -25,6 +27,15 @@ export class AccountingController {
   @Post('accounts')
   async createAccount(@Req() req: any, @Body() data: CreateAccountDto) {
     return this.accountingService.createAccount(req.user.companyId, data);
+  }
+
+  @Patch('accounts/:id')
+  async updateAccount(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() data: UpdateAccountDto,
+  ) {
+    return this.accountingService.updateAccount(req.user.companyId, id, data);
   }
 
   @Get('accounts')
