@@ -59,8 +59,11 @@ export class AccountingController {
   }
 
   @Get('trial-balance')
-  async getTrialBalance(@Req() req: any) {
-    return this.accountingService.getTrialBalance(req.user.companyId);
+  async getTrialBalance(@Req() req: any, @Query('toDate') toDate?: string) {
+    return this.accountingService.getTrialBalance(
+      req.user.companyId,
+      toDate ? new Date(toDate) : undefined,
+    );
   }
 
   @Get('periods')

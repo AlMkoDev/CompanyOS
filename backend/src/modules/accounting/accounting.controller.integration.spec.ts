@@ -14,6 +14,7 @@ describe('AccountingController integration', () => {
     getPeriods: jest.Mock;
     getPeriodCloseReadiness: jest.Mock;
     getAccounts: jest.Mock;
+    getTrialBalance: jest.Mock;
     postJournalEntry: jest.Mock;
     reverseJournalEntry: jest.Mock;
     closePeriod: jest.Mock;
@@ -30,6 +31,7 @@ describe('AccountingController integration', () => {
       getPeriods: jest.fn(),
       getPeriodCloseReadiness: jest.fn(),
       getAccounts: jest.fn(),
+      getTrialBalance: jest.fn(),
       postJournalEntry: jest.fn(),
       reverseJournalEntry: jest.fn(),
       closePeriod: jest.fn(),
@@ -107,6 +109,22 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.getJournalEntries).toHaveBeenCalledWith('company-1');
     expect(response.body).toEqual([{ id: 'entry-1', status: 'draft', lines: [] }]);
+  });
+
+  it('loads trial balance through company-scoped context', async () => {
+    accountingService.getTrialBalance.mockResolvedValue([
+      { code: '1000', name: 'Cash', debit: 1200, credit: 0 },
+    ]);
+
+    const response = await request(app.getHttpServer())
+      .get('/accounting/trial-balance?toDate=2026-03-27')
+      .expect(200);
+
+    expect(accountingService.getTrialBalance).toHaveBeenCalledWith(
+      'company-1',
+      new Date('2026-03-27'),
+    );
+    expect(response.body).toEqual([{ code: '1000', name: 'Cash', debit: 1200, credit: 0 }]);
   });
 
   it('reverses journal entries through company-scoped context', async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { apiFetch, apiUrl } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { 
   PieChart, 
@@ -9,7 +9,8 @@ import {
   Columns, 
   Download, 
   ChevronLeft,
-  Calendar
+  Calendar,
+  RefreshCw
 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -40,6 +41,8 @@ interface TabButtonProps {
 
 interface ReportHeaderProps {
   title: string;
+  periodLabel: string;
+  companyName: string;
 }
 
 interface PnLViewProps {
@@ -69,25 +72,41 @@ interface FinancialRowProps {
 function ReportsContent() {
   const searchParams = useSearchParams();
   const initialType = (searchParams.get('type') as ReportType | null) || 'pnl';
+  const currentYear = new Date().getFullYear();
+  const defaultFromDate = `${currentYear}-01-01`;
+  const defaultToDate = `${currentYear}-12-31`;
   
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const [reportType, setReportType] = React.useState(initialType);
+  const [fromDate, setFromDate] = React.useState(() => normalizeDate(searchParams.get('fromDate')) || defaultFromDate);
+  const [toDate, setToDate] = React.useState(() => normalizeDate(searchParams.get('toDate')) || defaultToDate);
   const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | BalanceSheetRow[] | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const companyName = user?.company?.name || 'Current Company';
+
+  const periodLabel = React.useMemo(() => {
+    if (reportType === 'pnl') {
+      return `${formatDisplayDate(fromDate)} — ${formatDisplayDate(toDate)}`;
+    }
+
+    return `As of ${formatDisplayDate(toDate)}`;
+  }, [fromDate, reportType, toDate]);
 
   const fetchReport = React.useCallback(async () => {
     setLoading(true);
     try {
-      let url = '';
+      let path = '';
       if (reportType === 'pnl') {
-        url = apiUrl('/accounting/reports/pnl?fromDate=2026-01-01&toDate=2026-12-31');
+        const params = new URLSearchParams({ fromDate, toDate });
+        path = `/accounting/reports/pnl?${params.toString()}`;
       } else if (reportType === 'bs') {
-        url = apiUrl('/accounting/reports/balance-sheet?toDate=2026-12-31');
+        const params = new URLSearchParams({ toDate });
+        path = `/accounting/reports/balance-sheet?${params.toString()}`;
       } else {
-        url = apiUrl('/accounting/trial-balance');
+        const params = new URLSearchParams({ toDate });
+        path = `/accounting/trial-balance?${params.toString()}`;
       }
 
-      const path = url.replace(/^https?:\/\/[^/]+/, '');
       const res = await apiFetch(path);
       if (res.ok) setData(await res.json());
     } catch (err) {
@@ -95,7 +114,7 @@ function ReportsContent() {
     } finally {
       setLoading(false);
     }
-  }, [reportType]);
+  }, [fromDate, reportType, toDate]);
 
   React.useEffect(() => {
     if (isAuthenticated) fetchReport();
@@ -116,6 +135,35 @@ function ReportsContent() {
         <button className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:scale-105 transition-all">
           <Download size={18} />
           Export PDF
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 rounded-3xl border border-slate-100 bg-white p-4 shadow-sm">
+        <label className="flex flex-col gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+          From
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-brand-navy outline-none transition-all focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+          To
+          <input
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+            className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-brand-navy outline-none transition-all focus:border-brand-gold focus:ring-2 focus:ring-brand-gold/20"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={fetchReport}
+          className="self-end flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-6 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-brand-navy/90"
+        >
+          <RefreshCw size={16} />
+          Refresh Report
         </button>
       </div>
 
@@ -148,7 +196,11 @@ function ReportsContent() {
           </div>
         ) : (
           <div className="animate-in fade-in duration-500">
-            <ReportHeader title={reportType === 'pnl' ? 'Income Statement (P&L)' : reportType === 'bs' ? 'Balance Sheet' : 'Trial Balance'} />
+            <ReportHeader
+              title={reportType === 'pnl' ? 'Income Statement (P&L)' : reportType === 'bs' ? 'Balance Sheet' : 'Trial Balance'}
+              periodLabel={periodLabel}
+              companyName={companyName}
+            />
             
             {reportType === 'pnl' && data && !Array.isArray(data) && <PnLView data={data} />}
             {reportType === 'tb' && Array.isArray(data) && <TrialBalanceView data={data as unknown as TrialBalanceRow[]} />}
@@ -184,19 +236,19 @@ function TabButton({ active, onClick, icon, label }: TabButtonProps) {
   );
 }
 
-function ReportHeader({ title }: ReportHeaderProps) {
+function ReportHeader({ title, periodLabel, companyName }: ReportHeaderProps) {
   return (
     <div className="border-b-2 border-slate-50 pb-8 mb-10 flex justify-between items-end">
       <div>
         <h2 className="text-4xl font-heading text-brand-navy mb-2">{title}</h2>
         <div className="flex items-center gap-2 text-slate-400 font-bold text-[10px] tracking-[0.2em] uppercase">
           <Calendar size={12} className="text-brand-gold" />
-          Period: Jan 01, 2026 — Dec 31, 2026
+          Period: {periodLabel}
         </div>
       </div>
       <div className="text-right">
         <div className="text-xs font-black text-slate-300 uppercase tracking-widest mb-1">Company OS</div>
-        <div className="text-xs font-bold text-brand-navy">Verdant Fields AgriTech</div>
+        <div className="text-xs font-bold text-brand-navy">{companyName}</div>
       </div>
     </div>
   );
@@ -335,4 +387,20 @@ function FinancialRow({ label, value, indent = false }: FinancialRowProps) {
       <span className="font-mono">R {value?.toLocaleString() || '0'}</span>
     </div>
   );
+}
+
+function normalizeDate(value: string | null) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '' : value.slice(0, 10);
+}
+
+function formatDisplayDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
