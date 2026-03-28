@@ -116,6 +116,7 @@ model Company {
   locations            Location[]
   stockLevels          StockLevel[]
   stockLedgers         StockLedger[]
+  bankReconciliationMatches BankReconciliationMatch[]
 }
 
 model User {
@@ -140,6 +141,7 @@ model User {
   activity_logs      ActivityLog[]
   bank_change_requests_made BankChangeRequest[] @relation("BankChangeRequester")
   bank_change_requests_approved BankChangeRequest[] @relation("BankChangeApprover")
+  bankReconciliationMatches BankReconciliationMatch[]
 }
 
 model Department {
@@ -477,6 +479,7 @@ model JournalEntry {
   company Company           @relation(fields: [company_id], references: [id])
   lines   JournalLine[]
   period  AccountingPeriod? @relation(fields: [period_id], references: [id])
+  bankReconciliationMatches BankReconciliationMatch[]
 }
 
 model JournalLine {
@@ -519,6 +522,7 @@ model BankStatement {
 
   company Company             @relation(fields: [company_id], references: [id])
   lines   BankStatementLine[]
+  reconciliation_matches BankReconciliationMatch[]
 }
 
 model BankStatementLine {
@@ -544,11 +548,11 @@ model BankReconciliationMatch {
   matched_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
 
-  company       Company         @relation(fields: [company_id], references: [id])
-  statement     BankStatement    @relation(fields: [statement_id], references: [id])
+  company       Company          @relation(fields: [company_id], references: [id])
+  statement     BankStatement     @relation(fields: [statement_id], references: [id])
   line          BankStatementLine @relation(fields: [line_id], references: [id])
-  journal_entry JournalEntry     @relation(fields: [journal_entry_id], references: [id])
-  matched_by_user User?          @relation(fields: [matched_by], references: [id])
+  journal_entry JournalEntry      @relation(fields: [journal_entry_id], references: [id])
+  matched_by_user User?           @relation(fields: [matched_by], references: [id])
 }
 
 model TrialBalance {

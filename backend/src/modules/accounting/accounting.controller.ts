@@ -143,7 +143,7 @@ export class AccountingController {
   }
 
   @Get('bank-statements/:id/reconciliation')
-  async getBankReconciliationSuggestions(@Req() req: any, @Param('id') id: string) {
+  async getBankReconciliationSuggestions(@Req() req: any, @Param('id') id: string): Promise<any> {
     return this.accountingService.getReconciliationSuggestions(req.user.companyId, id);
   }
 
@@ -152,7 +152,7 @@ export class AccountingController {
     @Req() req: any,
     @Param('id') id: string,
     @Body() body: ReconcileBankStatementLineDto,
-  ) {
+  ): Promise<any> {
     return this.accountingService.matchBankStatementLine(
       req.user.companyId,
       id,
@@ -167,7 +167,7 @@ export class AccountingController {
     @Req() req: any,
     @Param('id') id: string,
     @Param('lineId') lineId: string,
-  ) {
+  ): Promise<any> {
     return this.accountingService.unmatchBankStatementLine(req.user.companyId, id, lineId);
   }
 }
