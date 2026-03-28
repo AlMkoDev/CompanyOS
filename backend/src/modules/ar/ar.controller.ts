@@ -15,6 +15,7 @@ import {
   CreateCollectionCaseDto,
   CreateCustomerDto,
   RecordPaymentDto,
+  SendReminderDto,
 } from './dto/ar.dto';
 
 @Controller('ar')
@@ -45,6 +46,11 @@ export class ArController {
   @Get('invoices/:id/receipts')
   async getInvoiceReceipts(@Req() req: any, @Param('id') id: string) {
     return this.arService.getInvoiceReceipts(req.user.companyId, id);
+  }
+
+  @Get('invoices/:id/dunning')
+  async getInvoiceDunning(@Req() req: any, @Param('id') id: string) {
+    return this.arService.getInvoiceDunning(req.user.companyId, id);
   }
 
   @Post('payments')
@@ -89,6 +95,11 @@ export class ArController {
 
   @Post('invoices/:id/send')
   async sendInvoice(@Req() req: any, @Param('id') id: string) {
-    return this.arService.sendInvoice(req.user.companyId, id);
+    return this.arService.sendInvoice(req.user.companyId, id, req.user.userId);
+  }
+
+  @Post('invoices/:id/reminders')
+  async sendReminder(@Req() req: any, @Param('id') id: string, @Body() body: SendReminderDto) {
+    return this.arService.sendReminder(req.user.companyId, id, req.user.userId, body);
   }
 }

@@ -792,6 +792,11 @@ model ARInvoice {
   amount       Decimal  @db.Decimal(15, 2)
   paid_amount  Decimal  @default(0) @db.Decimal(15, 2)
   status       String   @default("draft") // draft, sent, partially_paid, paid, overdue
+  sent_at      DateTime?
+  delivered_at DateTime?
+  delivery_method String?
+  last_reminder_at DateTime?
+  reminder_count Int    @default(0)
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
@@ -799,6 +804,7 @@ model ARInvoice {
   customer         Customer         @relation(fields: [customer_id], references: [id])
   payments         Payment[]
   collection_cases CollectionCase[]
+  dunning_events   ARDunningEvent[]
 }
 
 model Payment {
@@ -840,6 +846,20 @@ model CollectionCase {
   created_at       DateTime  @default(now())
 
   company Company   @relation(fields: [company_id], references: [id])
+  invoice ARInvoice @relation(fields: [invoice_id], references: [id])
+}
+
+model ARDunningEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  invoice_id   String   @db.Uuid
+  event_type   String
+  stage        Int?
+  channel      String?
+  performed_by String?  @db.Uuid
+  details      Json?
+  created_at   DateTime @default(now())
+
   invoice ARInvoice @relation(fields: [invoice_id], references: [id])
 }
 

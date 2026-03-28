@@ -5,11 +5,24 @@ import {
   CreateARInvoiceDto,
   CreateCustomerDto,
   RecordPaymentDto,
+  SendReminderDto,
 } from './dto/ar.dto';
 
 @Injectable()
 export class ArService {
   constructor(private prisma: PrismaService) {}
+
+  private getOverdueDays(dueDate: Date | string, now = new Date()) {
+    const diffMs = now.getTime() - new Date(dueDate).getTime();
+    if (diffMs <= 0) return 0;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  private getNextDunningStage(overdueDays: number, reminderCount: number) {
+    const stages = [3, 7, 15];
+    const nextStage = stages.find((stage) => overdueDays >= stage && reminderCount < stages.indexOf(stage) + 1);
+    return nextStage ?? null;
+  }
 
   private async getCompanyInvoice(companyId: string, invoiceId: string) {
     const invoice = await this.prisma.aRInvoice.findFirst({
@@ -106,6 +119,32 @@ export class ArService {
       total_received: totalReceived,
       outstanding_balance: outstandingBalance,
       payment_count: invoice.payments.length,
+    };
+  }
+
+  async getInvoiceDunning(companyId: string, invoiceId: string) {
+    const invoice = await this.prisma.aRInvoice.findFirst({
+      where: { id: invoiceId, company_id: companyId },
+      include: {
+        customer: true,
+        dunning_events: {
+          orderBy: { created_at: 'desc' },
+        },
+      },
+    });
+
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const outstandingBalance = this.getOutstandingBalance(invoice);
+    const overdueDays = outstandingBalance > 0 ? this.getOverdueDays(invoice.due_date) : 0;
+    const nextReminderStage = outstandingBalance > 0 ? this.getNextDunningStage(overdueDays, invoice.reminder_count || 0) : null;
+
+    return {
+      invoice,
+      overdue_days: overdueDays,
+      outstanding_balance: Math.max(0, outstandingBalance),
+      next_reminder_stage: nextReminderStage,
+      reminder_history: invoice.dunning_events,
     };
   }
 
@@ -396,6 +435,13 @@ export class ArService {
     ]);
 
     const totalAr = Object.values(aging).reduce((a, b) => a + b, 0);
+    const remindersDue = invoices.filter((invoice) => {
+      const outstandingBalance = this.getOutstandingBalance(invoice);
+      if (outstandingBalance <= 0) return false;
+
+      const overdueDays = this.getOverdueDays(invoice.due_date);
+      return this.getNextDunningStage(overdueDays, invoice.reminder_count || 0) !== null;
+    }).length;
 
     return {
       customerCount: customers,
@@ -404,19 +450,96 @@ export class ArService {
       pendingInvoices: invoices,
       collectionCases: collectionCases.length,
       topEscalations: collectionCases,
+      remindersDue,
     };
   }
 
-  async sendInvoice(companyId: string, invoiceId: string) {
+  async sendInvoice(companyId: string, invoiceId: string, userId?: string) {
     const invoice = await this.getCompanyInvoice(companyId, invoiceId);
+    const now = new Date();
 
     // Mock PDF generation and email sending
     console.log(`[AR] Generating PDF for Invoice #${invoice.invoice_no}...`);
     console.log(`[AR] Dispatching email to customer ${invoice.customer_id}...`);
 
-    return this.prisma.aRInvoice.update({
-      where: { id: invoiceId },
-      data: { status: 'sent' },
+    return this.prisma.$transaction(async (tx) => {
+      const updatedInvoice = await tx.aRInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          status: 'sent',
+          sent_at: now,
+          delivered_at: now,
+          delivery_method: 'email',
+        },
+      });
+
+      await tx.aRDunningEvent.create({
+        data: {
+          company_id: companyId,
+          invoice_id: invoiceId,
+          event_type: 'invoice_sent',
+          channel: 'email',
+          performed_by: userId,
+          details: {
+            invoice_no: invoice.invoice_no,
+            delivered: true,
+          },
+        },
+      });
+
+      return updatedInvoice;
+    });
+  }
+
+  async sendReminder(companyId: string, invoiceId: string, userId?: string, data?: SendReminderDto) {
+    const invoice = await this.getCompanyInvoice(companyId, invoiceId);
+    const outstandingBalance = this.getOutstandingBalance(invoice);
+
+    if (outstandingBalance <= 0) {
+      throw new BadRequestException('Invoice is already fully settled');
+    }
+
+    const overdueDays = this.getOverdueDays(invoice.due_date);
+    const stage = this.getNextDunningStage(overdueDays, invoice.reminder_count || 0);
+
+    if (!stage) {
+      throw new BadRequestException('No reminder is currently due for this invoice');
+    }
+
+    const channel = data?.channel || invoice.delivery_method || 'email';
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedInvoice = await tx.aRInvoice.update({
+        where: { id: invoiceId },
+        data: {
+          last_reminder_at: now,
+          reminder_count: { increment: 1 },
+          status: overdueDays > 0 ? 'overdue' : invoice.status,
+        },
+      });
+
+      const event = await tx.aRDunningEvent.create({
+        data: {
+          company_id: companyId,
+          invoice_id: invoiceId,
+          event_type: 'reminder_sent',
+          stage,
+          channel,
+          performed_by: userId,
+          details: {
+            overdue_days: overdueDays,
+            outstanding_balance: outstandingBalance,
+          },
+        },
+      });
+
+      return {
+        invoice: updatedInvoice,
+        event,
+        overdue_days: overdueDays,
+        next_stage_after_send: this.getNextDunningStage(overdueDays, (invoice.reminder_count || 0) + 1),
+      };
     });
   }
 }

@@ -97,3 +97,10 @@ export class CollectionActionDto {
   @MaxLength(2000)
   notes?: string;
 }
+
+export class SendReminderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  channel?: string;
+}

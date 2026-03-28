@@ -13,6 +13,7 @@ import {
   History,
   Download,
   MoreVertical,
+  BellRing,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -34,6 +35,11 @@ interface ArInvoice {
   amount: number | string;
   paid_amount: number | string;
   status: string;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  delivery_method?: string | null;
+  last_reminder_at?: string | null;
+  reminder_count?: number;
   customer?: ArCustomer;
 }
 
@@ -54,6 +60,27 @@ interface InvoiceReceiptSummary {
   payment_count: number;
 }
 
+interface DunningEvent {
+  id: string;
+  event_type: string;
+  stage?: number | null;
+  channel?: string | null;
+  created_at: string;
+  details?: {
+    overdue_days?: number;
+    outstanding_balance?: number;
+    delivered?: boolean;
+  };
+}
+
+interface InvoiceDunningSummary {
+  invoice: ArInvoice;
+  overdue_days: number;
+  outstanding_balance: number;
+  next_reminder_stage?: number | null;
+  reminder_history: DunningEvent[];
+}
+
 interface InvoiceActionButtonProps {
   label: string;
   onClick?: () => void;
@@ -70,8 +97,10 @@ export default function ArInvoicesPage() {
   const [showForm, setShowForm] = React.useState(false);
   const [showPaymentForm, setShowPaymentForm] = React.useState(false);
   const [showReceiptHistory, setShowReceiptHistory] = React.useState(false);
+  const [showDunningPanel, setShowDunningPanel] = React.useState(false);
   const [selectedInvoice, setSelectedInvoice] = React.useState<ArInvoice | null>(null);
   const [receiptSummary, setReceiptSummary] = React.useState<InvoiceReceiptSummary | null>(null);
+  const [dunningSummary, setDunningSummary] = React.useState<InvoiceDunningSummary | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [form, setForm] = React.useState({
@@ -243,6 +272,54 @@ export default function ArInvoicesPage() {
     }
   };
 
+  const handleOpenDunningPanel = async (invoice: ArInvoice) => {
+    setMessage('');
+    setSelectedInvoice(invoice);
+
+    try {
+      const res = await apiFetch(`/ar/invoices/${invoice.id}/dunning`);
+      if (res.ok) {
+        setDunningSummary(await res.json());
+        setShowDunningPanel(true);
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to load delivery and reminder history.');
+      }
+    } catch {
+      setMessage('Connection error while loading delivery and reminder history.');
+    }
+  };
+
+  const handleSendReminder = async () => {
+    if (!selectedInvoice) return;
+
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const res = await apiFetch(`/ar/invoices/${selectedInvoice.id}/reminders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: dunningSummary?.invoice.delivery_method || 'email',
+        }),
+      });
+
+      if (res.ok) {
+        setMessage(`Reminder sent for invoice ${selectedInvoice.invoice_no}.`);
+        await fetchInvoices();
+        await handleOpenDunningPanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to send reminder.');
+      }
+    } catch {
+      setMessage('Connection error while sending reminder.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleOpenCollectionCase = async (invoice: ArInvoice) => {
     try {
       const res = await apiFetch('/ar/collections', {
@@ -362,6 +439,9 @@ export default function ArInvoicesPage() {
                       </InvoiceActionButton>
                       <InvoiceActionButton label="Open collection case" onClick={() => handleOpenCollectionCase(inv)}>
                         <AlertCircle size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="Delivery & reminders" onClick={() => handleOpenDunningPanel(inv)}>
+                        <BellRing size={16} />
                       </InvoiceActionButton>
                       <InvoiceActionButton label="Download invoice PDF (Coming soon)" onClick={() => handleComingSoonAction('Invoice PDF download')} disabled>
                         <Download size={16} />
@@ -551,6 +631,102 @@ export default function ArInvoicesPage() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDunningPanel && dunningSummary && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-4xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Delivery & Reminders</h2>
+                <p className="text-sm text-slate-400">
+                  Invoice #{dunningSummary.invoice.invoice_no} · {dunningSummary.invoice.customer?.name}
+                </p>
+              </div>
+              <button onClick={() => setShowDunningPanel(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-6 p-8">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <ReceiptMetric
+                  label="Sent"
+                  value={dunningSummary.invoice.sent_at ? new Date(dunningSummary.invoice.sent_at).toLocaleDateString() : 'Not sent'}
+                />
+                <ReceiptMetric
+                  label="Delivered"
+                  value={dunningSummary.invoice.delivered_at ? new Date(dunningSummary.invoice.delivered_at).toLocaleDateString() : 'Pending'}
+                />
+                <ReceiptMetric
+                  label="Next Reminder"
+                  value={dunningSummary.next_reminder_stage ? `${dunningSummary.next_reminder_stage}-day` : 'None due'}
+                />
+                <ReceiptMetric
+                  label="Outstanding"
+                  value={`R ${dunningSummary.outstanding_balance.toLocaleString()}`}
+                />
+              </div>
+
+              <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5 text-sm text-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Delivery status</div>
+                    <div className="mt-2 font-semibold text-slate-900">
+                      {dunningSummary.invoice.delivery_method
+                        ? `${dunningSummary.invoice.delivery_method.toUpperCase()} dispatch logged`
+                        : 'No delivery method logged yet'}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      Overdue by {dunningSummary.overdue_days} day{dunningSummary.overdue_days === 1 ? '' : 's'} · {dunningSummary.invoice.reminder_count || 0} reminder(s) sent
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!dunningSummary.next_reminder_stage || saving}
+                    onClick={handleSendReminder}
+                    className="rounded-2xl bg-brand-navy px-6 py-3 text-sm font-bold text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  >
+                    {saving ? 'Sending...' : dunningSummary.next_reminder_stage ? `Send ${dunningSummary.next_reminder_stage}-Day Reminder` : 'No Reminder Due'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-100 bg-white">
+                <div className="border-b border-slate-100 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                  Reminder History
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {dunningSummary.reminder_history.length ? (
+                    dunningSummary.reminder_history.map((event) => (
+                      <div key={event.id} className="flex items-center justify-between gap-4 px-6 py-4 text-sm">
+                        <div>
+                          <div className="font-semibold text-slate-900">
+                            {event.event_type === 'invoice_sent'
+                              ? 'Invoice delivered'
+                              : event.stage
+                                ? `${event.stage}-day reminder sent`
+                                : 'Reminder event'}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {new Date(event.created_at).toLocaleString()}
+                            {event.channel ? ` · ${event.channel}` : ''}
+                            {typeof event.details?.overdue_days === 'number' ? ` · ${event.details.overdue_days} days overdue` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs font-bold uppercase tracking-widest text-slate-400">
+                          {event.event_type === 'invoice_sent' ? 'Delivery' : 'Dunning'}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-6 py-10 text-center text-sm italic text-slate-400">No delivery or reminder events have been logged yet.</div>
+                  )}
+                </div>
+              </div>
+              <div className="text-sm text-slate-500">{message}</div>
             </div>
           </div>
         </div>

@@ -40,6 +40,7 @@ interface ArDashboardData {
   aging?: ArAgingSummary;
   pendingInvoices?: ArInvoice[];
   collectionCases?: number;
+  remindersDue?: number;
   topEscalations?: Array<{
     id: string;
     escalation_level: number;
@@ -148,7 +149,7 @@ export default function ArDashboardPage() {
           value={`R ${(dashboard?.aging?.['90plus'] || 0).toLocaleString()}`} 
           subtext="Critical Risk"
           icon={<AlertCircle className="text-rose-600" />}
-          trend="Live"
+          trend={dashboard?.remindersDue ? `${dashboard.remindersDue} Due` : 'Live'}
           isWarning
         />
         <StatCard 
