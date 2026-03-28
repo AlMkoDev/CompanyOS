@@ -10,6 +10,7 @@ import {
 import { ArService } from './ar.service';
 import { JwtAuthGuard } from '../auth/jwt.strategy';
 import {
+  CollectionActionDto,
   CreateARInvoiceDto,
   CreateCollectionCaseDto,
   CreateCustomerDto,
@@ -43,7 +44,7 @@ export class ArController {
 
   @Post('payments')
   async recordPayment(@Req() req: any, @Body() data: RecordPaymentDto) {
-    return this.arService.recordPayment(req.user.companyId, data);
+    return this.arService.recordPayment(req.user.companyId, data, req.user.userId);
   }
 
   @Get('dashboard')
@@ -63,7 +64,22 @@ export class ArController {
 
   @Post('collections')
   async createCollectionCase(@Req() req: any, @Body() body: CreateCollectionCaseDto) {
-    return this.arService.createCollectionCase(req.user.companyId, body.invoiceId, body.notes);
+    return this.arService.createCollectionCase(req.user.companyId, body.invoiceId, body.notes, req.user.userId);
+  }
+
+  @Post('collections/:id/actions')
+  async addCollectionAction(@Req() req: any, @Param('id') id: string, @Body() body: CollectionActionDto) {
+    return this.arService.addCollectionAction(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('collections/:id/escalate')
+  async escalateCollectionCase(@Req() req: any, @Param('id') id: string, @Body() body: { notes?: string }) {
+    return this.arService.escalateCollectionCase(req.user.companyId, id, req.user.userId, body?.notes);
+  }
+
+  @Post('collections/:id/resolve')
+  async resolveCollectionCase(@Req() req: any, @Param('id') id: string, @Body() body: { notes?: string }) {
+    return this.arService.resolveCollectionCase(req.user.companyId, id, req.user.userId, body?.notes);
   }
 
   @Post('invoices/:id/send')

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  CollectionActionDto,
   CreateARInvoiceDto,
   CreateCustomerDto,
   RecordPaymentDto,
@@ -16,6 +17,32 @@ export class ArService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;
+  }
+
+  private async getCompanyCollectionCase(companyId: string, caseId: string) {
+    const collectionCase = await this.prisma.collectionCase.findFirst({
+      where: { id: caseId, company_id: companyId },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
+      },
+    });
+    if (!collectionCase) throw new NotFoundException('Collection case not found');
+    return collectionCase;
+  }
+
+  private appendCollectionLog(existingNotes?: string | null, userId?: string, action?: string, notes?: string) {
+    const entry = [
+      `[${new Date().toISOString()}]`,
+      action || 'update',
+      userId ? `by ${userId}` : undefined,
+      notes?.trim() ? `- ${notes.trim()}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    return [existingNotes?.trim(), entry].filter(Boolean).join('\n');
   }
 
   // --- Customers ---
@@ -55,7 +82,7 @@ export class ArService {
 
   // --- Payments ---
 
-  async recordPayment(companyId: string, data: RecordPaymentDto) {
+  async recordPayment(companyId: string, data: RecordPaymentDto, userId?: string) {
     const { invoice_id, amount, ...paymentData } = data;
 
     return this.prisma.$transaction(async (tx) => {
@@ -70,6 +97,7 @@ export class ArService {
           amount,
           invoice_id,
           company_id: companyId,
+          recorded_by: userId,
         },
       });
 
@@ -89,6 +117,32 @@ export class ArService {
         where: { id: invoice_id },
         data: { status: newStatus },
       });
+
+      const activeCases = await tx.collectionCase.findMany({
+        where: {
+          company_id: companyId,
+          invoice_id,
+          escalation_level: { gt: 0 },
+        },
+      });
+
+      for (const collectionCase of activeCases) {
+        const resolved = newStatus === 'paid';
+        await tx.collectionCase.update({
+          where: { id: collectionCase.id },
+          data: {
+            escalation_level: resolved ? 0 : collectionCase.escalation_level,
+            last_action_date: new Date(),
+            assigned_to: collectionCase.assigned_to ?? userId,
+            notes: this.appendCollectionLog(
+              collectionCase.notes,
+              userId,
+              resolved ? 'payment_applied_resolved' : 'payment_applied',
+              `Payment of ${amount} recorded. Invoice status is now ${newStatus}.`,
+            ),
+          },
+        });
+      }
 
       return payment;
     });
@@ -131,7 +185,64 @@ export class ArService {
 
   async getCollectionQueue(companyId: string) {
     return this.prisma.collectionCase.findMany({
-      where: { company_id: companyId },
+      where: {
+        company_id: companyId,
+        escalation_level: { gt: 0 },
+      },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
+      },
+      orderBy: [
+        { escalation_level: 'desc' },
+        { last_action_date: 'desc' },
+        { created_at: 'desc' },
+      ],
+    });
+  }
+
+  async createCollectionCase(companyId: string, invoiceId: string, notes?: string, userId?: string) {
+    await this.getCompanyInvoice(companyId, invoiceId);
+
+    const existingCase = await this.prisma.collectionCase.findFirst({
+      where: {
+        company_id: companyId,
+        invoice_id: invoiceId,
+        escalation_level: { gt: 0 },
+      },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
+      },
+    });
+
+    if (existingCase) {
+      return this.prisma.collectionCase.update({
+        where: { id: existingCase.id },
+        data: {
+          assigned_to: existingCase.assigned_to ?? userId,
+          last_action_date: new Date(),
+          notes: this.appendCollectionLog(existingCase.notes, userId, 'case_reopened', notes || 'Collection case already open; queue item refreshed.'),
+        },
+        include: {
+          invoice: {
+            include: { customer: true },
+          },
+        },
+      });
+    }
+
+    return this.prisma.collectionCase.create({
+      data: {
+        company_id: companyId,
+        invoice_id: invoiceId,
+        assigned_to: userId,
+        notes: this.appendCollectionLog(undefined, userId, 'case_opened', notes || 'Collection case created from AR workflow.'),
+        escalation_level: 1,
+        last_action_date: new Date(),
+      },
       include: {
         invoice: {
           include: { customer: true },
@@ -140,21 +251,75 @@ export class ArService {
     });
   }
 
-  async createCollectionCase(companyId: string, invoiceId: string, notes?: string) {
-    await this.getCompanyInvoice(companyId, invoiceId);
+  async addCollectionAction(companyId: string, caseId: string, userId: string, data: CollectionActionDto) {
+    const collectionCase = await this.getCompanyCollectionCase(companyId, caseId);
 
-    return this.prisma.collectionCase.create({
+    return this.prisma.collectionCase.update({
+      where: { id: caseId },
       data: {
-        company_id: companyId,
-        invoice_id: invoiceId,
-        notes,
-        escalation_level: 1,
+        assigned_to: collectionCase.assigned_to ?? userId,
+        last_action_date: new Date(),
+        notes: this.appendCollectionLog(collectionCase.notes, userId, data.action, data.notes),
+      },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
+      },
+    });
+  }
+
+  async escalateCollectionCase(companyId: string, caseId: string, userId: string, notes?: string) {
+    const collectionCase = await this.getCompanyCollectionCase(companyId, caseId);
+    const nextLevel = Math.min((collectionCase.escalation_level || 1) + 1, 4);
+
+    return this.prisma.collectionCase.update({
+      where: { id: caseId },
+      data: {
+        escalation_level: nextLevel,
+        assigned_to: collectionCase.assigned_to ?? userId,
+        last_action_date: new Date(),
+        notes: this.appendCollectionLog(
+          collectionCase.notes,
+          userId,
+          'case_escalated',
+          notes || `Escalated collection case to level ${nextLevel}.`,
+        ),
+      },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
+      },
+    });
+  }
+
+  async resolveCollectionCase(companyId: string, caseId: string, userId: string, notes?: string) {
+    const collectionCase = await this.getCompanyCollectionCase(companyId, caseId);
+
+    return this.prisma.collectionCase.update({
+      where: { id: caseId },
+      data: {
+        escalation_level: 0,
+        assigned_to: collectionCase.assigned_to ?? userId,
+        last_action_date: new Date(),
+        notes: this.appendCollectionLog(
+          collectionCase.notes,
+          userId,
+          'case_resolved',
+          notes || 'Collection case resolved and removed from active queue.',
+        ),
+      },
+      include: {
+        invoice: {
+          include: { customer: true },
+        },
       },
     });
   }
 
   async getARDashboard(companyId: string) {
-    const [customers, invoices, aging] = await Promise.all([
+    const [customers, invoices, aging, collectionCases] = await Promise.all([
       this.prisma.customer.count({ where: { company_id: companyId } }),
       this.prisma.aRInvoice.findMany({
         where: { company_id: companyId, status: { not: 'paid' } },
@@ -163,6 +328,23 @@ export class ArService {
         orderBy: { due_date: 'asc' },
       }),
       this.getAgingReport(companyId),
+      this.prisma.collectionCase.findMany({
+        where: {
+          company_id: companyId,
+          escalation_level: { gt: 0 },
+        },
+        include: {
+          invoice: {
+            include: { customer: true },
+          },
+        },
+        orderBy: [
+          { escalation_level: 'desc' },
+          { last_action_date: 'desc' },
+          { created_at: 'desc' },
+        ],
+        take: 3,
+      }),
     ]);
 
     const totalAr = Object.values(aging).reduce((a, b) => a + b, 0);
@@ -172,6 +354,8 @@ export class ArService {
       totalAr,
       aging,
       pendingInvoices: invoices,
+      collectionCases: collectionCases.length,
+      topEscalations: collectionCases,
     };
   }
 

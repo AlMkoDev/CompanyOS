@@ -14,6 +14,7 @@ import {
   MoreVertical,
   CheckCircle2,
   Clock,
+  AlertCircle,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -183,6 +184,28 @@ export default function ArInvoicesPage() {
     }
   };
 
+  const handleOpenCollectionCase = async (invoice: ArInvoice) => {
+    try {
+      const res = await apiFetch('/ar/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: invoice.id,
+          notes: `Collection case opened from invoice queue for ${invoice.invoice_no}.`,
+        }),
+      });
+
+      if (res.ok) {
+        setMessage(`Collection case opened for invoice ${invoice.invoice_no}.`);
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to open collection case.');
+      }
+    } catch {
+      setMessage('Connection error while opening collection case.');
+    }
+  };
+
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
       <div className="flex justify-between items-center">
@@ -253,6 +276,7 @@ export default function ArInvoicesPage() {
                     <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
                       <button onClick={() => handleSendInvoice(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Mail size={16} /></button>
                       <button onClick={() => { setSelectedInvoice(inv); setPaymentForm((prev) => ({ ...prev, amount: String(Number(inv.amount) - Number(inv.paid_amount)) })); setShowPaymentForm(true); }} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><CreditCard size={16} /></button>
+                      <button onClick={() => handleOpenCollectionCase(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><AlertCircle size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Download size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><MoreVertical size={16} /></button>
                     </div>

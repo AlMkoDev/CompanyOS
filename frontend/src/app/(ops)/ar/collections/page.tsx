@@ -33,6 +33,8 @@ interface CollectionInvoice {
 interface CollectionCase {
   id: string;
   escalation_level: number;
+  notes?: string | null;
+  last_action_date?: string | null;
   invoice?: CollectionInvoice;
 }
 
@@ -60,6 +62,12 @@ export default function ArCollectionsPage() {
   const [cases, setCases] = React.useState<CollectionCase[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [showBlastPreview, setShowBlastPreview] = React.useState(false);
+  const [selectedCase, setSelectedCase] = React.useState<CollectionCase | null>(null);
+  const [showActionModal, setShowActionModal] = React.useState(false);
+  const [actionType, setActionType] = React.useState<'log_follow_up' | 'escalate' | 'resolve'>('log_follow_up');
+  const [actionNotes, setActionNotes] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [message, setMessage] = React.useState('');
   const sortedCases = React.useMemo(
     () => [...cases].sort((a, b) => (b.escalation_level ?? 0) - (a.escalation_level ?? 0)),
     [cases],
@@ -72,19 +80,74 @@ export default function ArCollectionsPage() {
     return { watchlist, escalated, critical };
   }, [cases]);
 
+  const fetchCases = React.useCallback(async () => {
+    try {
+      const res = await apiFetch('/ar/collections');
+      if (res.ok) setCases(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch collection queue:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
-    const fetchCases = async () => {
-      try {
-        const res = await apiFetch('/ar/collections');
-        if (res.ok) setCases(await res.json());
-      } catch (err) {
-        console.error('Failed to fetch collection queue:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     if (isAuthenticated) fetchCases();
-  }, [isAuthenticated]);
+  }, [fetchCases, isAuthenticated]);
+
+  const openActionModal = (collectionCase: CollectionCase, type: 'log_follow_up' | 'escalate' | 'resolve') => {
+    setSelectedCase(collectionCase);
+    setActionType(type);
+    setActionNotes('');
+    setShowActionModal(true);
+  };
+
+  const submitAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCase) return;
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const path =
+        actionType === 'escalate'
+          ? `/ar/collections/${selectedCase.id}/escalate`
+          : actionType === 'resolve'
+            ? `/ar/collections/${selectedCase.id}/resolve`
+            : `/ar/collections/${selectedCase.id}/actions`;
+
+      const payload =
+        actionType === 'log_follow_up'
+          ? { action: 'follow_up_logged', notes: actionNotes || 'Follow-up logged from recoveries console.' }
+          : { notes: actionNotes || undefined };
+
+      const res = await apiFetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        setMessage(
+          actionType === 'resolve'
+            ? 'Collection case resolved.'
+            : actionType === 'escalate'
+              ? 'Collection case escalated.'
+              : 'Follow-up action logged.',
+        );
+        setShowActionModal(false);
+        setSelectedCase(null);
+        await fetchCases();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to update collection case.');
+      }
+    } catch {
+      setMessage('Connection error while updating collection case.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8 pb-20">
@@ -107,6 +170,12 @@ export default function ArCollectionsPage() {
         </button>
       </div>
 
+      {message && (
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm text-slate-600 shadow-sm">
+          {message}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
          {/* Risk Levels Summary */}
          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -118,7 +187,13 @@ export default function ArCollectionsPage() {
          {/* Collection Queue */}
          <div className="lg:col-span-3 space-y-6">
             {sortedCases.map((c) => (
-              <CollectionItem key={c.id} data={c} />
+              <CollectionItem
+                key={c.id}
+                data={c}
+                onLogAction={() => openActionModal(c, 'log_follow_up')}
+                onEscalate={() => openActionModal(c, 'escalate')}
+                onResolve={() => openActionModal(c, 'resolve')}
+              />
             ))}
             {cases.length === 0 && !loading && (
               <div className="py-32 text-center bg-white border border-slate-100 rounded-[40px] border-dashed">
@@ -187,6 +262,53 @@ export default function ArCollectionsPage() {
           </div>
         </div>
       )}
+
+      {showActionModal && selectedCase && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">
+                  {actionType === 'resolve' ? 'Resolve Collection Case' : actionType === 'escalate' ? 'Escalate Collection Case' : 'Log Follow-up'}
+                </h2>
+                <p className="text-sm text-slate-400">
+                  {selectedCase.invoice?.customer?.name || 'Customer'} · Invoice #{selectedCase.invoice?.invoice_no}
+                </p>
+              </div>
+              <button onClick={() => setShowActionModal(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={submitAction} className="space-y-6 p-8">
+              <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5 text-sm text-slate-600">
+                {actionType === 'resolve'
+                  ? 'This removes the case from the active queue and records a closing note.'
+                  : actionType === 'escalate'
+                    ? 'This bumps the escalation level and records the reason for the next step.'
+                    : 'This adds an immutable follow-up note to the case timeline.'}
+              </div>
+              <label className="space-y-2">
+                <span className="text-xs font-black uppercase tracking-widest text-slate-400">Notes</span>
+                <textarea
+                  value={actionNotes}
+                  onChange={(e) => setActionNotes(e.target.value)}
+                  rows={5}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
+                  placeholder="Add context for the next person touching this recovery case."
+                />
+              </label>
+              <div className="flex justify-end gap-4">
+                <button type="button" onClick={() => setShowActionModal(false)} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving} className="rounded-2xl bg-brand-navy px-10 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                  {saving ? 'Saving...' : actionType === 'resolve' ? 'Resolve Case' : actionType === 'escalate' ? 'Escalate Case' : 'Log Action'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -213,7 +335,16 @@ function RiskCard({ level, label, count, bg, text, desc }: RiskCardProps) {
    );
 }
 
-function CollectionItem({ data }: CollectionItemProps) {
+function CollectionItem({
+  data,
+  onLogAction,
+  onEscalate,
+  onResolve,
+}: CollectionItemProps & {
+  onLogAction: () => void;
+  onEscalate: () => void;
+  onResolve: () => void;
+}) {
    const overdueDays = React.useMemo(() => {
       const dueDate = data.invoice?.due_date ? new Date(data.invoice.due_date) : null;
       if (!dueDate || Number.isNaN(dueDate.getTime())) return null;
@@ -249,16 +380,16 @@ function CollectionItem({ data }: CollectionItemProps) {
                </div>
             </div>
             <div className="flex gap-2">
-               <button className="p-4 bg-slate-50 rounded-2xl text-slate-400 hover:text-brand-navy transition-all"><Phone size={20} /></button>
-               <button className="p-4 bg-slate-50 rounded-2xl text-slate-400 hover:text-brand-navy transition-all"><History size={20} /></button>
-               <button className="px-6 py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-lg">Take Action</button>
+               <button onClick={onLogAction} className="p-4 bg-slate-50 rounded-2xl text-slate-400 hover:text-brand-navy transition-all"><Phone size={20} /></button>
+               <button onClick={onEscalate} className="p-4 bg-slate-50 rounded-2xl text-slate-400 hover:text-brand-navy transition-all"><History size={20} /></button>
+               <button onClick={onResolve} className="px-6 py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-lg">Take Action</button>
             </div>
          </div>
          <div className="mt-8 pt-8 border-t border-slate-50 flex justify-between items-center text-xs">
             <div className="text-slate-400 italic font-medium">
-               {data.escalation_level >= 3 ? 'Critical escalation queue item.' : 'Live queue item ready for follow-up.'}
+               {data.notes?.split('\n').filter(Boolean).slice(-1)[0] || (data.escalation_level >= 3 ? 'Critical escalation queue item.' : 'Live queue item ready for follow-up.')}
             </div>
-            <button className="text-brand-gold font-bold uppercase tracking-widest hover:underline flex items-center gap-2">
+            <button onClick={onLogAction} className="text-brand-gold font-bold uppercase tracking-widest hover:underline flex items-center gap-2">
                View Full Action Log
                <ArrowUpRight size={14} />
             </button>

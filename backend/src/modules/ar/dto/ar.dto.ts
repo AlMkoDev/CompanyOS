@@ -85,3 +85,15 @@ export class CreateCollectionCaseDto {
   @MaxLength(2000)
   notes?: string;
 }
+
+export class CollectionActionDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  action: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+}

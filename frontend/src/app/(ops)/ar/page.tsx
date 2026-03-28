@@ -39,6 +39,17 @@ interface ArDashboardData {
   customerCount?: number;
   aging?: ArAgingSummary;
   pendingInvoices?: ArInvoice[];
+  collectionCases?: number;
+  topEscalations?: Array<{
+    id: string;
+    escalation_level: number;
+    invoice?: {
+      customer?: { name?: string };
+      amount?: number | string;
+      paid_amount?: number | string;
+      due_date?: string;
+    };
+  }>;
 }
 
 interface StatCardProps {
@@ -142,7 +153,7 @@ export default function ArDashboardPage() {
         />
         <StatCard 
           label="Collection cases" 
-          value={collectionCount ?? 0} 
+          value={dashboard?.collectionCases ?? collectionCount ?? 0} 
           subtext="Active Recoveries"
           icon={<Clock className="text-brand-gold" />}
           trend="Live"
@@ -210,12 +221,24 @@ export default function ArDashboardPage() {
         <div className="bg-brand-navy rounded-[32px] p-8 text-white shadow-xl relative overflow-hidden">
            <h3 className="text-xl font-heading mb-8 relative z-10 flex items-center gap-2">
               <AlertCircle size={20} className="text-brand-gold" />
-              Collect Escalations
+              Live Escalations
            </h3>
            <div className="space-y-6 relative z-10">
-              <EscalationItem level={3} customer="Global Logistics" amount="R 125,000" days={94} />
-              <EscalationItem level={2} customer="Afro-Grain Ltd" amount="R 88,200" days={62} />
-              <EscalationItem level={1} customer="Fertilizer Pro" amount="R 12,000" days={35} />
+              {dashboard?.topEscalations?.length ? (
+                dashboard.topEscalations.map((item) => (
+                  <EscalationItem
+                    key={item.id}
+                    level={item.escalation_level}
+                    customer={item.invoice?.customer?.name || 'Unassigned customer'}
+                    amount={`R ${(Number(item.invoice?.amount ?? 0) - Number(item.invoice?.paid_amount ?? 0)).toLocaleString()}`}
+                    days={item.invoice?.due_date ? Math.max(0, Math.ceil((Date.now() - new Date(item.invoice.due_date).getTime()) / (1000 * 60 * 60 * 24))) : 0}
+                  />
+                ))
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-white/70">
+                  No active escalation cases are currently open.
+                </div>
+              )}
               <Link href="/ar/collections" className="block text-center py-4 bg-white/10 hover:bg-white/20 rounded-2xl font-bold text-xs transition-all border border-white/10 mt-6">
                  Launch Recoveries Console
               </Link>
