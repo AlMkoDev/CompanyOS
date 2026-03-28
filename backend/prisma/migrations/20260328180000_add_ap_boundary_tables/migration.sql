@@ -1,4 +1,232 @@
 -- AP boundary tables: requisitions, manual entries, exceptions, and immutable audit trail
+-- Legacy staging databases may be missing the original AP core tables because they were
+-- introduced outside the Prisma migration chain. Bootstrap them here before adding the
+-- boundary-control tables and their foreign keys.
+CREATE TABLE IF NOT EXISTS "Vendor" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "company_id" UUID NOT NULL,
+    "name" TEXT NOT NULL,
+    "registration_no" TEXT,
+    "tax_pin" TEXT,
+    "bank_details" JSONB,
+    "payment_terms" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'active',
+    "tier" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Vendor_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "PurchaseOrder" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "company_id" UUID NOT NULL,
+    "vendor_id" UUID NOT NULL,
+    "raised_by" UUID,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "items" JSONB NOT NULL,
+    "total" DECIMAL(15,2) NOT NULL,
+    "approved_by" UUID,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PurchaseOrder_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "PaymentRun" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "company_id" UUID NOT NULL,
+    "run_date" TIMESTAMP(3) NOT NULL,
+    "total_amount" DECIMAL(15,2) NOT NULL,
+    "bank_file_url" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "approved_by" UUID,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PaymentRun_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "Invoice" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "company_id" UUID NOT NULL,
+    "vendor_id" UUID NOT NULL,
+    "po_id" UUID,
+    "invoice_no" TEXT NOT NULL,
+    "invoice_date" TIMESTAMP(3) NOT NULL,
+    "due_date" TIMESTAMP(3) NOT NULL,
+    "amount" DECIMAL(15,2) NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "ocr_data" JSONB,
+    "payment_run_id" UUID,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Invoice_pkey" PRIMARY KEY ("id")
+);
+
+CREATE TABLE IF NOT EXISTS "GoodsReceipt" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "company_id" UUID NOT NULL,
+    "po_id" UUID NOT NULL,
+    "received_by" UUID,
+    "received_date" TIMESTAMP(3) NOT NULL,
+    "items_received" JSONB NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "GoodsReceipt_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "Vendor_company_id_idx" ON "Vendor"("company_id");
+CREATE INDEX IF NOT EXISTS "PurchaseOrder_company_id_idx" ON "PurchaseOrder"("company_id");
+CREATE INDEX IF NOT EXISTS "PurchaseOrder_vendor_id_idx" ON "PurchaseOrder"("vendor_id");
+CREATE INDEX IF NOT EXISTS "Invoice_company_id_idx" ON "Invoice"("company_id");
+CREATE INDEX IF NOT EXISTS "Invoice_vendor_id_idx" ON "Invoice"("vendor_id");
+CREATE INDEX IF NOT EXISTS "Invoice_po_id_idx" ON "Invoice"("po_id");
+CREATE INDEX IF NOT EXISTS "Invoice_payment_run_id_idx" ON "Invoice"("payment_run_id");
+CREATE INDEX IF NOT EXISTS "GoodsReceipt_company_id_idx" ON "GoodsReceipt"("company_id");
+CREATE INDEX IF NOT EXISTS "GoodsReceipt_po_id_idx" ON "GoodsReceipt"("po_id");
+CREATE INDEX IF NOT EXISTS "PaymentRun_company_id_idx" ON "PaymentRun"("company_id");
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'Vendor_company_id_fkey'
+          AND table_name = 'Vendor'
+    ) THEN
+        ALTER TABLE "Vendor"
+        ADD CONSTRAINT "Vendor_company_id_fkey"
+        FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'PurchaseOrder_company_id_fkey'
+          AND table_name = 'PurchaseOrder'
+    ) THEN
+        ALTER TABLE "PurchaseOrder"
+        ADD CONSTRAINT "PurchaseOrder_company_id_fkey"
+        FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'PurchaseOrder_vendor_id_fkey'
+          AND table_name = 'PurchaseOrder'
+    ) THEN
+        ALTER TABLE "PurchaseOrder"
+        ADD CONSTRAINT "PurchaseOrder_vendor_id_fkey"
+        FOREIGN KEY ("vendor_id") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'Invoice_company_id_fkey'
+          AND table_name = 'Invoice'
+    ) THEN
+        ALTER TABLE "Invoice"
+        ADD CONSTRAINT "Invoice_company_id_fkey"
+        FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'Invoice_vendor_id_fkey'
+          AND table_name = 'Invoice'
+    ) THEN
+        ALTER TABLE "Invoice"
+        ADD CONSTRAINT "Invoice_vendor_id_fkey"
+        FOREIGN KEY ("vendor_id") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'Invoice_po_id_fkey'
+          AND table_name = 'Invoice'
+    ) THEN
+        ALTER TABLE "Invoice"
+        ADD CONSTRAINT "Invoice_po_id_fkey"
+        FOREIGN KEY ("po_id") REFERENCES "PurchaseOrder"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'Invoice_payment_run_id_fkey'
+          AND table_name = 'Invoice'
+    ) THEN
+        ALTER TABLE "Invoice"
+        ADD CONSTRAINT "Invoice_payment_run_id_fkey"
+        FOREIGN KEY ("payment_run_id") REFERENCES "PaymentRun"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'GoodsReceipt_company_id_fkey'
+          AND table_name = 'GoodsReceipt'
+    ) THEN
+        ALTER TABLE "GoodsReceipt"
+        ADD CONSTRAINT "GoodsReceipt_company_id_fkey"
+        FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'GoodsReceipt_po_id_fkey'
+          AND table_name = 'GoodsReceipt'
+    ) THEN
+        ALTER TABLE "GoodsReceipt"
+        ADD CONSTRAINT "GoodsReceipt_po_id_fkey"
+        FOREIGN KEY ("po_id") REFERENCES "PurchaseOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE constraint_name = 'PaymentRun_company_id_fkey'
+          AND table_name = 'PaymentRun'
+    ) THEN
+        ALTER TABLE "PaymentRun"
+        ADD CONSTRAINT "PaymentRun_company_id_fkey"
+        FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END$$;
+
 CREATE TABLE IF NOT EXISTS "APRequisition" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "company_id" UUID NOT NULL,
