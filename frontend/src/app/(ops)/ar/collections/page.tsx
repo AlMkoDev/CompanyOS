@@ -13,7 +13,8 @@ import {
   ShieldAlert,
   MessageSquare,
   FileText,
-  Clock
+  Clock,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -58,6 +59,7 @@ export default function ArCollectionsPage() {
   const { isAuthenticated } = useAuthStore();
   const [cases, setCases] = React.useState<CollectionCase[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [showBlastPreview, setShowBlastPreview] = React.useState(false);
   const sortedCases = React.useMemo(
     () => [...cases].sort((a, b) => (b.escalation_level ?? 0) - (a.escalation_level ?? 0)),
     [cases],
@@ -96,9 +98,12 @@ export default function ArCollectionsPage() {
             <p className="text-slate-500 text-sm">Action-oriented queue for delinquent accounts and debt escalation.</p>
           </div>
         </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all">
+        <button
+          onClick={() => setShowBlastPreview(true)}
+          className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all"
+        >
            <MessageSquare size={18} />
-           Global Reminder Blast
+           Open Reminder Blast
         </button>
       </div>
 
@@ -127,7 +132,7 @@ export default function ArCollectionsPage() {
          {/* Sidebar: Strategies & Metrics */}
          <div className="space-y-8">
             <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm">
-               <h3 className="text-lg font-heading text-brand-navy mb-6">Escalation Playbook</h3>
+               <h3 className="text-lg font-heading text-brand-navy mb-6">Recovery Playbook</h3>
                <div className="space-y-4">
                   <PlaybookStep step={1} label="Automated Email" icon={<Mail size={16} />} />
                   <PlaybookStep step={2} label="Direct Phone Call" icon={<Phone size={16} />} />
@@ -148,6 +153,49 @@ export default function ArCollectionsPage() {
             </div>
          </div>
       </div>
+
+      {showBlastPreview && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-2xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Reminder Blast Preview</h2>
+                <p className="text-sm text-slate-400">Live queue summary before a collections reminder goes out.</p>
+              </div>
+              <button onClick={() => setShowBlastPreview(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-5 p-8">
+              <div className="grid grid-cols-3 gap-4">
+                <MiniStat label="Watchlist" value={summary.watchlist} />
+                <MiniStat label="Escalated" value={summary.escalated} />
+                <MiniStat label="Critical" value={summary.critical} />
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5 text-sm text-slate-600">
+                This preview opens the live collection queue. The actual send action can be wired to a future reminder service when we add broadcast support.
+              </div>
+              <div className="flex justify-end gap-4">
+                <button type="button" onClick={() => setShowBlastPreview(false)} className="px-8 py-4 font-bold text-slate-400 hover:text-slate-600">
+                  Close
+                </button>
+                <Link href="/ar/collections" className="rounded-2xl bg-brand-navy px-10 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90">
+                  Open Queue
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-white p-5">
+      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
     </div>
   );
 }
