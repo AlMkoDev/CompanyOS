@@ -356,6 +356,84 @@ export class AccountingService {
     return statement;
   }
 
+  async getReconciliationSuggestions(companyId: string, statementId: string) {
+    const statement = await this.prisma.bankStatement.findFirst({
+      where: { id: statementId, company_id: companyId },
+      include: { lines: true },
+    });
+
+    if (!statement) throw new NotFoundException('Bank statement not found');
+    if (!statement.account_id) {
+      return {
+        statement,
+        suggestions: [],
+        reason: 'No reconciliation account is linked to this statement.',
+      };
+    }
+
+    const journalEntries = await this.prisma.journalEntry.findMany({
+      where: {
+        company_id: companyId,
+        status: 'posted',
+        lines: {
+          some: {
+            account_id: statement.account_id,
+          },
+        },
+      },
+      include: {
+        lines: {
+          include: {
+            account: true,
+          },
+        },
+      },
+      orderBy: [
+        { entry_date: 'desc' },
+        { updated_at: 'desc' },
+      ],
+      take: 50,
+    });
+
+    const suggestions = statement.lines.map((line) => {
+      const lineAmount = Number(line.amount);
+      const candidates = journalEntries
+        .map((entry) => {
+          const matchedLines = entry.lines.filter((journalLine) => journalLine.account_id === statement.account_id);
+          const journalAmount = matchedLines.reduce(
+            (sum, journalLine) => sum + (Number(journalLine.debit) - Number(journalLine.credit)),
+            0,
+          );
+          const amountDelta = Math.abs(Math.abs(journalAmount) - Math.abs(lineAmount));
+          const dateDelta = Math.abs(
+            new Date(entry.entry_date).getTime() - new Date(line.date).getTime(),
+          ) / (1000 * 60 * 60 * 24);
+          const score = Math.max(0, 100 - amountDelta - Math.min(dateDelta * 3, 30));
+          return {
+            entry,
+            matchedLines,
+            journalAmount,
+            amountDelta,
+            dateDelta,
+            score,
+          };
+        })
+        .filter((candidate) => candidate.matchedLines.length > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+
+      return {
+        line,
+        candidates,
+      };
+    });
+
+    return {
+      statement,
+      suggestions,
+    };
+  }
+
   async importBankStatement(companyId: string, data: ImportBankStatementDto) {
     const { account_id, statement_date, opening_balance, closing_balance, lines } = data;
 

@@ -145,6 +145,38 @@ describe('AccountingService', () => {
     expect(result).toHaveLength(1);
   });
 
+  it('builds reconciliation suggestions from bank statement lines and journal entries', async () => {
+    prisma.bankStatement.findFirst.mockResolvedValue({
+      id: 'stmt-1',
+      account_id: 'bank-acct',
+      lines: [
+        { date: new Date('2026-03-10'), amount: 1200, description: 'Deposit', balance: 2200 },
+      ],
+    });
+    prisma.journalEntry.findMany.mockResolvedValue([
+      {
+        id: 'entry-1',
+        entry_date: new Date('2026-03-10'),
+        lines: [
+          { account_id: 'bank-acct', debit: 1200, credit: 0, account: { code: '1000', name: 'Bank' } },
+        ],
+      },
+    ]);
+
+    const result = await service.getReconciliationSuggestions('company-1', 'stmt-1');
+
+    expect(prisma.journalEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          company_id: 'company-1',
+          status: 'posted',
+        }),
+      }),
+    );
+    expect(result.suggestions).toHaveLength(1);
+    expect(result.suggestions[0].candidates[0].entry.id).toBe('entry-1');
+  });
+
   it('updates company accounts while preserving scope', async () => {
     prisma.gLAccount.findFirst
       .mockResolvedValueOnce({ id: 'acct-1', company_id: 'company-1' })

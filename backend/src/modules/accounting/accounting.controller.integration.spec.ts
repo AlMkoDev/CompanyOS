@@ -19,6 +19,7 @@ describe('AccountingController integration', () => {
     getBalanceSheet: jest.Mock;
     getBankStatements: jest.Mock;
     getBankStatement: jest.Mock;
+    getReconciliationSuggestions: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -33,6 +34,7 @@ describe('AccountingController integration', () => {
       getBalanceSheet: jest.fn(),
       getBankStatements: jest.fn(),
       getBankStatement: jest.fn(),
+      getReconciliationSuggestions: jest.fn(),
     };
 
     guardSpy = jest
@@ -161,5 +163,19 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.getBankStatements).toHaveBeenCalledWith('company-1');
     expect(response.body).toEqual([{ id: 'stmt-1', lines: [{ id: 'line-1' }] }]);
+  });
+
+  it('loads bank reconciliation suggestions through company-scoped context', async () => {
+    accountingService.getReconciliationSuggestions.mockResolvedValue({
+      statement: { id: 'stmt-1' },
+      suggestions: [],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/accounting/bank-statements/stmt-1/reconciliation')
+      .expect(200);
+
+    expect(accountingService.getReconciliationSuggestions).toHaveBeenCalledWith('company-1', 'stmt-1');
+    expect(response.body).toEqual({ statement: { id: 'stmt-1' }, suggestions: [] });
   });
 });

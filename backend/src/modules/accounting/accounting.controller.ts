@@ -124,4 +124,9 @@ export class AccountingController {
   async getBankStatement(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.getBankStatement(req.user.companyId, id);
   }
+
+  @Get('bank-statements/:id/reconciliation')
+  async getBankReconciliationSuggestions(@Req() req: any, @Param('id') id: string) {
+    return this.accountingService.getReconciliationSuggestions(req.user.companyId, id);
+  }
 }

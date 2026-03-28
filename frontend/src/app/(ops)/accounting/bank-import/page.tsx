@@ -2,10 +2,10 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ArrowRight, CheckCircle2, ChevronLeft, FileSpreadsheet, Inbox, ScrollText, Upload, AlertCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { AlertCircle, ArrowRight, CheckCircle2, ChevronLeft, FileSpreadsheet, Inbox, ScrollText, Upload, Search, Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
-import { useRouter } from 'next/navigation';
 
 interface BankStatementPreviewRow {
   date: string;
@@ -20,6 +20,7 @@ interface BankStatementSummary {
   statement_date: string;
   opening_balance: number | string;
   closing_balance: number | string;
+  account_id?: string | null;
   lines?: BankStatementPreviewRow[];
 }
 
@@ -27,6 +28,37 @@ interface GLAccount {
   id: string;
   code: string;
   name: string;
+}
+
+interface JournalCandidate {
+  entry: {
+    id: string;
+    entry_date: string;
+    description: string;
+    reference?: string | null;
+    status: string;
+  };
+  matchedLines: Array<{
+    account: { code: string; name: string };
+    debit: number;
+    credit: number;
+    narration?: string | null;
+  }>;
+  journalAmount: number;
+  amountDelta: number;
+  dateDelta: number;
+  score: number;
+}
+
+interface ReconciliationSuggestion {
+  line: BankStatementPreviewRow;
+  candidates: JournalCandidate[];
+}
+
+interface ReconciliationResponse {
+  statement: BankStatementSummary;
+  suggestions: ReconciliationSuggestion[];
+  reason?: string;
 }
 
 export default function BankImportPage() {
@@ -38,8 +70,10 @@ export default function BankImportPage() {
   const [statements, setStatements] = React.useState<BankStatementSummary[]>([]);
   const [selectedStatement, setSelectedStatement] = React.useState<BankStatementSummary | null>(null);
   const [selectedAccountId, setSelectedAccountId] = React.useState('');
+  const [reconciliation, setReconciliation] = React.useState<ReconciliationResponse | null>(null);
   const [loadingStatements, setLoadingStatements] = React.useState(true);
   const [loadingAccounts, setLoadingAccounts] = React.useState(true);
+  const [loadingMatch, setLoadingMatch] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState(false);
@@ -76,12 +110,35 @@ export default function BankImportPage() {
     }
   }, []);
 
+  const loadReconciliation = React.useCallback(async (statementId: string) => {
+    setLoadingMatch(true);
+    setReconciliation(null);
+    try {
+      const res = await apiFetch(`/accounting/bank-statements/${statementId}/reconciliation`);
+      if (res.ok) {
+        setReconciliation(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to load reconciliation suggestions:', err);
+    } finally {
+      setLoadingMatch(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (isAuthenticated) {
       loadStatements();
       loadAccounts();
     }
   }, [isAuthenticated, loadStatements, loadAccounts]);
+
+  React.useEffect(() => {
+    if (selectedStatement?.id) {
+      loadReconciliation(selectedStatement.id);
+    } else {
+      setReconciliation(null);
+    }
+  }, [selectedStatement?.id, loadReconciliation]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -91,7 +148,7 @@ export default function BankImportPage() {
     }
   };
 
-  const parseCSV = (file: File) => {
+  const parseCSV = (inputFile: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
@@ -108,7 +165,7 @@ export default function BankImportPage() {
       });
       setPreview(data.filter((d) => d.date));
     };
-    reader.readAsText(file);
+    reader.readAsText(inputFile);
   };
 
   const handleImport = async () => {
@@ -138,7 +195,8 @@ export default function BankImportPage() {
         await loadStatements();
         setTimeout(() => router.push('/accounting'), 2000);
       } else {
-        setError('Failed to import statement rows.');
+        const data = await res.json().catch(() => null);
+        setError(data?.message || 'Failed to import statement rows.');
       }
     } catch {
       setError('Connection error');
@@ -148,7 +206,7 @@ export default function BankImportPage() {
   };
 
   return (
-    <div className="p-6 md:p-10 max-w-6xl mx-auto flex flex-col gap-8">
+    <div className="p-6 md:p-10 max-w-7xl mx-auto flex flex-col gap-8">
       <Link href="/accounting" className="flex items-center gap-2 text-slate-500 hover:text-brand-navy mb-4 transition-colors text-sm font-bold">
         <ChevronLeft size={16} />
         Back to Dashboard
@@ -163,7 +221,7 @@ export default function BankImportPage() {
             </div>
             <h2 className="text-4xl font-heading mb-4 leading-tight">Bank Reconciliation</h2>
             <p className="text-white/60 text-lg max-w-xl">
-              Upload CSV bank exports, review imported statements, and keep the ledger aligned with the bank.
+              Upload CSV bank exports, review imported statements, and compare them against live ledger postings.
             </p>
           </div>
           <div className="absolute bottom-0 right-0 p-12 opacity-10">
@@ -225,7 +283,11 @@ export default function BankImportPage() {
                         <div className="text-xs text-slate-500">{preview.length} transactions detected</div>
                       </div>
                     </div>
-                    <button onClick={() => setFile(null)} className="text-xs font-bold text-rose-500 uppercase tracking-widest hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      className="text-xs font-bold text-rose-500 uppercase tracking-widest hover:underline"
+                    >
                       Remove File
                     </button>
                   </div>
@@ -256,7 +318,11 @@ export default function BankImportPage() {
                   </div>
 
                   <div className="flex justify-end items-center gap-6">
-                    {error && <div className="text-rose-500 text-sm font-bold flex items-center gap-2"><AlertCircle size={16} /> {error}</div>}
+                    {error && (
+                      <div className="text-rose-500 text-sm font-bold flex items-center gap-2">
+                        <AlertCircle size={16} /> {error}
+                      </div>
+                    )}
                     <button
                       onClick={handleImport}
                       disabled={loading || success}
@@ -277,7 +343,7 @@ export default function BankImportPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-heading text-brand-navy">Recent Statements</h3>
-                  <p className="text-sm text-slate-500">Imported bank statements and reconciliation lines.</p>
+                  <p className="text-sm text-slate-500">Imported bank statements and suggested ledger matches.</p>
                 </div>
                 <Inbox className="text-brand-gold" />
               </div>
@@ -336,6 +402,11 @@ export default function BankImportPage() {
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-xs text-slate-500 flex items-center gap-2">
+                      <Sparkles size={14} className="text-brand-gold" />
+                      {loadingMatch ? 'Finding suggested matches...' : reconciliation?.reason || 'Suggested matches are based on amount and date proximity.'}
+                    </div>
+
                     <div className="max-h-[380px] overflow-auto rounded-3xl border border-slate-100">
                       <table className="w-full text-left">
                         <thead className="bg-slate-50 sticky top-0">
@@ -357,6 +428,55 @@ export default function BankImportPage() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Suggested Matches</h4>
+                        <Search size={14} className="text-slate-400" />
+                      </div>
+
+                      {loadingMatch ? (
+                        <div className="text-sm text-slate-400 italic">Loading suggestions...</div>
+                      ) : (reconciliation?.suggestions || []).length === 0 ? (
+                        <div className="text-sm text-slate-400 italic">No ledger matches found for this statement.</div>
+                      ) : (
+                        <div className="space-y-3">
+                          {reconciliation?.suggestions.map((item, index) => (
+                            <div key={index} className="rounded-3xl border border-slate-100 bg-white p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-sm font-semibold text-brand-navy">{item.line.description}</div>
+                                  <div className="text-[10px] uppercase tracking-widest text-slate-400">
+                                    {item.line.date} · R {Math.abs(item.line.amount).toLocaleString()}
+                                  </div>
+                                </div>
+                                <div className="text-xs font-black uppercase tracking-widest text-emerald-600">
+                                  {item.candidates.length} candidate{item.candidates.length === 1 ? '' : 's'}
+                                </div>
+                              </div>
+
+                              <div className="mt-3 space-y-2">
+                                {item.candidates.map((candidate) => (
+                                  <div key={candidate.entry.id} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div className="min-w-0">
+                                        <div className="font-semibold text-slate-800 truncate">{candidate.entry.description}</div>
+                                        <div className="text-xs text-slate-400">
+                                          {new Date(candidate.entry.entry_date).toLocaleDateString()} · {candidate.entry.reference || 'No reference'}
+                                        </div>
+                                      </div>
+                                      <div className="text-right text-xs font-bold text-slate-600">
+                                        Score {candidate.score.toFixed(0)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
