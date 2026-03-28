@@ -24,6 +24,7 @@ interface CollectionCustomer {
 interface CollectionInvoice {
   customer?: CollectionCustomer;
   invoice_no?: string;
+  due_date?: string;
   amount?: number | string;
   paid_amount?: number | string;
 }
@@ -57,6 +58,17 @@ export default function ArCollectionsPage() {
   const { isAuthenticated } = useAuthStore();
   const [cases, setCases] = React.useState<CollectionCase[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const sortedCases = React.useMemo(
+    () => [...cases].sort((a, b) => (b.escalation_level ?? 0) - (a.escalation_level ?? 0)),
+    [cases],
+  );
+  const summary = React.useMemo(() => {
+    const watchlist = cases.filter((item) => item.escalation_level <= 1).length;
+    const escalated = cases.filter((item) => item.escalation_level === 2).length;
+    const critical = cases.filter((item) => item.escalation_level >= 3).length;
+
+    return { watchlist, escalated, critical };
+  }, [cases]);
 
   React.useEffect(() => {
     const fetchCases = async () => {
@@ -93,14 +105,14 @@ export default function ArCollectionsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
          {/* Risk Levels Summary */}
          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-6">
-            <RiskCard level={1} label="Watchlist" count={12} bg="bg-emerald-50" text="text-emerald-600" desc="Recently overdue / Gentle reminders." />
-            <RiskCard level={2} label="Escalated" count={5} bg="bg-brand-gold/10" text="text-brand-gold" desc="30-60 days / Direct phone contact." />
-            <RiskCard level={3} label="Critical" count={2} bg="bg-rose-50" text="text-rose-600" desc="60+ days / Final notice / Legal." />
+            <RiskCard level={1} label="Watchlist" count={summary.watchlist} bg="bg-emerald-50" text="text-emerald-600" desc="Lower-risk cases currently under watch." />
+            <RiskCard level={2} label="Escalated" count={summary.escalated} bg="bg-brand-gold/10" text="text-brand-gold" desc="Cases already in active follow-up." />
+            <RiskCard level={3} label="Critical" count={summary.critical} bg="bg-rose-50" text="text-rose-600" desc="Cases needing urgent attention." />
          </div>
 
          {/* Collection Queue */}
          <div className="lg:col-span-3 space-y-6">
-            {cases.map((c) => (
+            {sortedCases.map((c) => (
               <CollectionItem key={c.id} data={c} />
             ))}
             {cases.length === 0 && !loading && (
@@ -125,9 +137,11 @@ export default function ArCollectionsPage() {
             </div>
 
             <div className="bg-brand-gold rounded-[32px] p-8 text-brand-navy shadow-lg relative overflow-hidden">
-               <h4 className="text-sm font-black uppercase tracking-widest mb-2">Recovery Rate</h4>
-               <div className="text-4xl font-heading font-black mb-1">84.2%</div>
-               <p className="text-[10px] font-bold opacity-60">Success in recovering debt within 45 days.</p>
+               <h4 className="text-sm font-black uppercase tracking-widest mb-2">Open Case Summary</h4>
+               <div className="text-4xl font-heading font-black mb-1">{cases.length}</div>
+               <p className="text-[10px] font-bold opacity-60">
+                  {cases.length > 0 ? 'Live collection cases pulled from the AR queue.' : 'No live collection cases are currently open.'}
+               </p>
                <div className="absolute -bottom-4 -right-4 opacity-10">
                   <History size={100} />
                </div>
@@ -152,6 +166,13 @@ function RiskCard({ level, label, count, bg, text, desc }: RiskCardProps) {
 }
 
 function CollectionItem({ data }: CollectionItemProps) {
+   const overdueDays = React.useMemo(() => {
+      const dueDate = data.invoice?.due_date ? new Date(data.invoice.due_date) : null;
+      if (!dueDate || Number.isNaN(dueDate.getTime())) return null;
+      const diff = Date.now() - dueDate.getTime();
+      return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+   }, [data.invoice?.due_date]);
+
    return (
       <div className="bg-white rounded-[40px] border border-slate-100 p-10 shadow-sm hover:shadow-2xl transition-all group">
          <div className="flex flex-col md:flex-row gap-8 items-center">
@@ -172,7 +193,7 @@ function CollectionItem({ data }: CollectionItemProps) {
                   </div>
                   <div className="text-sm text-slate-400 font-medium flex items-center gap-2">
                      <Clock size={14} />
-                     {64} days overdue
+                     {overdueDays !== null ? `${overdueDays} days overdue` : 'Overdue days not loaded'}
                   </div>
                   <div className="text-xl font-heading text-brand-navy font-bold">
                      R {(Number(data.invoice?.amount ?? 0) - Number(data.invoice?.paid_amount ?? 0)).toLocaleString()}
@@ -186,7 +207,9 @@ function CollectionItem({ data }: CollectionItemProps) {
             </div>
          </div>
          <div className="mt-8 pt-8 border-t border-slate-50 flex justify-between items-center text-xs">
-            <div className="text-slate-400 italic font-medium">Last Action: Automated Escalation Email sent 2 days ago.</div>
+            <div className="text-slate-400 italic font-medium">
+               {data.escalation_level >= 3 ? 'Critical escalation queue item.' : 'Live queue item ready for follow-up.'}
+            </div>
             <button className="text-brand-gold font-bold uppercase tracking-widest hover:underline flex items-center gap-2">
                View Full Action Log
                <ArrowUpRight size={14} />
