@@ -86,7 +86,7 @@ export default function PaymentRunsPage() {
       const res = await apiFetch('/ap/payment-runs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoiceIds: selectedInvoiceIds }),
+        body: JSON.stringify({ billIds: selectedInvoiceIds }),
       });
 
       if (res.ok) {
@@ -257,7 +257,7 @@ export default function PaymentRunsPage() {
             <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
               <div>
                 <h2 className="text-2xl font-heading text-brand-navy">Initiate Payment Run</h2>
-                <p className="text-sm text-slate-400">Select approved invoices to bundle into a disbursement run.</p>
+                <p className="text-sm text-slate-400">Select approved bills to bundle into a disbursement run.</p>
               </div>
               <button onClick={() => setShowForm(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
                 <X size={20} />

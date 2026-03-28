@@ -76,6 +76,92 @@ export class CreateAPInvoiceDto {
   invoice_no?: string;
 }
 
+export class CreateAPRequisitionDto {
+  @IsString()
+  @MinLength(1)
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  justification?: string;
+
+  @IsOptional()
+  @IsString()
+  vendor_id?: string;
+
+  @IsOptional()
+  @IsString()
+  department_id?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  amount_estimate?: number;
+
+  @IsOptional()
+  @IsArray()
+  line_items?: Array<{
+    description: string;
+    quantity?: number;
+    unit_cost?: number;
+  }>;
+}
+
+export class ApproveAPRequisitionDto {
+  @IsOptional()
+  @IsString()
+  decision?: 'approved' | 'rejected';
+
+  @IsOptional()
+  @IsString()
+  comments?: string;
+}
+
+export class CreateAPManualEntryDto {
+  @IsString()
+  @MinLength(1)
+  description: string;
+
+  @IsString()
+  @MinLength(1)
+  reason: string;
+
+  @IsOptional()
+  @IsString()
+  vendor_id?: string;
+
+  @IsOptional()
+  @IsString()
+  department_id?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  amount: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  tax_amount?: number;
+}
+
+export class LogAPExceptionDto {
+  @IsString()
+  @MinLength(1)
+  reason_code: string;
+
+  @IsString()
+  @MinLength(1)
+  reason: string;
+
+  @IsOptional()
+  @IsString()
+  details?: string;
+}
+
 export class CreateAPGoodsReceiptDto {
   @IsString()
   @MinLength(1)
@@ -94,5 +180,10 @@ export class CreateAPGoodsReceiptDto {
 
 export class GeneratePaymentRunDto {
   @IsArray()
-  invoiceIds: string[];
+  @IsOptional()
+  billIds?: string[];
+
+  @IsArray()
+  @IsOptional()
+  invoiceIds?: string[];
 }

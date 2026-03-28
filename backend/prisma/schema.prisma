@@ -117,6 +117,10 @@ model Company {
   stockLevels          StockLevel[]
   stockLedgers         StockLedger[]
   bankReconciliationMatches BankReconciliationMatch[]
+  apRequisitions       APRequisition[]
+  apManualEntries      APManualEntry[]
+  apMatchExceptions    APMatchException[]
+  apAuditTrails        APAuditTrail[]
 }
 
 model User {
@@ -142,6 +146,13 @@ model User {
   bank_change_requests_made BankChangeRequest[] @relation("BankChangeRequester")
   bank_change_requests_approved BankChangeRequest[] @relation("BankChangeApprover")
   bankReconciliationMatches BankReconciliationMatch[]
+  apRequisitionRequests APRequisition[] @relation("APRequisitionRequester")
+  apRequisitionApprovals APRequisition[] @relation("APRequisitionApprover")
+  apManualEntryRequests APManualEntry[] @relation("APManualEntryRequester")
+  apManualEntryApprovals APManualEntry[] @relation("APManualEntryApprover")
+  apMatchExceptionsRaised APMatchException[] @relation("APMatchExceptionRaisedBy")
+  apMatchExceptionsResolved APMatchException[] @relation("APMatchExceptionResolvedBy")
+  apAuditTrails       APAuditTrail[] @relation("APAuditTrailActor")
 }
 
 model Department {
@@ -583,6 +594,8 @@ model Vendor {
   purchase_orders PurchaseOrder[]
   invoices        Invoice[]
   statements      VendorStatement[]
+  ap_requisitions APRequisition[]
+  ap_manual_entries APManualEntry[]
 }
 
 model PurchaseOrder {
@@ -623,6 +636,7 @@ model Invoice {
 
   payment_run_id String?     @db.Uuid
   payment_run    PaymentRun? @relation(fields: [payment_run_id], references: [id])
+  ap_match_exceptions APMatchException[]
 }
 
 model GoodsReceipt {
@@ -663,6 +677,92 @@ model VendorStatement {
 
   company Company @relation(fields: [company_id], references: [id])
   vendor  Vendor  @relation(fields: [vendor_id], references: [id])
+}
+
+model APRequisition {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  requisition_no    String
+  requester_id      String   @db.Uuid
+  approver_id       String?  @db.Uuid
+  vendor_id         String?  @db.Uuid
+  department_id     String?  @db.Uuid
+  title             String
+  justification     String?
+  amount_estimate   Decimal? @db.Decimal(15, 2)
+  status            String   @default("draft")
+  requires_secondary_approval Boolean @default(false)
+  line_items        Json?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  company   Company @relation(fields: [company_id], references: [id])
+  requester User    @relation("APRequisitionRequester", fields: [requester_id], references: [id])
+  approver  User?   @relation("APRequisitionApprover", fields: [approver_id], references: [id])
+  vendor    Vendor? @relation(fields: [vendor_id], references: [id])
+
+  @@unique([company_id, requisition_no])
+}
+
+model APManualEntry {
+  id                    String   @id @default(uuid()) @db.Uuid
+  company_id            String   @db.Uuid
+  entry_no              String
+  requester_id          String   @db.Uuid
+  approver_id           String?  @db.Uuid
+  vendor_id             String?  @db.Uuid
+  department_id         String?  @db.Uuid
+  description           String
+  reason                String
+  amount                Decimal  @db.Decimal(15, 2)
+  tax_amount            Decimal? @db.Decimal(15, 2)
+  status                String   @default("pending_secondary_approval")
+  requires_secondary_approval Boolean @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  company   Company @relation(fields: [company_id], references: [id])
+  requester User    @relation("APManualEntryRequester", fields: [requester_id], references: [id])
+  approver  User?   @relation("APManualEntryApprover", fields: [approver_id], references: [id])
+  vendor    Vendor? @relation(fields: [vendor_id], references: [id])
+
+  @@unique([company_id, entry_no])
+}
+
+model APMatchException {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  invoice_id      String   @db.Uuid
+  reason_code     String
+  reason          String
+  status          String   @default("open")
+  raised_by_id    String?  @db.Uuid
+  resolved_by_id  String?  @db.Uuid
+  resolved_at     DateTime?
+  details         Json?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  company   Company @relation(fields: [company_id], references: [id])
+  invoice   Invoice @relation(fields: [invoice_id], references: [id])
+  raised_by User?   @relation("APMatchExceptionRaisedBy", fields: [raised_by_id], references: [id])
+  resolved_by User?  @relation("APMatchExceptionResolvedBy", fields: [resolved_by_id], references: [id])
+}
+
+model APAuditTrail {
+  id            String   @id @default(uuid()) @db.Uuid
+  company_id    String   @db.Uuid
+  entity_type   String
+  entity_id     String
+  action        String
+  before_state  Json?
+  after_state   Json?
+  details       String?
+  actor_user_id String?  @db.Uuid
+  created_at    DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+  actor   User?   @relation("APAuditTrailActor", fields: [actor_user_id], references: [id])
 }
 
 // VF-FIN-003: Accounts Receivable

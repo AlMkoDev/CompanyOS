@@ -40,6 +40,9 @@ interface RecentPurchaseOrder {
 interface ApDashboardData {
   totalOutstanding?: number;
   vendorCount?: number;
+  requisitionCount?: number;
+  manualEntryCount?: number;
+  openExceptionCount?: number;
   pendingInvoices?: PendingInvoice[];
   recentPOs?: RecentPurchaseOrder[];
   recentPaymentRuns?: {
@@ -93,6 +96,18 @@ export default function ApDashboardPage() {
           <p className="text-slate-500">Manage vendors, purchase orders, and payment approvals.</p>
         </div>
         <div className="flex gap-3">
+          <Link href="/ap/requisitions" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
+            <FileCheck size={18} />
+            Requisitions
+          </Link>
+          <Link href="/ap/manual-entries" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
+            <Plus size={18} />
+            Manual Entry
+          </Link>
+          <Link href="/ap/audit-trail" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
+            <Search size={18} />
+            Audit Trail
+          </Link>
           <Link href="/ap/vendors" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
             <Building2 size={18} />
             Vendor Directory
@@ -109,7 +124,7 @@ export default function ApDashboardPage() {
         <StatCard 
           label="Outstanding AP" 
           value={dashboard ? `R ${(dashboard.totalOutstanding || 0).toLocaleString()}` : "R 0"} 
-          subtext="Unpaid Invoices"
+          subtext="Unpaid Bills"
           icon={<CreditCard className="text-rose-600" />}
           trend="Live"
           isNeutral
@@ -140,8 +155,14 @@ export default function ApDashboardPage() {
         />
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <MiniLinkCard href="/ap/requisitions" label="Requisitions" value={dashboard?.requisitionCount ?? 0} note="Purchase requests waiting review" />
+        <MiniLinkCard href="/ap/manual-entries" label="Manual Entries" value={dashboard?.manualEntryCount ?? 0} note="Non-PO spend captured for approval" />
+        <MiniLinkCard href="/ap/exceptions" label="Open Exceptions" value={dashboard?.openExceptionCount ?? 0} note="3-way match issues awaiting resolution" />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Pending Invoices List */}
+        {/* Pending Bills List */}
         <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
           <div className="p-8 border-b border-slate-50 flex justify-between items-center">
             <h3 className="text-xl font-heading text-brand-navy">Approval Queue</h3>
@@ -154,7 +175,7 @@ export default function ApDashboardPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                  <th className="py-4 px-8">Vendor / Invoice</th>
+                  <th className="py-4 px-8">Vendor / Bill</th>
                   <th className="py-4 px-8">Date / Due</th>
                   <th className="py-4 px-8 text-right">Amount</th>
                   <th className="py-4 px-8">Status</th>
@@ -166,7 +187,7 @@ export default function ApDashboardPage() {
                   <tr key={inv.id} className="group hover:bg-slate-50/50 transition-colors">
                     <td className="py-5 px-8">
                        <div className="font-bold text-slate-900 group-hover:text-brand-navy transition-all">{inv.vendor?.name}</div>
-                       <div className="text-[10px] text-slate-400 font-mono">INV: {inv.invoice_no}</div>
+                       <div className="text-[10px] text-slate-400 font-mono">BILL: {inv.invoice_no}</div>
                     </td>
                     <td className="py-5 px-8">
                        <div className="text-sm text-slate-600">{new Date(inv.invoice_date).toLocaleDateString()}</div>
@@ -187,7 +208,7 @@ export default function ApDashboardPage() {
                 ))}
                 {!dashboard?.pendingInvoices?.length && !loading && (
                    <tr>
-                      <td colSpan={5} className="py-20 text-center text-slate-400 italic">No invoices in approval queue.</td>
+                      <td colSpan={5} className="py-20 text-center text-slate-400 italic">No bills in approval queue.</td>
                    </tr>
                 )}
               </tbody>
@@ -296,5 +317,20 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full tracking-wider ${styles[status] ?? styles.pending}`}>
       {status}
     </span>
+  );
+}
+
+function MiniLinkCard({ href, label, value, note }: { href: string; label: string; value: string | number; note: string }) {
+  return (
+    <Link href={href} className="group block rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">{label}</div>
+          <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
+        </div>
+        <ArrowUpRight size={16} className="text-slate-300 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+      </div>
+      <p className="mt-3 text-xs text-slate-500">{note}</p>
+    </Link>
   );
 }

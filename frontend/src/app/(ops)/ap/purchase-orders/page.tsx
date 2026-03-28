@@ -177,8 +177,8 @@ export default function PurchaseOrdersPage() {
             <div className="space-y-3 text-sm text-white/75">
               <div>1. Create a supplier commitment</div>
               <div>2. Approve the order</div>
-              <div>3. Receive goods and match invoices</div>
-              <div>4. Send approved invoices to payment runs</div>
+              <div>3. Receive goods and match vendor bills</div>
+              <div>4. Send approved bills to payment runs</div>
             </div>
           </div>
           <div className="rounded-[32px] border border-slate-100 bg-white p-8 shadow-sm">

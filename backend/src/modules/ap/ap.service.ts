@@ -1,15 +1,70 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  ApproveAPRequisitionDto,
   CreateAPGoodsReceiptDto,
   CreateAPInvoiceDto,
+  CreateAPManualEntryDto,
+  CreateAPRequisitionDto,
   CreatePurchaseOrderDto,
   CreateVendorDto,
+  LogAPExceptionDto,
 } from './dto/ap.dto';
 
 @Injectable()
 export class ApService {
   constructor(private prisma: PrismaService) {}
+
+  private toJson(value: unknown) {
+    if (value === undefined) return undefined;
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  private async appendAuditTrail(
+    companyId: string,
+    entityType: string,
+    entityId: string,
+    action: string,
+    actorUserId?: string,
+    beforeState?: unknown,
+    afterState?: unknown,
+    details?: string,
+  ) {
+    return this.prisma.aPAuditTrail.create({
+      data: {
+        company_id: companyId,
+        entity_type: entityType,
+        entity_id: entityId,
+        action,
+        actor_user_id: actorUserId,
+        before_state: this.toJson(beforeState) as any,
+        after_state: this.toJson(afterState) as any,
+        details,
+      },
+    });
+  }
+
+  private async nextSequenceNumber(
+    companyId: string,
+    prefix: string,
+    model: 'aPRequisition' | 'aPManualEntry' | 'aPMatchException' | 'invoice' = 'invoice',
+  ) {
+    const year = new Date().getFullYear();
+    let count = 0;
+
+    if (model === 'aPRequisition') {
+      count = await this.prisma.aPRequisition.count({ where: { company_id: companyId } });
+    } else if (model === 'aPManualEntry') {
+      count = await this.prisma.aPManualEntry.count({ where: { company_id: companyId } });
+    } else if (model === 'aPMatchException') {
+      count = await this.prisma.aPMatchException.count({ where: { company_id: companyId } });
+    } else {
+      count = await this.prisma.invoice.count({ where: { company_id: companyId } });
+    }
+
+    const suffix = String(count + 1).padStart(4, '0');
+    return `${prefix}-${year}-${suffix}`;
+  }
 
   private async getCompanyPurchaseOrder(companyId: string, poId: string) {
     const po = await this.prisma.purchaseOrder.findFirst({
@@ -34,6 +89,45 @@ export class ApService {
     return invoice;
   }
 
+  private async getCompanyRequisition(companyId: string, requisitionId: string) {
+    const requisition = await this.prisma.aPRequisition.findFirst({
+      where: { id: requisitionId, company_id: companyId },
+    });
+    if (!requisition) throw new NotFoundException('Requisition not found');
+    return requisition;
+  }
+
+  private async getCompanyManualEntry(companyId: string, entryId: string) {
+    const entry = await this.prisma.aPManualEntry.findFirst({
+      where: { id: entryId, company_id: companyId },
+    });
+    if (!entry) throw new NotFoundException('Manual AP entry not found');
+    return entry;
+  }
+
+  async logMatchException(
+    companyId: string,
+    invoiceId: string,
+    data: LogAPExceptionDto & { details?: unknown },
+    userId?: string,
+  ) {
+    const exceptionNo = await this.nextSequenceNumber(companyId, 'APE', 'aPMatchException');
+    const exception = await this.prisma.aPMatchException.create({
+      data: {
+        company_id: companyId,
+        invoice_id: invoiceId,
+        reason_code: data.reason_code,
+        reason: data.reason,
+        status: 'open',
+        raised_by_id: userId,
+        details: data.details as any,
+      },
+    });
+
+    await this.appendAuditTrail(companyId, 'ap_match_exception', exception.id, 'create', userId, undefined, exception, `AP match exception ${exceptionNo}`);
+    return exception;
+  }
+
   private async getCompanyPaymentRun(companyId: string, runId: string) {
     const paymentRun = await this.prisma.paymentRun.findFirst({
       where: { id: runId, company_id: companyId },
@@ -46,12 +140,15 @@ export class ApService {
   // --- Vendors ---
 
   async createVendor(companyId: string, data: CreateVendorDto) {
-    return this.prisma.vendor.create({
+    const vendor = await this.prisma.vendor.create({
       data: {
         ...data,
         company_id: companyId,
       },
     });
+
+    await this.appendAuditTrail(companyId, 'vendor', vendor.id, 'create', undefined, undefined, vendor, 'Vendor onboarding');
+    return vendor;
   }
 
   async getVendors(companyId: string) {
@@ -63,54 +160,212 @@ export class ApService {
   // --- Purchase Orders ---
 
   async createPurchaseOrder(companyId: string, data: CreatePurchaseOrderDto) {
-    return this.prisma.purchaseOrder.create({
+    const purchaseOrder = await this.prisma.purchaseOrder.create({
       data: {
         ...data,
         company_id: companyId,
       },
     });
+
+    await this.appendAuditTrail(companyId, 'purchase_order', purchaseOrder.id, 'create', undefined, undefined, purchaseOrder, 'Purchase order created');
+    return purchaseOrder;
   }
 
   async approvePurchaseOrder(companyId: string, poId: string, approverId: string) {
-    await this.getCompanyPurchaseOrder(companyId, poId);
+    const beforeState = await this.getCompanyPurchaseOrder(companyId, poId);
 
-    return this.prisma.purchaseOrder.update({
+    const updated = await this.prisma.purchaseOrder.update({
       where: { id: poId },
       data: {
         status: 'approved',
         approved_by: approverId,
       },
     });
+
+    await this.appendAuditTrail(companyId, 'purchase_order', poId, 'approve', approverId, beforeState, updated, 'Purchase order approved');
+    return updated;
   }
 
-  // --- Invoices & 3-Way Match ---
+  // --- Requisitions ---
+
+  async createRequisition(companyId: string, requesterId: string, data: CreateAPRequisitionDto) {
+    if (data.vendor_id) {
+      const vendor = await this.prisma.vendor.findFirst({
+        where: { id: data.vendor_id, company_id: companyId },
+      });
+      if (!vendor) {
+        throw new NotFoundException('Vendor not found');
+      }
+    }
+
+    const requisitionNo = await this.nextSequenceNumber(companyId, 'APR', 'aPRequisition');
+    const requisition = await this.prisma.aPRequisition.create({
+      data: {
+        company_id: companyId,
+        requisition_no: requisitionNo,
+        requester_id: requesterId,
+        vendor_id: data.vendor_id || undefined,
+        department_id: data.department_id || undefined,
+        title: data.title,
+        justification: data.justification,
+        amount_estimate: data.amount_estimate,
+        status: 'pending_approval',
+        requires_secondary_approval: Boolean(data.amount_estimate && Number(data.amount_estimate) > 0),
+        line_items: data.line_items || [],
+      },
+    });
+
+    await this.appendAuditTrail(companyId, 'ap_requisition', requisition.id, 'create', requesterId, undefined, requisition, 'AP requisition created');
+    return requisition;
+  }
+
+  async getRequisitions(companyId: string) {
+    return this.prisma.aPRequisition.findMany({
+      where: { company_id: companyId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        vendor: true,
+        requester: true,
+        approver: true,
+      },
+    });
+  }
+
+  async approveRequisition(companyId: string, requisitionId: string, approverId: string, data: ApproveAPRequisitionDto) {
+    const requisition = await this.getCompanyRequisition(companyId, requisitionId);
+    const approved = (data.decision || 'approved') !== 'rejected';
+
+    const updated = await this.prisma.aPRequisition.update({
+      where: { id: requisitionId },
+      data: {
+        status: approved ? 'approved' : 'rejected',
+        approver_id: approverId,
+      },
+    });
+
+    await this.appendAuditTrail(
+      companyId,
+      'ap_requisition',
+      requisitionId,
+      approved ? 'approve' : 'reject',
+      approverId,
+      requisition,
+      updated,
+      data.comments,
+    );
+
+    return updated;
+  }
+
+  // --- Manual AP Entry ---
+
+  async createManualEntry(companyId: string, requesterId: string, data: CreateAPManualEntryDto) {
+    if (data.vendor_id) {
+      const vendor = await this.prisma.vendor.findFirst({
+        where: { id: data.vendor_id, company_id: companyId },
+      });
+      if (!vendor) {
+        throw new NotFoundException('Vendor not found');
+      }
+    }
+
+    const entryNo = await this.nextSequenceNumber(companyId, 'APM', 'aPManualEntry');
+    const manualEntry = await this.prisma.aPManualEntry.create({
+      data: {
+        company_id: companyId,
+        entry_no: entryNo,
+        requester_id: requesterId,
+        vendor_id: data.vendor_id || undefined,
+        department_id: data.department_id || undefined,
+        description: data.description,
+        reason: data.reason,
+        amount: data.amount,
+        tax_amount: data.tax_amount,
+        status: 'pending_secondary_approval',
+        requires_secondary_approval: true,
+      },
+    });
+
+    await this.appendAuditTrail(companyId, 'ap_manual_entry', manualEntry.id, 'create', requesterId, undefined, manualEntry, 'Manual AP entry created');
+    return manualEntry;
+  }
+
+  async getManualEntries(companyId: string) {
+    return this.prisma.aPManualEntry.findMany({
+      where: { company_id: companyId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        vendor: true,
+        requester: true,
+        approver: true,
+      },
+    });
+  }
+
+  async approveManualEntry(companyId: string, entryId: string, approverId: string, approved = true) {
+    const beforeState = await this.getCompanyManualEntry(companyId, entryId);
+    const updated = await this.prisma.aPManualEntry.update({
+      where: { id: entryId },
+      data: {
+        status: approved ? 'approved' : 'rejected',
+        approver_id: approverId,
+      },
+    });
+
+    await this.appendAuditTrail(
+      companyId,
+      'ap_manual_entry',
+      entryId,
+      approved ? 'approve' : 'reject',
+      approverId,
+      beforeState,
+      updated,
+      approved ? 'Manual AP entry secondary approval' : 'Manual AP entry rejected',
+    );
+
+    return updated;
+  }
+
+  // --- Invoice Receipt & 3-Way Match ---
 
   async createInvoice(companyId: string, data: CreateAPInvoiceDto) {
-    return this.prisma.invoice.create({
+    const invoice = await this.prisma.invoice.create({
       data: {
         ...data,
         company_id: companyId,
       },
     });
+
+    await this.appendAuditTrail(companyId, 'vendor_bill', invoice.id, 'create', undefined, undefined, invoice, 'Vendor bill received');
+    return invoice;
   }
 
   // --- Goods Receipts (VF-FIN-002) ---
 
   async createGoodsReceipt(companyId: string, data: CreateAPGoodsReceiptDto) {
-    return this.prisma.goodsReceipt.create({
+    const goodsReceipt = await this.prisma.goodsReceipt.create({
       data: {
         ...data,
         company_id: companyId,
       },
     });
+
+    await this.appendAuditTrail(companyId, 'goods_receipt', goodsReceipt.id, 'create', undefined, undefined, goodsReceipt, 'Goods receipt recorded');
+    return goodsReceipt;
   }
 
   // --- 3-Way Match & Approval Logic ---
 
-  async runThreeWayMatch(companyId: string, invoiceId: string) {
+  async runThreeWayMatch(companyId: string, invoiceId: string, userId?: string) {
     const invoice = await this.getCompanyInvoice(companyId, invoiceId);
 
-    if (!invoice.po) return { matched: false, reason: 'No PO linked' };
+    if (!invoice.po) {
+      await this.logMatchException(companyId, invoiceId, {
+        reason_code: 'NO_PO_LINKED',
+        reason: 'Bill has no linked purchase order',
+      }, userId);
+      return { matched: false, reason: 'No PO linked' };
+    }
 
     const poTotal = Number(invoice.po.total);
     const invoiceAmount = Number(invoice.amount);
@@ -124,10 +379,25 @@ export class ApService {
     const matched = amountMatch && hasReceipts;
 
     if (matched) {
-      await this.prisma.invoice.update({
+      const updated = await this.prisma.invoice.update({
         where: { id: invoiceId },
         data: { status: 'matched' },
       });
+      await this.appendAuditTrail(companyId, 'vendor_bill', invoiceId, 'match', userId, invoice, updated, '3-way match successful');
+    } else {
+      const reasons: string[] = [];
+      if (!amountMatch) reasons.push('Bill amount differs from PO total');
+      if (!hasReceipts) reasons.push('No goods receipt found for linked PO');
+      await this.logMatchException(companyId, invoiceId, {
+        reason_code: 'THREE_WAY_MATCH_FAILED',
+        reason: reasons.join('; ') || '3-way match failed',
+        details: {
+          amountMatch,
+          hasReceipts,
+          invoiceAmount,
+          poTotal,
+        },
+      }, userId);
     }
 
     return { matched, amountMatch, hasReceipts };
@@ -141,12 +411,15 @@ export class ApService {
       throw new BadRequestException('Invoice must be matched before approval');
     }
 
-    return this.prisma.invoice.update({
+    const updated = await this.prisma.invoice.update({
       where: { id: invoiceId },
       data: {
         status: 'approved',
       },
     });
+
+    await this.appendAuditTrail(companyId, 'vendor_bill', invoiceId, 'approve', userId, invoice, updated, 'Vendor bill approved for payment');
+    return updated;
   }
 
   // --- Payment Runs ---
@@ -180,10 +453,13 @@ export class ApService {
       data: { payment_run_id: paymentRun.id },
     });
 
-    return this.prisma.paymentRun.findUnique({
+    const created = await this.prisma.paymentRun.findUnique({
       where: { id: paymentRun.id },
       include: { invoices: true } as any, // Cast to any to bypass temporary lint discrepancy
     });
+
+    await this.appendAuditTrail(companyId, 'payment_run', paymentRun.id, 'create', undefined, undefined, created, 'Payment run created');
+    return created;
   }
 
   async approvePaymentRun(companyId: string, runId: string, approverId: string) {
@@ -193,7 +469,7 @@ export class ApService {
       throw new BadRequestException('Payment run must be draft before approval');
     }
 
-    return this.prisma.paymentRun.update({
+    const updated = await this.prisma.paymentRun.update({
       where: { id: runId },
       data: {
         status: 'approved',
@@ -203,6 +479,9 @@ export class ApService {
         invoices: true,
       } as any,
     });
+
+    await this.appendAuditTrail(companyId, 'payment_run', runId, 'approve', approverId, paymentRun, updated, 'Payment run approved');
+    return updated;
   }
 
   async completePaymentRun(companyId: string, runId: string) {
@@ -212,7 +491,7 @@ export class ApService {
       throw new BadRequestException('Payment run must be approved before completion');
     }
 
-    return this.prisma.paymentRun.update({
+    const updated = await this.prisma.paymentRun.update({
       where: { id: runId },
       data: {
         status: 'completed',
@@ -221,11 +500,17 @@ export class ApService {
         invoices: true,
       } as any,
     });
+
+    await this.appendAuditTrail(companyId, 'payment_run', runId, 'complete', undefined, paymentRun, updated, 'Payment run completed');
+    return updated;
   }
 
   async getAPDashboard(companyId: string) {
-    const [vendors, pos, invoices, paymentRuns] = await Promise.all([
+    const [vendors, requisitions, manualEntries, exceptions, pos, invoices, paymentRuns] = await Promise.all([
       this.prisma.vendor.count({ where: { company_id: companyId } }),
+      this.prisma.aPRequisition.count({ where: { company_id: companyId } }),
+      this.prisma.aPManualEntry.count({ where: { company_id: companyId } }),
+      this.prisma.aPMatchException.count({ where: { company_id: companyId, status: 'open' } }),
       this.prisma.purchaseOrder.findMany({ 
         where: { company_id: companyId },
         include: { vendor: true },
@@ -257,6 +542,9 @@ export class ApService {
 
     return {
       vendorCount: vendors,
+      requisitionCount: requisitions,
+      manualEntryCount: manualEntries,
+      openExceptionCount: exceptions,
       totalOutstanding,
       recentPOs: pos,
       pendingInvoices: invoices,
@@ -265,5 +553,28 @@ export class ApService {
         invoice_count: run.invoices.length,
       })),
     };
+  }
+
+  async getAPAuditTrail(companyId: string, limit = 50) {
+    return this.prisma.aPAuditTrail.findMany({
+      where: { company_id: companyId },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+      include: {
+        actor: true,
+      },
+    });
+  }
+
+  async getAPMatchExceptions(companyId: string, limit = 50) {
+    return this.prisma.aPMatchException.findMany({
+      where: { company_id: companyId },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+      include: {
+        raised_by: true,
+        resolved_by: true,
+      },
+    });
   }
 }

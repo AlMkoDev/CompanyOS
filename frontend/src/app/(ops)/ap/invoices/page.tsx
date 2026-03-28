@@ -97,7 +97,7 @@ export default function InvoicesPage() {
     setSaving(true);
     setMessage('');
     try {
-      const res = await apiFetch('/ap/invoices', {
+      const res = await apiFetch('/ap/vendor-bills', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,7 +135,7 @@ export default function InvoicesPage() {
 
   const handleMatch = async (id: string) => {
      try {
-        const res = await apiFetch(`/ap/invoices/${id}/match`, {
+        const res = await apiFetch(`/ap/vendor-bills/${id}/match`, {
            method: 'POST',
         });
         if (res.ok) {
@@ -150,7 +150,7 @@ export default function InvoicesPage() {
 
   const handleApprove = async (id: string) => {
     try {
-      const res = await apiFetch(`/ap/invoices/${id}/approve`, {
+      const res = await apiFetch(`/ap/vendor-bills/${id}/approve`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -292,7 +292,7 @@ export default function InvoicesPage() {
                     <FileText size={24} className="text-slate-300" />
                  </div>
                  <h4 className="font-heading text-slate-500 mb-2">Selection Required</h4>
-                 <p className="text-slate-400 text-xs max-w-[180px]">Select an invoice from the list to view its 3-way match details.</p>
+                 <p className="text-slate-400 text-xs max-w-[180px]">Select a bill from the list to view its 3-way match details.</p>
               </div>
            )}
 
@@ -304,7 +304,7 @@ export default function InvoicesPage() {
                  </div>
                  <div>
                     <div className="text-sm font-bold mb-1">Queue Processing</div>
-                    <div className="text-[10px] text-white/50">8 invoices currently being analyzed by Tesseract AI engine.</div>
+                    <div className="text-[10px] text-white/50">8 bills currently being analyzed by Tesseract AI engine.</div>
                  </div>
               </div>
            </div>
