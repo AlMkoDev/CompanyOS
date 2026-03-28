@@ -88,6 +88,11 @@ interface InvoiceActionButtonProps {
   disabled?: boolean;
 }
 
+type FeedbackState = {
+  tone: 'success' | 'error' | 'info';
+  text: string;
+} | null;
+
 export default function ArInvoicesPage() {
   const { isAuthenticated } = useAuthStore();
   const [invoices, setInvoices] = React.useState<ArInvoice[]>([]);
@@ -103,6 +108,7 @@ export default function ArInvoicesPage() {
   const [dunningSummary, setDunningSummary] = React.useState<InvoiceDunningSummary | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
+  const [feedback, setFeedback] = React.useState<FeedbackState>(null);
   const [form, setForm] = React.useState({
     customer_id: '',
     invoice_no: '',
@@ -126,10 +132,18 @@ export default function ArInvoicesPage() {
       } else {
         const data = await res.json().catch(() => null);
         setLoadError(data?.message || `Failed to load invoices (${res.status}).`);
+        setFeedback({
+          tone: 'error',
+          text: data?.message || `Failed to load invoices (${res.status}).`,
+        });
       }
     } catch (err) {
       console.error('Failed to fetch invoices:', err);
       setLoadError('Connection error while loading invoices.');
+      setFeedback({
+        tone: 'error',
+        text: 'Connection error while loading invoices.',
+      });
     } finally {
       setLoading(false);
     }
@@ -155,6 +169,7 @@ export default function ArInvoicesPage() {
     e.preventDefault();
     setSaving(true);
     setMessage('');
+    setFeedback(null);
     try {
       const res = await apiFetch('/ar/invoices', {
         method: 'POST',
@@ -170,6 +185,7 @@ export default function ArInvoicesPage() {
 
       if (res.ok) {
         setMessage('Invoice issued successfully.');
+        setFeedback({ tone: 'success', text: 'Invoice issued successfully.' });
         setShowForm(false);
         setForm({
           customer_id: '',
@@ -182,9 +198,11 @@ export default function ArInvoicesPage() {
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to issue invoice.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to issue invoice.' });
       }
     } catch {
       setMessage('Connection error while issuing invoice.');
+      setFeedback({ tone: 'error', text: 'Connection error while issuing invoice.' });
     } finally {
       setSaving(false);
     }
@@ -197,11 +215,16 @@ export default function ArInvoicesPage() {
     const outstanding = Math.max(0, Number(selectedInvoice.amount) - Number(selectedInvoice.paid_amount));
     if (Number(paymentForm.amount) > outstanding + 0.009) {
       setMessage(`Payment exceeds the outstanding balance of R ${outstanding.toLocaleString()}.`);
+      setFeedback({
+        tone: 'error',
+        text: `Payment exceeds the outstanding balance of R ${outstanding.toLocaleString()}.`,
+      });
       return;
     }
 
     setSaving(true);
     setMessage('');
+    setFeedback(null);
 
     try {
       const res = await apiFetch('/ar/payments', {
@@ -218,6 +241,7 @@ export default function ArInvoicesPage() {
 
       if (res.ok) {
         setMessage('Payment recorded successfully.');
+        setFeedback({ tone: 'success', text: 'Payment recorded successfully.' });
         setShowPaymentForm(false);
         setSelectedInvoice(null);
         setPaymentForm({
@@ -230,9 +254,11 @@ export default function ArInvoicesPage() {
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to record payment.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to record payment.' });
       }
     } catch {
       setMessage('Connection error while recording payment.');
+      setFeedback({ tone: 'error', text: 'Connection error while recording payment.' });
     } finally {
       setSaving(false);
     }
@@ -240,6 +266,7 @@ export default function ArInvoicesPage() {
 
   const handleViewReceipts = async (invoice: ArInvoice) => {
     setMessage('');
+    setFeedback(null);
     setSelectedInvoice(invoice);
     try {
       const res = await apiFetch(`/ar/invoices/${invoice.id}/receipts`);
@@ -249,31 +276,38 @@ export default function ArInvoicesPage() {
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to load receipt history.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to load receipt history.' });
       }
     } catch {
       setMessage('Connection error while loading receipt history.');
+      setFeedback({ tone: 'error', text: 'Connection error while loading receipt history.' });
     }
   };
 
   const handleSendInvoice = async (invoice: ArInvoice) => {
+    setFeedback(null);
     try {
       const res = await apiFetch(`/ar/invoices/${invoice.id}/send`, {
         method: 'POST',
       });
       if (res.ok) {
         setMessage(`Invoice ${invoice.invoice_no} sent successfully.`);
+        setFeedback({ tone: 'success', text: `Invoice ${invoice.invoice_no} sent successfully.` });
         await fetchInvoices();
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to send invoice.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to send invoice.' });
       }
     } catch {
       setMessage('Connection error while sending invoice.');
+      setFeedback({ tone: 'error', text: 'Connection error while sending invoice.' });
     }
   };
 
   const handleOpenDunningPanel = async (invoice: ArInvoice) => {
     setMessage('');
+    setFeedback(null);
     setSelectedInvoice(invoice);
 
     try {
@@ -284,9 +318,11 @@ export default function ArInvoicesPage() {
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to load delivery and reminder history.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to load delivery and reminder history.' });
       }
     } catch {
       setMessage('Connection error while loading delivery and reminder history.');
+      setFeedback({ tone: 'error', text: 'Connection error while loading delivery and reminder history.' });
     }
   };
 
@@ -295,6 +331,7 @@ export default function ArInvoicesPage() {
 
     setSaving(true);
     setMessage('');
+    setFeedback(null);
 
     try {
       const res = await apiFetch(`/ar/invoices/${selectedInvoice.id}/reminders`, {
@@ -307,20 +344,24 @@ export default function ArInvoicesPage() {
 
       if (res.ok) {
         setMessage(`Reminder sent for invoice ${selectedInvoice.invoice_no}.`);
+        setFeedback({ tone: 'success', text: `Reminder sent for invoice ${selectedInvoice.invoice_no}.` });
         await fetchInvoices();
         await handleOpenDunningPanel(selectedInvoice);
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to send reminder.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to send reminder.' });
       }
     } catch {
       setMessage('Connection error while sending reminder.');
+      setFeedback({ tone: 'error', text: 'Connection error while sending reminder.' });
     } finally {
       setSaving(false);
     }
   };
 
   const handleOpenCollectionCase = async (invoice: ArInvoice) => {
+    setFeedback(null);
     try {
       const res = await apiFetch('/ar/collections', {
         method: 'POST',
@@ -333,17 +374,21 @@ export default function ArInvoicesPage() {
 
       if (res.ok) {
         setMessage(`Collection case opened for invoice ${invoice.invoice_no}.`);
+        setFeedback({ tone: 'success', text: `Collection case opened for invoice ${invoice.invoice_no}.` });
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to open collection case.');
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to open collection case.' });
       }
     } catch {
       setMessage('Connection error while opening collection case.');
+      setFeedback({ tone: 'error', text: 'Connection error while opening collection case.' });
     }
   };
 
   const handleComingSoonAction = (label: string) => {
     setMessage(`${label} is queued for a later refinement pass.`);
+    setFeedback({ tone: 'info', text: `${label} is queued for a later refinement pass.` });
   };
 
   return (
@@ -385,6 +430,20 @@ export default function ArInvoicesPage() {
           </div>
         )}
 
+        {feedback && (
+          <div
+            className={`mx-8 mt-6 rounded-2xl px-5 py-4 text-sm ${
+              feedback.tone === 'success'
+                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                : feedback.tone === 'error'
+                  ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border border-sky-200 bg-sky-50 text-sky-700'
+            }`}
+          >
+            {feedback.text}
+          </div>
+        )}
+
         <div className="flex-1 overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -420,7 +479,7 @@ export default function ArInvoicesPage() {
                        <StatusBadge status={inv.status} />
                   </td>
                   <td className="py-6 px-8 text-right">
-                    <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
+                    <div className="flex gap-2 justify-end opacity-100 transition-all">
                       <InvoiceActionButton label="Send invoice" onClick={() => handleSendInvoice(inv)}>
                         <Mail size={16} />
                       </InvoiceActionButton>
