@@ -33,6 +33,8 @@ describe('ArService', () => {
     },
     customer: {
       count: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
     },
     payment: {
       create: jest.fn(),
@@ -214,9 +216,13 @@ describe('ArService', () => {
             invoice: { customer: { name: 'North Buyer' } },
             activities: [],
           }),
+          count: jest.fn().mockResolvedValue(1),
         },
         disputeActivity: {
           create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+        customer: {
+          update: jest.fn(),
         },
       }),
     );
@@ -347,9 +353,13 @@ describe('ArService', () => {
             activities: [],
             attachments: [],
           }),
+          count: jest.fn().mockResolvedValue(1),
         },
         disputeActivity: {
           create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+        customer: {
+          update: jest.fn(),
         },
       }),
     );
@@ -403,5 +413,52 @@ describe('ArService', () => {
     });
 
     expect(attachment.category).toBe('PHOTO');
+  });
+
+  it('puts a customer on credit review after more than 3 disputes in 30 days', async () => {
+    prisma.aRInvoice.findFirst.mockResolvedValue({
+      id: 'invoice-1',
+      company_id: 'company-1',
+      customer_id: 'customer-1',
+      invoice_no: 'AR-001',
+      amount: 500,
+      paid_amount: 0,
+      due_date: new Date('2026-03-31T00:00:00.000Z'),
+      customer: { name: 'North Buyer' },
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          create: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            status: 'OPEN',
+            priority: 'MEDIUM',
+            invoice: { customer: { name: 'North Buyer' } },
+            activities: [],
+            attachments: [],
+          }),
+          count: jest.fn().mockResolvedValue(4),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+        customer: {
+          update: jest.fn().mockResolvedValue({
+            id: 'customer-1',
+            credit_on_hold: true,
+            status: 'credit_review',
+          }),
+        },
+      }),
+    );
+
+    const dispute = await service.createDispute('company-1', 'user-1', {
+      invoice_id: 'invoice-1',
+      dispute_type: 'QUALITY',
+      disputed_amount: 100,
+    });
+
+    expect(dispute.status).toBe('OPEN');
   });
 });

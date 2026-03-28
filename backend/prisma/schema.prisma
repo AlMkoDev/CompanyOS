@@ -784,6 +784,9 @@ model Customer {
   credit_limit  Decimal? @db.Decimal(15, 2)
   payment_terms String?
   status        String   @default("active")
+  credit_on_hold Boolean @default(false)
+  credit_hold_reason String?
+  last_dispute_review_at DateTime?
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 

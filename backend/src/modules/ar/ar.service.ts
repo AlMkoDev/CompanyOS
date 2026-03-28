@@ -127,6 +127,31 @@ export class ArService {
     return ['Finance_Manager', primary.role];
   }
 
+  private async applyCustomerDisputeControls(tx: any, companyId: string, customerId: string) {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const recentDisputeCount = await tx.disputeCase.count({
+      where: {
+        company_id: companyId,
+        customer_id: customerId,
+        raised_date: { gte: thirtyDaysAgo },
+      },
+    });
+
+    if (recentDisputeCount > 3) {
+      await tx.customer.update({
+        where: { id: customerId },
+        data: {
+          credit_on_hold: true,
+          status: 'credit_review',
+          credit_hold_reason: 'Customer exceeded 3 disputes within 30 days; credit frozen pending review.',
+          last_dispute_review_at: new Date(),
+        },
+      });
+    }
+  }
+
   private async getCompanyCollectionCase(companyId: string, caseId: string) {
     const collectionCase = await this.prisma.collectionCase.findFirst({
       where: { id: caseId, company_id: companyId },
@@ -165,8 +190,34 @@ export class ArService {
   }
 
   async getCustomers(companyId: string) {
-    return this.prisma.customer.findMany({
+    const customers = await this.prisma.customer.findMany({
       where: { company_id: companyId },
+      orderBy: { name: 'asc' },
+    });
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const disputes = await this.prisma.disputeCase.findMany({
+      where: {
+        company_id: companyId,
+        raised_date: { gte: thirtyDaysAgo },
+      },
+      select: {
+        customer_id: true,
+        disputed_amount: true,
+        status: true,
+      },
+    });
+
+    return customers.map((customer) => {
+      const customerDisputes = disputes.filter((dispute) => dispute.customer_id === customer.id);
+      return {
+        ...customer,
+        dispute_count_30d: customerDisputes.length,
+        disputed_value_30d: customerDisputes.reduce((sum, dispute) => sum + Number(dispute.disputed_amount), 0),
+        has_open_disputes: customerDisputes.some((dispute) => this.isActiveDisputeStatus(dispute.status)),
+      };
     });
   }
 
@@ -297,6 +348,8 @@ export class ArService {
           actor_user_id: userId,
         },
       });
+
+      await this.applyCustomerDisputeControls(tx, companyId, invoice.customer_id);
 
       return dispute;
     });

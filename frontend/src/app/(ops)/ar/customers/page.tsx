@@ -20,6 +20,12 @@ interface CustomerRecord {
   name: string;
   industry?: string;
   credit_limit?: number | string;
+  status?: string;
+  credit_on_hold?: boolean;
+  credit_hold_reason?: string | null;
+  dispute_count_30d?: number;
+  disputed_value_30d?: number;
+  has_open_disputes?: boolean;
 }
 
 interface CustomerCardProps {
@@ -188,7 +194,15 @@ function CustomerCard({ customer }: CustomerCardProps) {
           {customer.name[0]}
         </div>
         <div className="flex flex-col items-end">
-           <span className="text-[10px] font-black px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full mb-2">VERIFIED</span>
+           <span className={`text-[10px] font-black px-3 py-1 rounded-full mb-2 ${
+             customer.credit_on_hold
+               ? 'bg-rose-50 text-rose-600'
+               : customer.has_open_disputes
+                 ? 'bg-amber-50 text-amber-700'
+                 : 'bg-emerald-50 text-emerald-600'
+           }`}>
+             {customer.credit_on_hold ? 'CREDIT HOLD' : customer.has_open_disputes ? 'DISPUTE WATCH' : 'VERIFIED'}
+           </span>
            <span className="text-[10px] text-slate-400 font-mono tracking-tighter uppercase">{customer.industry || 'CLIENT'}</span>
         </div>
       </div>
@@ -204,6 +218,21 @@ function CustomerCard({ customer }: CustomerCardProps) {
             <Phone size={16} className="text-slate-300" />
             <span>+27 (0) 21 889 0012</span>
          </div>
+         <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-900">30-day disputes</span>
+              <span>{customer.dispute_count_30d || 0}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+              <span>Disputed value</span>
+              <span>R {Number(customer.disputed_value_30d || 0).toLocaleString()}</span>
+            </div>
+         </div>
+         {customer.credit_hold_reason && (
+           <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+             {customer.credit_hold_reason}
+           </div>
+         )}
       </div>
 
       <div className="flex justify-between items-center pt-6 border-t border-slate-50">
@@ -211,7 +240,10 @@ function CustomerCard({ customer }: CustomerCardProps) {
             <CreditCard size={12} />
             Limit
          </div>
-         <div className="text-xs font-bold text-brand-navy">R {Number(customer.credit_limit || 0).toLocaleString()}</div>
+         <div className="text-right">
+           <div className="text-xs font-bold text-brand-navy">R {Number(customer.credit_limit || 0).toLocaleString()}</div>
+           <div className="text-[10px] uppercase tracking-widest text-slate-400">{customer.status || 'active'}</div>
+         </div>
       </div>
     </div>
   );
