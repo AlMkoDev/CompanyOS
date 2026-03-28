@@ -7,6 +7,26 @@ import {
   UpdateAccountDto,
 } from './dto/accounting.dto';
 
+interface ReconciliationMatchRecord {
+  id: string;
+  company_id: string;
+  statement_id: string;
+  line_id: string;
+  journal_entry_id: string;
+  matched_by: string | null;
+  matched_at: Date;
+  updated_at: Date;
+  line_description: string;
+  line_amount: string | number;
+  line_date: Date;
+  line_balance: string | number;
+  line_reference: string | null;
+  journal_description: string | null;
+  journal_reference: string | null;
+  journal_date: Date;
+  journal_status: string;
+}
+
 @Injectable()
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
@@ -426,6 +446,136 @@ export class AccountingService {
     return statement;
   }
 
+  private async getBankStatementLine(companyId: string, statementId: string, lineId: string) {
+    const statement = await this.getBankStatement(companyId, statementId);
+    const line = statement.lines.find((statementLine) => statementLine.id === lineId);
+
+    if (!line) {
+      throw new NotFoundException('Bank statement line not found');
+    }
+
+    return { statement, line };
+  }
+
+  private async ensureReconciliationMatchTable() {
+    await this.prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "BankReconciliationMatch" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "company_id" uuid NOT NULL,
+        "statement_id" uuid NOT NULL,
+        "line_id" uuid NOT NULL UNIQUE,
+        "journal_entry_id" uuid NOT NULL,
+        "matched_by" uuid NULL,
+        "matched_at" timestamptz NOT NULL DEFAULT NOW(),
+        "updated_at" timestamptz NOT NULL DEFAULT NOW(),
+        CONSTRAINT "BankReconciliationMatch_company_id_fkey"
+          FOREIGN KEY ("company_id") REFERENCES "Company"("id") ON DELETE CASCADE,
+        CONSTRAINT "BankReconciliationMatch_statement_id_fkey"
+          FOREIGN KEY ("statement_id") REFERENCES "BankStatement"("id") ON DELETE CASCADE,
+        CONSTRAINT "BankReconciliationMatch_line_id_fkey"
+          FOREIGN KEY ("line_id") REFERENCES "BankStatementLine"("id") ON DELETE CASCADE,
+        CONSTRAINT "BankReconciliationMatch_journal_entry_id_fkey"
+          FOREIGN KEY ("journal_entry_id") REFERENCES "JournalEntry"("id") ON DELETE CASCADE,
+        CONSTRAINT "BankReconciliationMatch_matched_by_fkey"
+          FOREIGN KEY ("matched_by") REFERENCES "User"("id") ON DELETE SET NULL
+      );
+    `);
+
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "BankReconciliationMatch_company_statement_idx"
+      ON "BankReconciliationMatch" ("company_id", "statement_id");
+    `);
+  }
+
+  private async getReconciliationMatchRows(companyId: string, statementId: string) {
+    await this.ensureReconciliationMatchTable();
+    return this.prisma.$queryRaw<ReconciliationMatchRecord[]>`
+      SELECT
+        m.id,
+        m.company_id,
+        m.statement_id,
+        m.line_id,
+        m.journal_entry_id,
+        m.matched_by,
+        m.matched_at,
+        m.updated_at,
+        l.description AS line_description,
+        l.amount AS line_amount,
+        l.date AS line_date,
+        l.balance AS line_balance,
+        l.reference AS line_reference,
+        e.description AS journal_description,
+        e.reference AS journal_reference,
+        e.entry_date AS journal_date,
+        e.status AS journal_status
+      FROM "BankReconciliationMatch" m
+      INNER JOIN "BankStatementLine" l ON l.id = m.line_id
+      INNER JOIN "JournalEntry" e ON e.id = m.journal_entry_id
+      WHERE m.company_id = ${companyId}
+        AND m.statement_id = ${statementId}
+      ORDER BY m.matched_at DESC
+    `;
+  }
+
+  async matchBankStatementLine(
+    companyId: string,
+    statementId: string,
+    lineId: string,
+    journalEntryId: string,
+    userId?: string,
+  ) {
+    await this.ensureReconciliationMatchTable();
+    const { line } = await this.getBankStatementLine(companyId, statementId, lineId);
+    const journalEntry = await this.getCompanyJournalEntry(companyId, journalEntryId);
+
+    if (journalEntry.status !== 'posted') {
+      throw new BadRequestException('Only posted journal entries can be matched');
+    }
+
+    await this.prisma.$executeRaw`
+      INSERT INTO "BankReconciliationMatch" (
+        "company_id",
+        "statement_id",
+        "line_id",
+        "journal_entry_id",
+        "matched_by",
+        "matched_at",
+        "updated_at"
+      ) VALUES (
+        ${companyId},
+        ${statementId},
+        ${line.id},
+        ${journalEntry.id},
+        ${userId || null},
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT ("line_id")
+      DO UPDATE SET
+        "statement_id" = EXCLUDED."statement_id",
+        "journal_entry_id" = EXCLUDED."journal_entry_id",
+        "matched_by" = EXCLUDED."matched_by",
+        "matched_at" = NOW(),
+        "updated_at" = NOW()
+    `;
+
+    return this.getReconciliationSuggestions(companyId, statementId);
+  }
+
+  async unmatchBankStatementLine(companyId: string, statementId: string, lineId: string) {
+    await this.ensureReconciliationMatchTable();
+    const { line } = await this.getBankStatementLine(companyId, statementId, lineId);
+
+    await this.prisma.$executeRaw`
+      DELETE FROM "BankReconciliationMatch"
+      WHERE "company_id" = ${companyId}
+        AND "statement_id" = ${statementId}
+        AND "line_id" = ${line.id}
+    `;
+
+    return this.getReconciliationSuggestions(companyId, statementId);
+  }
+
   async getReconciliationSuggestions(companyId: string, statementId: string) {
     const statement = await this.prisma.bankStatement.findFirst({
       where: { id: statementId, company_id: companyId },
@@ -437,6 +587,7 @@ export class AccountingService {
       return {
         statement,
         suggestions: [],
+        matches: [],
         reason: 'No reconciliation account is linked to this statement.',
       };
     }
@@ -464,6 +615,8 @@ export class AccountingService {
       ],
       take: 50,
     });
+    const matches = (await this.getReconciliationMatchRows(companyId, statementId)) || [];
+    const matchMap = new Map(matches.map((match) => [match.line_id, match]));
 
     const suggestions = statement.lines.map((line) => {
       const lineAmount = Number(line.amount);
@@ -494,6 +647,7 @@ export class AccountingService {
 
       return {
         line,
+        match: matchMap.get(line.id) || null,
         candidates,
       };
     });
@@ -501,6 +655,7 @@ export class AccountingService {
     return {
       statement,
       suggestions,
+      matches,
     };
   }
 

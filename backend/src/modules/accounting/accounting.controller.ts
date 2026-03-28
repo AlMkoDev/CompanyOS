@@ -16,6 +16,7 @@ import {
   CreateAccountDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
+  ReconcileBankStatementLineDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
 
@@ -144,5 +145,29 @@ export class AccountingController {
   @Get('bank-statements/:id/reconciliation')
   async getBankReconciliationSuggestions(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.getReconciliationSuggestions(req.user.companyId, id);
+  }
+
+  @Post('bank-statements/:id/reconciliation/match')
+  async matchBankStatementLine(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: ReconcileBankStatementLineDto,
+  ) {
+    return this.accountingService.matchBankStatementLine(
+      req.user.companyId,
+      id,
+      body.line_id,
+      body.journal_entry_id,
+      req.user.userId,
+    );
+  }
+
+  @Post('bank-statements/:id/reconciliation/match/:lineId/unmatch')
+  async unmatchBankStatementLine(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+  ) {
+    return this.accountingService.unmatchBankStatementLine(req.user.companyId, id, lineId);
   }
 }

@@ -22,6 +22,8 @@ describe('AccountingController integration', () => {
     getBankStatements: jest.Mock;
     getBankStatement: jest.Mock;
     getReconciliationSuggestions: jest.Mock;
+    matchBankStatementLine: jest.Mock;
+    unmatchBankStatementLine: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -39,6 +41,8 @@ describe('AccountingController integration', () => {
       getBankStatements: jest.fn(),
       getBankStatement: jest.fn(),
       getReconciliationSuggestions: jest.fn(),
+      matchBankStatementLine: jest.fn(),
+      unmatchBankStatementLine: jest.fn(),
     };
 
     guardSpy = jest
@@ -208,6 +212,7 @@ describe('AccountingController integration', () => {
     accountingService.getReconciliationSuggestions.mockResolvedValue({
       statement: { id: 'stmt-1' },
       suggestions: [],
+      matches: [],
     });
 
     const response = await request(app.getHttpServer())
@@ -215,6 +220,43 @@ describe('AccountingController integration', () => {
       .expect(200);
 
     expect(accountingService.getReconciliationSuggestions).toHaveBeenCalledWith('company-1', 'stmt-1');
-    expect(response.body).toEqual({ statement: { id: 'stmt-1' }, suggestions: [] });
+    expect(response.body).toEqual({ statement: { id: 'stmt-1' }, suggestions: [], matches: [] });
+  });
+
+  it('stores reconciliation matches through company-scoped context', async () => {
+    accountingService.matchBankStatementLine.mockResolvedValue({
+      statement: { id: 'stmt-1' },
+      suggestions: [],
+      matches: [],
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/accounting/bank-statements/stmt-1/reconciliation/match')
+      .send({ line_id: 'line-1', journal_entry_id: 'entry-1' })
+      .expect(201);
+
+    expect(accountingService.matchBankStatementLine).toHaveBeenCalledWith(
+      'company-1',
+      'stmt-1',
+      'line-1',
+      'entry-1',
+      'user-1',
+    );
+    expect(response.body).toEqual({ statement: { id: 'stmt-1' }, suggestions: [], matches: [] });
+  });
+
+  it('clears reconciliation matches through company-scoped context', async () => {
+    accountingService.unmatchBankStatementLine.mockResolvedValue({
+      statement: { id: 'stmt-1' },
+      suggestions: [],
+      matches: [],
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/accounting/bank-statements/stmt-1/reconciliation/match/line-1/unmatch')
+      .expect(201);
+
+    expect(accountingService.unmatchBankStatementLine).toHaveBeenCalledWith('company-1', 'stmt-1', 'line-1');
+    expect(response.body).toEqual({ statement: { id: 'stmt-1' }, suggestions: [], matches: [] });
   });
 });

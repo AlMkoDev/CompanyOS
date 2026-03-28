@@ -33,6 +33,9 @@ describe('AccountingService', () => {
     journalLine: {
       findMany: jest.fn(),
     },
+    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
+    $executeRawUnsafe: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -217,6 +220,76 @@ describe('AccountingService', () => {
     );
     expect(result.suggestions).toHaveLength(1);
     expect(result.suggestions[0].candidates[0].entry.id).toBe('entry-1');
+  });
+
+  it('returns reconciliation matches alongside suggestions', async () => {
+    prisma.bankStatement.findFirst.mockResolvedValue({
+      id: 'stmt-1',
+      account_id: 'bank-acct',
+      lines: [
+        { id: 'line-1', date: new Date('2026-03-10'), amount: 1200, description: 'Deposit', balance: 2200 },
+      ],
+    });
+    prisma.journalEntry.findMany.mockResolvedValue([
+      {
+        id: 'entry-1',
+        entry_date: new Date('2026-03-10'),
+        lines: [
+          { account_id: 'bank-acct', debit: 1200, credit: 0, account: { code: '1000', name: 'Bank' } },
+        ],
+      },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      {
+        id: 'match-1',
+        company_id: 'company-1',
+        statement_id: 'stmt-1',
+        line_id: 'line-1',
+        journal_entry_id: 'entry-1',
+        matched_by: 'user-1',
+        matched_at: new Date('2026-03-10'),
+        updated_at: new Date('2026-03-10'),
+        line_description: 'Deposit',
+        line_amount: '1200.00',
+        line_date: new Date('2026-03-10'),
+        line_balance: '2200.00',
+        line_reference: null,
+        journal_description: 'Customer deposit',
+        journal_reference: null,
+        journal_date: new Date('2026-03-10'),
+        journal_status: 'posted',
+      },
+    ]);
+
+    const result = await service.getReconciliationSuggestions('company-1', 'stmt-1');
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].line_id).toBe('line-1');
+    expect(result.suggestions[0].match?.journal_entry_id).toBe('entry-1');
+  });
+
+  it('stores and clears reconciliation matches using the statement line', async () => {
+    prisma.bankStatement.findFirst.mockResolvedValue({
+      id: 'stmt-1',
+      account_id: 'bank-acct',
+      lines: [
+        { id: 'line-1', date: new Date('2026-03-10'), amount: 1200, description: 'Deposit', balance: 2200 },
+      ],
+    });
+    prisma.journalEntry.findFirst.mockResolvedValue({
+      id: 'entry-1',
+      status: 'posted',
+      lines: [],
+      period: null,
+    });
+    prisma.journalEntry.findMany.mockResolvedValue([]);
+    prisma.$executeRaw.mockResolvedValue(1);
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await service.matchBankStatementLine('company-1', 'stmt-1', 'line-1', 'entry-1', 'user-1');
+    await service.unmatchBankStatementLine('company-1', 'stmt-1', 'line-1');
+
+    expect(prisma.$executeRaw).toHaveBeenCalled();
   });
 
   it('updates company accounts while preserving scope', async () => {

@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
 interface BankStatementPreviewRow {
+  id?: string;
   date: string;
   description: string;
   amount: number;
@@ -50,14 +51,30 @@ interface JournalCandidate {
   score: number;
 }
 
+interface ReconciliationMatch {
+  id: string;
+  line_id: string;
+  journal_entry_id: string;
+  matched_at: string;
+  journal_description?: string | null;
+  journal_reference?: string | null;
+  journal_date?: string;
+  journal_status?: string;
+  line_description?: string | null;
+  line_date?: string;
+  line_amount?: number | string;
+}
+
 interface ReconciliationSuggestion {
-  line: BankStatementPreviewRow;
+  line: BankStatementPreviewRow & { id: string };
+  match?: ReconciliationMatch | null;
   candidates: JournalCandidate[];
 }
 
 interface ReconciliationResponse {
   statement: BankStatementSummary;
   suggestions: ReconciliationSuggestion[];
+  matches: ReconciliationMatch[];
   reason?: string;
 }
 
@@ -74,6 +91,9 @@ export default function BankImportPage() {
   const [loadingStatements, setLoadingStatements] = React.useState(true);
   const [loadingAccounts, setLoadingAccounts] = React.useState(true);
   const [loadingMatch, setLoadingMatch] = React.useState(false);
+  const [actionState, setActionState] = React.useState<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [activeMatch, setActiveMatch] = React.useState<{ lineId: string; journalEntryId: string } | null>(null);
+  const [activeUnmatchLineId, setActiveUnmatchLineId] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [success, setSuccess] = React.useState(false);
@@ -125,6 +145,68 @@ export default function BankImportPage() {
     }
   }, []);
 
+  const setActionNotice = React.useCallback((tone: 'success' | 'error' | 'info', message: string) => {
+    setActionState({ tone, message });
+    window.setTimeout(() => setActionState((current) => (current?.message === message ? null : current)), 3500);
+  }, []);
+
+  const handleMatch = React.useCallback(
+    async (lineId: string, journalEntryId: string) => {
+      if (!selectedStatement?.id) return;
+      setActiveMatch({ lineId, journalEntryId });
+      try {
+        const res = await apiFetch(`/accounting/bank-statements/${selectedStatement.id}/reconciliation/match`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            line_id: lineId,
+            journal_entry_id: journalEntryId,
+          }),
+        });
+
+        if (res.ok) {
+          setActionNotice('success', 'Reconciliation match saved.');
+          await loadReconciliation(selectedStatement.id);
+        } else {
+          const data = await res.json().catch(() => null);
+          setActionNotice('error', data?.message || 'Failed to save reconciliation match.');
+        }
+      } catch {
+        setActionNotice('error', 'Connection error while saving reconciliation match.');
+      } finally {
+        setActiveMatch(null);
+      }
+    },
+    [loadReconciliation, selectedStatement?.id, setActionNotice],
+  );
+
+  const handleUnmatch = React.useCallback(
+    async (lineId: string) => {
+      if (!selectedStatement?.id) return;
+      setActiveUnmatchLineId(lineId);
+      try {
+        const res = await apiFetch(`/accounting/bank-statements/${selectedStatement.id}/reconciliation/match/${lineId}/unmatch`, {
+          method: 'POST',
+        });
+
+        if (res.ok) {
+          setActionNotice('success', 'Reconciliation match cleared.');
+          await loadReconciliation(selectedStatement.id);
+        } else {
+          const data = await res.json().catch(() => null);
+          setActionNotice('error', data?.message || 'Failed to clear reconciliation match.');
+        }
+      } catch {
+        setActionNotice('error', 'Connection error while clearing reconciliation match.');
+      } finally {
+        setActiveUnmatchLineId(null);
+      }
+    },
+    [loadReconciliation, selectedStatement?.id, setActionNotice],
+  );
+
   React.useEffect(() => {
     if (isAuthenticated) {
       loadStatements();
@@ -139,6 +221,14 @@ export default function BankImportPage() {
       setReconciliation(null);
     }
   }, [selectedStatement?.id, loadReconciliation]);
+
+  const matchedByLineId = React.useMemo(() => {
+    return new Map((reconciliation?.matches || []).map((match) => [match.line_id, match]));
+  }, [reconciliation?.matches]);
+
+  const suggestionByLineId = React.useMemo(() => {
+    return new Map((reconciliation?.suggestions || []).map((item) => [item.line.id, item]));
+  }, [reconciliation?.suggestions]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -402,6 +492,20 @@ export default function BankImportPage() {
                       </div>
                     </div>
 
+                    {actionState && (
+                      <div
+                        className={`rounded-2xl px-4 py-3 text-xs font-bold ${
+                          actionState.tone === 'success'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : actionState.tone === 'error'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                              : 'bg-slate-50 text-slate-600 border border-slate-100'
+                        }`}
+                      >
+                        {actionState.message}
+                      </div>
+                    )}
+
                     <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3 text-xs text-slate-500 flex items-center gap-2">
                       <Sparkles size={14} className="text-brand-gold" />
                       {loadingMatch ? 'Finding suggested matches...' : reconciliation?.reason || 'Suggested matches are based on amount and date proximity.'}
@@ -414,18 +518,58 @@ export default function BankImportPage() {
                             <th className="py-3 px-4">Date</th>
                             <th className="py-3 px-4">Description</th>
                             <th className="py-3 px-4 text-right">Amount</th>
+                            <th className="py-3 px-4 text-right">Reconciliation</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                          {(selectedStatement.lines || []).map((line, i) => (
-                            <tr key={i} className="text-sm">
+                          {(selectedStatement.lines || []).map((line, i) => {
+                            const lineId = line.id;
+                            const lineKey = lineId || `${line.date}-${line.description}-${i}`;
+                            const suggestion = lineId ? suggestionByLineId.get(lineId) : null;
+
+                            return (
+                            <tr key={lineKey} className="text-sm">
                               <td className="py-3 px-4 text-slate-500 font-mono">{line.date}</td>
                               <td className="py-3 px-4 text-slate-700">{line.description}</td>
                               <td className={`py-3 px-4 text-right font-bold ${line.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                                 {line.amount >= 0 ? `+R ${Number(line.amount).toLocaleString()}` : `-R ${Math.abs(Number(line.amount)).toLocaleString()}`}
                               </td>
+                              <td className="py-3 px-4 text-right">
+                                {lineId && matchedByLineId.has(lineId) ? (
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                                      Matched
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUnmatch(lineId)}
+                                      disabled={activeUnmatchLineId === lineId}
+                                      className="rounded-full border border-slate-200 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all hover:border-rose-200 hover:text-rose-600 disabled:opacity-60"
+                                    >
+                                      {activeUnmatchLineId === lineId ? 'Clearing...' : 'Undo'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                      Unmatched
+                                    </span>
+                                    {suggestion?.candidates?.[0] && (
+                                      <button
+                                        type="button"
+                                        onClick={() => lineId && handleMatch(lineId, suggestion.candidates[0].entry.id)}
+                                        disabled={!lineId || activeMatch?.lineId === lineId}
+                                        className="rounded-full border border-brand-gold/30 bg-brand-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-brand-gold transition-all hover:bg-brand-gold/15 disabled:opacity-60"
+                                      >
+                                        {activeMatch?.lineId === lineId ? 'Matching...' : 'Match Top'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -456,6 +600,22 @@ export default function BankImportPage() {
                                 </div>
                               </div>
 
+                              {item.match && (
+                                <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700 flex items-center justify-between">
+                                  <span>
+                                    Matched to {item.match.journal_description || 'journal entry'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUnmatch(item.line.id)}
+                                    disabled={activeUnmatchLineId === item.line.id}
+                                    className="rounded-full border border-emerald-200 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-100 disabled:opacity-60"
+                                  >
+                                    {activeUnmatchLineId === item.line.id ? 'Clearing...' : 'Undo Match'}
+                                  </button>
+                                </div>
+                              )}
+
                               <div className="mt-3 space-y-2">
                                 {item.candidates.map((candidate) => (
                                   <div key={candidate.entry.id} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm">
@@ -466,8 +626,18 @@ export default function BankImportPage() {
                                           {new Date(candidate.entry.entry_date).toLocaleDateString()} · {candidate.entry.reference || 'No reference'}
                                         </div>
                                       </div>
-                                      <div className="text-right text-xs font-bold text-slate-600">
-                                        Score {candidate.score.toFixed(0)}
+                                      <div className="flex items-center gap-3">
+                                        <div className="text-right text-xs font-bold text-slate-600">
+                                          Score {candidate.score.toFixed(0)}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleMatch(item.line.id, candidate.entry.id)}
+                                          disabled={activeMatch?.lineId === item.line.id}
+                                          className="rounded-full border border-brand-gold/30 bg-brand-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-brand-gold transition-all hover:bg-brand-gold/20 disabled:opacity-60"
+                                        >
+                                          {activeMatch?.lineId === item.line.id && activeMatch?.journalEntryId === candidate.entry.id ? 'Matching...' : 'Match'}
+                                        </button>
                                       </div>
                                     </div>
                                   </div>

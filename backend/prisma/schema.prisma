@@ -531,6 +531,24 @@ model BankStatementLine {
   reference    String?
 
   statement BankStatement @relation(fields: [statement_id], references: [id])
+  reconciliation_match BankReconciliationMatch?
+}
+
+model BankReconciliationMatch {
+  id              String   @id @default(uuid()) @db.Uuid
+  company_id      String   @db.Uuid
+  statement_id    String   @db.Uuid
+  line_id         String   @unique @db.Uuid
+  journal_entry_id String   @db.Uuid
+  matched_by      String?  @db.Uuid
+  matched_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  company       Company         @relation(fields: [company_id], references: [id])
+  statement     BankStatement    @relation(fields: [statement_id], references: [id])
+  line          BankStatementLine @relation(fields: [line_id], references: [id])
+  journal_entry JournalEntry     @relation(fields: [journal_entry_id], references: [id])
+  matched_by_user User?          @relation(fields: [matched_by], references: [id])
 }
 
 model TrialBalance {

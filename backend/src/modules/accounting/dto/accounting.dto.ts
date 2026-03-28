@@ -167,3 +167,13 @@ export class ImportBankStatementDto {
   @Type(() => BankStatementLineDto)
   lines: BankStatementLineDto[];
 }
+
+export class ReconcileBankStatementLineDto {
+  @IsString()
+  @MinLength(1)
+  line_id: string;
+
+  @IsString()
+  @MinLength(1)
+  journal_entry_id: string;
+}
