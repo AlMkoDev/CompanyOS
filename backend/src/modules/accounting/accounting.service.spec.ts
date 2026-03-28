@@ -9,11 +9,13 @@ describe('AccountingService', () => {
     accountingPeriod: {
       upsert: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
     },
     bankStatement: {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
+      count: jest.fn(),
     },
     gLAccount: {
       create: jest.fn(),
@@ -24,6 +26,7 @@ describe('AccountingService', () => {
     journalEntry: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
+      count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -122,6 +125,45 @@ describe('AccountingService', () => {
       }),
     );
     expect(result).toHaveLength(2);
+  });
+
+  it('returns period close readiness summary', async () => {
+    prisma.accountingPeriod.findFirst.mockResolvedValue({ id: 'period-1', year: 2026, month: 3, status: 'open' });
+    prisma.journalEntry.count
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(0);
+    prisma.bankStatement.count.mockResolvedValue(2);
+
+    const result = await service.getPeriodCloseReadiness('company-1', 2026, 3);
+
+    expect(prisma.accountingPeriod.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { company_id: 'company-1', year: 2026, month: 3 },
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        draftEntries: 1,
+        postedEntries: 4,
+        reversedEntries: 0,
+        bankStatements: 2,
+        can_close: false,
+      }),
+    );
+  });
+
+  it('blocks closing when draft journal entries remain', async () => {
+    prisma.accountingPeriod.findFirst.mockResolvedValue({ id: 'period-1', year: 2026, month: 3, status: 'open' });
+    prisma.journalEntry.count
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(0);
+    prisma.bankStatement.count.mockResolvedValue(2);
+
+    await expect(service.closePeriod('company-1', 2026, 3, 'user-1')).rejects.toThrow(
+      'Draft journal entries must be resolved before closing the period',
+    );
   });
 
   it('returns bank statements with imported lines', async () => {

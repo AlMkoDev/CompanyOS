@@ -48,6 +48,12 @@ export class AccountingService {
     return entry;
   }
 
+  private async getCompanyAccountingPeriod(companyId: string, year: number, month: number) {
+    return this.prisma.accountingPeriod.findFirst({
+      where: { company_id: companyId, year, month },
+    });
+  }
+
   // --- Chart of Accounts ---
 
   async createAccount(companyId: string, data: CreateAccountDto) {
@@ -112,6 +118,62 @@ export class AccountingService {
       include: { period: true, lines: { include: { account: true } } },
       take: 25,
     });
+  }
+
+  async getPeriodCloseReadiness(companyId: string, year: number, month: number) {
+    const period = await this.getCompanyAccountingPeriod(companyId, year, month);
+    const periodWhere = period
+      ? { period_id: period.id }
+      : {
+          company_id: companyId,
+          entry_date: {
+            gte: new Date(year, month - 1, 1),
+            lt: new Date(year, month, 1),
+          },
+        };
+
+    const [draftEntries, postedEntries, reversedEntries, bankStatements] = await Promise.all([
+      this.prisma.journalEntry.count({
+        where: {
+          company_id: companyId,
+          status: 'draft',
+          ...periodWhere,
+        },
+      }),
+      this.prisma.journalEntry.count({
+        where: {
+          company_id: companyId,
+          status: 'posted',
+          ...periodWhere,
+        },
+      }),
+      this.prisma.journalEntry.count({
+        where: {
+          company_id: companyId,
+          status: 'reversed',
+          ...periodWhere,
+        },
+      }),
+      this.prisma.bankStatement.count({
+        where: {
+          company_id: companyId,
+          statement_date: {
+            gte: new Date(year, month - 1, 1),
+            lt: new Date(year, month, 1),
+          },
+        },
+      }),
+    ]);
+
+    return {
+      period: period || { year, month, status: 'open' },
+      draftEntries,
+      postedEntries,
+      reversedEntries,
+      bankStatements,
+      can_close: draftEntries === 0,
+      blockers: draftEntries > 0 ? ['Draft journal entries remain open for this period.'] : [],
+    };
   }
 
   async createJournalEntry(companyId: string, data: CreateJournalEntryDto) {
@@ -314,6 +376,14 @@ export class AccountingService {
   }
 
   async closePeriod(companyId: string, year: number, month: number, userId: string) {
+    const readiness = await this.getPeriodCloseReadiness(companyId, year, month);
+    if (readiness.period.status === 'closed') {
+      throw new BadRequestException('The period is already closed');
+    }
+    if (readiness.draftEntries > 0) {
+      throw new BadRequestException('Draft journal entries must be resolved before closing the period');
+    }
+
     return this.prisma.accountingPeriod.upsert({
       where: {
         company_id_year_month: {

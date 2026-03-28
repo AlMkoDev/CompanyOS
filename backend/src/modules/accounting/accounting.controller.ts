@@ -68,6 +68,19 @@ export class AccountingController {
     return this.accountingService.getPeriods(req.user.companyId);
   }
 
+  @Get('periods/close-readiness')
+  async getCloseReadiness(
+    @Req() req: any,
+    @Query('year') year: string,
+    @Query('month') month: string,
+  ) {
+    return this.accountingService.getPeriodCloseReadiness(
+      req.user.companyId,
+      Number(year),
+      Number(month),
+    );
+  }
+
   @Post('journal-entries/:id/reverse')
   async reverseJournalEntry(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.reverseJournalEntry(req.user.companyId, id);

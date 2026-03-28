@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ChevronLeft, Lock, CalendarDays, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, Lock, CalendarDays, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
@@ -15,11 +15,23 @@ interface AccountingPeriod {
   closed_by?: string | null;
 }
 
+interface CloseReadiness {
+  period: AccountingPeriod;
+  draftEntries: number;
+  postedEntries: number;
+  reversedEntries: number;
+  bankStatements: number;
+  can_close: boolean;
+  blockers: string[];
+}
+
 export default function CloseWorkflowPage() {
   const { isAuthenticated } = useAuthStore();
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
+  const [readiness, setReadiness] = React.useState<CloseReadiness | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [confirmed, setConfirmed] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [form, setForm] = React.useState({
     year: new Date().getFullYear(),
@@ -37,12 +49,39 @@ export default function CloseWorkflowPage() {
     }
   }, []);
 
+  const loadReadiness = React.useCallback(async (year: number, month: number) => {
+    try {
+      const res = await apiFetch(`/accounting/periods/close-readiness?year=${year}&month=${month}`);
+      if (res.ok) {
+        setReadiness(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to load close readiness:', err);
+      setReadiness(null);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (isAuthenticated) loadPeriods();
   }, [isAuthenticated, loadPeriods]);
 
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      loadReadiness(form.year, form.month);
+    }
+  }, [isAuthenticated, form.year, form.month, loadReadiness]);
+
   const handleClose = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!confirmed) {
+      setMessage('Please confirm the close checklist before locking the period.');
+      return;
+    }
+    if (!readiness?.can_close) {
+      setMessage('Resolve draft journals before closing the period.');
+      return;
+    }
+
     setSaving(true);
     setMessage('');
     try {
@@ -54,7 +93,9 @@ export default function CloseWorkflowPage() {
 
       if (res.ok) {
         setMessage('Period closed successfully.');
+        setConfirmed(false);
         await loadPeriods();
+        await loadReadiness(form.year, form.month);
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to close period.');
@@ -86,6 +127,13 @@ export default function CloseWorkflowPage() {
             <p className="text-white/70 leading-relaxed">
               Lock the month when journals, AP, AR, and bank activity are reconciled. Closed periods stay readable but no longer accept new posting.
             </p>
+            <div className="mt-6 rounded-3xl bg-white/10 p-4 text-sm text-white/80 border border-white/10">
+              {readiness
+                ? readiness.can_close
+                  ? 'Ready to close: no draft journals remain open for this period.'
+                  : `${readiness.draftEntries} draft journal entries still need attention before closing.`
+                : 'Loading close readiness...'}
+            </div>
           </div>
           <div className="absolute -top-12 -right-12 w-40 h-40 bg-brand-gold/10 rounded-full blur-3xl"></div>
         </div>
@@ -121,13 +169,55 @@ export default function CloseWorkflowPage() {
               />
             </Field>
 
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+              <Metric label="Draft journals" value={readiness?.draftEntries ?? 0} tone={readiness?.draftEntries ? 'rose' : 'emerald'} />
+              <Metric label="Posted journals" value={readiness?.postedEntries ?? 0} tone="navy" />
+              <Metric label="Reversed journals" value={readiness?.reversedEntries ?? 0} tone="slate" />
+              <Metric label="Bank statements" value={readiness?.bankStatements ?? 0} tone="gold" />
+            </div>
+
+            <div className="md:col-span-2 rounded-3xl border border-slate-100 bg-slate-50/70 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
+                <ShieldCheck size={14} />
+                Close checklist
+              </div>
+              <label className="flex items-start gap-3 text-sm text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={confirmed}
+                  onChange={(e) => setConfirmed(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-navy focus:ring-brand-gold"
+                />
+                <span>
+                  I have reviewed the draft journals, posted activity, and bank reconciliation status for this period.
+                </span>
+              </label>
+              {readiness?.blockers?.length ? (
+                <div className="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-rose-600 text-sm">
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <AlertTriangle size={16} />
+                    Close blockers
+                  </div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {readiness.blockers.map((blocker, index) => (
+                      <li key={index}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-emerald-600 text-sm">
+                  No blockers detected for this period.
+                </div>
+              )}
+            </div>
+
             <div className="md:col-span-2 flex items-center justify-between gap-4 pt-2">
               <span className="text-sm text-slate-500">
                 {message || (activePeriod ? `Latest tracked period: ${activePeriod.month}/${activePeriod.year} (${activePeriod.status})` : 'No periods tracked yet.')}
               </span>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || !confirmed || !readiness?.can_close}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-navy text-white font-bold shadow-xl disabled:opacity-60"
               >
                 <CheckCircle2 size={18} />
@@ -188,3 +278,27 @@ function Field({
   );
 }
 
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: 'rose' | 'emerald' | 'navy' | 'slate' | 'gold';
+}) {
+  const toneClasses = {
+    rose: 'bg-rose-50 text-rose-600 border-rose-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    navy: 'bg-slate-50 text-brand-navy border-slate-100',
+    slate: 'bg-slate-50 text-slate-500 border-slate-100',
+    gold: 'bg-amber-50 text-amber-700 border-amber-100',
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${toneClasses}`}>
+      <div className="text-[10px] uppercase tracking-widest opacity-80">{label}</div>
+      <div className="text-xl font-bold">{value}</div>
+    </div>
+  );
+}

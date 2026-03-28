@@ -12,6 +12,7 @@ describe('AccountingController integration', () => {
     getJournalEntries: jest.Mock;
     updateAccount: jest.Mock;
     getPeriods: jest.Mock;
+    getPeriodCloseReadiness: jest.Mock;
     getAccounts: jest.Mock;
     postJournalEntry: jest.Mock;
     reverseJournalEntry: jest.Mock;
@@ -27,6 +28,7 @@ describe('AccountingController integration', () => {
       getJournalEntries: jest.fn(),
       updateAccount: jest.fn(),
       getPeriods: jest.fn(),
+      getPeriodCloseReadiness: jest.fn(),
       getAccounts: jest.fn(),
       postJournalEntry: jest.fn(),
       reverseJournalEntry: jest.fn(),
@@ -152,6 +154,25 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.getPeriods).toHaveBeenCalledWith('company-1');
     expect(response.body).toEqual([{ year: 2026, month: 3, status: 'open' }]);
+  });
+
+  it('loads period close readiness through company-scoped context', async () => {
+    accountingService.getPeriodCloseReadiness.mockResolvedValue({
+      period: { year: 2026, month: 3, status: 'open' },
+      draftEntries: 0,
+      postedEntries: 3,
+      reversedEntries: 0,
+      bankStatements: 1,
+      can_close: true,
+      blockers: [],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/accounting/periods/close-readiness?year=2026&month=3')
+      .expect(200);
+
+    expect(accountingService.getPeriodCloseReadiness).toHaveBeenCalledWith('company-1', 2026, 3);
+    expect(response.body.can_close).toBe(true);
   });
 
   it('loads bank statements through company-scoped context', async () => {
