@@ -102,6 +102,18 @@ export class AccountingService {
 
   // --- Journal Entries ---
 
+  async getJournalEntries(companyId: string) {
+    return this.prisma.journalEntry.findMany({
+      where: { company_id: companyId },
+      orderBy: [
+        { created_at: 'desc' },
+        { updated_at: 'desc' },
+      ],
+      include: { period: true, lines: { include: { account: true } } },
+      take: 25,
+    });
+  }
+
   async createJournalEntry(companyId: string, data: CreateJournalEntryDto) {
     const { lines, ...entryData } = data;
     const entryDate = entryData.entry_date ? new Date(entryData.entry_date) : new Date();

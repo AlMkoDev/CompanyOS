@@ -9,6 +9,7 @@ describe('AccountingController integration', () => {
   let app: INestApplication;
   let guardSpy: jest.SpyInstance;
   let accountingService: {
+    getJournalEntries: jest.Mock;
     updateAccount: jest.Mock;
     getPeriods: jest.Mock;
     getAccounts: jest.Mock;
@@ -22,6 +23,7 @@ describe('AccountingController integration', () => {
 
   beforeEach(async () => {
     accountingService = {
+      getJournalEntries: jest.fn(),
       updateAccount: jest.fn(),
       getPeriods: jest.fn(),
       getAccounts: jest.fn(),
@@ -90,6 +92,17 @@ describe('AccountingController integration', () => {
 
     expect(accountingService.postJournalEntry).toHaveBeenCalledWith('company-1', 'entry-1');
     expect(response.body).toEqual({ id: 'entry-1', status: 'posted' });
+  });
+
+  it('loads journal entries through company-scoped context', async () => {
+    accountingService.getJournalEntries.mockResolvedValue([
+      { id: 'entry-1', status: 'draft', lines: [] },
+    ]);
+
+    const response = await request(app.getHttpServer()).get('/accounting/journal-entries').expect(200);
+
+    expect(accountingService.getJournalEntries).toHaveBeenCalledWith('company-1');
+    expect(response.body).toEqual([{ id: 'entry-1', status: 'draft', lines: [] }]);
   });
 
   it('reverses journal entries through company-scoped context', async () => {

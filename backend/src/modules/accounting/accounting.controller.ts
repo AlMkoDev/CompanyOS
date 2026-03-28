@@ -48,6 +48,11 @@ export class AccountingController {
     return this.accountingService.createJournalEntry(req.user.companyId, data);
   }
 
+  @Get('journal-entries')
+  async getJournalEntries(@Req() req: any) {
+    return this.accountingService.getJournalEntries(req.user.companyId);
+  }
+
   @Post('journal-entries/:id/post')
   async postJournalEntry(@Req() req: any, @Param('id') id: string) {
     return this.accountingService.postJournalEntry(req.user.companyId, id);

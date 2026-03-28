@@ -23,6 +23,7 @@ describe('AccountingService', () => {
     },
     journalEntry: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
@@ -89,6 +90,22 @@ describe('AccountingService', () => {
       { type: 'asset', name: 'Cash', balance: 1500 },
       { type: 'liability', name: 'Accounts Payable', balance: 600 },
     ]);
+  });
+
+  it('lists company journal entries in reverse chronological order', async () => {
+    prisma.journalEntry.findMany.mockResolvedValue([
+      { id: 'entry-1', status: 'draft', lines: [] },
+      { id: 'entry-2', status: 'posted', lines: [] },
+    ]);
+
+    const result = await service.getJournalEntries('company-1');
+
+    expect(prisma.journalEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { company_id: 'company-1' },
+      }),
+    );
+    expect(result).toHaveLength(2);
   });
 
   it('lists accounting periods in reverse chronological order', async () => {
