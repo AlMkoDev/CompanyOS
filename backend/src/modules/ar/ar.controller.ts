@@ -42,6 +42,11 @@ export class ArController {
     return this.arService.getInvoices(req.user.companyId);
   }
 
+  @Get('invoices/:id/receipts')
+  async getInvoiceReceipts(@Req() req: any, @Param('id') id: string) {
+    return this.arService.getInvoiceReceipts(req.user.companyId, id);
+  }
+
   @Post('payments')
   async recordPayment(@Req() req: any, @Body() data: RecordPaymentDto) {
     return this.arService.recordPayment(req.user.companyId, data, req.user.userId);

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CollectionActionDto,
@@ -17,6 +17,10 @@ export class ArService {
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     return invoice;
+  }
+
+  private getOutstandingBalance(invoice: { amount: any; paid_amount: any }) {
+    return Number(invoice.amount) - Number(invoice.paid_amount);
   }
 
   private async getCompanyCollectionCase(companyId: string, caseId: string) {
@@ -77,7 +81,32 @@ export class ArService {
     return this.prisma.aRInvoice.findMany({
       where: { company_id: companyId },
       include: { customer: true },
+      orderBy: { due_date: 'asc' },
     });
+  }
+
+  async getInvoiceReceipts(companyId: string, invoiceId: string) {
+    const invoice = await this.prisma.aRInvoice.findFirst({
+      where: { id: invoiceId, company_id: companyId },
+      include: {
+        customer: true,
+        payments: {
+          orderBy: [{ payment_date: 'desc' }, { created_at: 'desc' }],
+        },
+      },
+    });
+
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const totalReceived = invoice.payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    const outstandingBalance = Math.max(0, Number(invoice.amount) - totalReceived);
+
+    return {
+      invoice,
+      total_received: totalReceived,
+      outstanding_balance: outstandingBalance,
+      payment_count: invoice.payments.length,
+    };
   }
 
   // --- Payments ---
@@ -90,6 +119,16 @@ export class ArService {
         where: { id: invoice_id, company_id: companyId },
       });
       if (!invoice) throw new NotFoundException('Invoice not found');
+
+      const outstandingBalance = this.getOutstandingBalance(invoice);
+
+      if (outstandingBalance <= 0) {
+        throw new BadRequestException('Invoice is already fully settled');
+      }
+
+      if (Number(amount) > outstandingBalance + 0.009) {
+        throw new BadRequestException(`Payment exceeds outstanding balance of ${outstandingBalance.toFixed(2)}`);
+      }
 
       const payment = await tx.payment.create({
         data: {
@@ -109,11 +148,15 @@ export class ArService {
       });
 
       // Update status based on total paid
-      const newStatus = Number(updatedInvoice.paid_amount) >= Number(updatedInvoice.amount) 
-        ? 'paid' 
-        : 'partially_paid';
+      const remainingBalance = Math.max(0, Number(updatedInvoice.amount) - Number(updatedInvoice.paid_amount));
+      const newStatus =
+        remainingBalance <= 0
+          ? 'paid'
+          : new Date(updatedInvoice.due_date).getTime() < Date.now()
+            ? 'overdue'
+            : 'partially_paid';
 
-      await tx.aRInvoice.update({
+      const finalInvoice = await tx.aRInvoice.update({
         where: { id: invoice_id },
         data: { status: newStatus },
       });
@@ -138,13 +181,18 @@ export class ArService {
               collectionCase.notes,
               userId,
               resolved ? 'payment_applied_resolved' : 'payment_applied',
-              `Payment of ${amount} recorded. Invoice status is now ${newStatus}.`,
+              `Payment of ${amount} recorded. Remaining balance is ${remainingBalance.toFixed(2)} and invoice status is now ${newStatus}.`,
             ),
           },
         });
       }
 
-      return payment;
+      return {
+        payment,
+        invoice: finalInvoice,
+        applied_amount: Number(amount),
+        remaining_balance: remainingBalance,
+      };
     });
   }
 

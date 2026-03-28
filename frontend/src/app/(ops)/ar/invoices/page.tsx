@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   Mail,
   CreditCard,
+  History,
   Download,
   MoreVertical,
   CheckCircle2,
@@ -36,6 +37,23 @@ interface ArInvoice {
   customer?: ArCustomer;
 }
 
+interface ReceiptRecord {
+  id: string;
+  amount: number | string;
+  payment_date: string;
+  method?: string;
+  reference?: string;
+}
+
+interface InvoiceReceiptSummary {
+  invoice: ArInvoice & {
+    payments?: ReceiptRecord[];
+  };
+  total_received: number;
+  outstanding_balance: number;
+  payment_count: number;
+}
+
 export default function ArInvoicesPage() {
   const { isAuthenticated } = useAuthStore();
   const [invoices, setInvoices] = React.useState<ArInvoice[]>([]);
@@ -43,7 +61,9 @@ export default function ArInvoicesPage() {
   const [loading, setLoading] = React.useState(true);
   const [showForm, setShowForm] = React.useState(false);
   const [showPaymentForm, setShowPaymentForm] = React.useState(false);
+  const [showReceiptHistory, setShowReceiptHistory] = React.useState(false);
   const [selectedInvoice, setSelectedInvoice] = React.useState<ArInvoice | null>(null);
+  const [receiptSummary, setReceiptSummary] = React.useState<InvoiceReceiptSummary | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [form, setForm] = React.useState({
@@ -129,6 +149,13 @@ export default function ArInvoicesPage() {
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInvoice) return;
+
+    const outstanding = Math.max(0, Number(selectedInvoice.amount) - Number(selectedInvoice.paid_amount));
+    if (Number(paymentForm.amount) > outstanding + 0.009) {
+      setMessage(`Payment exceeds the outstanding balance of R ${outstanding.toLocaleString()}.`);
+      return;
+    }
+
     setSaving(true);
     setMessage('');
 
@@ -164,6 +191,23 @@ export default function ArInvoicesPage() {
       setMessage('Connection error while recording payment.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleViewReceipts = async (invoice: ArInvoice) => {
+    setMessage('');
+    setSelectedInvoice(invoice);
+    try {
+      const res = await apiFetch(`/ar/invoices/${invoice.id}/receipts`);
+      if (res.ok) {
+        setReceiptSummary(await res.json());
+        setShowReceiptHistory(true);
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to load receipt history.');
+      }
+    } catch {
+      setMessage('Connection error while loading receipt history.');
     }
   };
 
@@ -267,7 +311,8 @@ export default function ArInvoicesPage() {
                   </td>
                   <td className="py-6 px-8 text-right">
                     <div className="font-bold text-slate-900">R {Number(inv.amount).toLocaleString()}</div>
-                    <div className="text-[10px] text-emerald-500 font-bold">PAID R {Number(inv.paid_amount).toLocaleString()}</div>
+                    <div className="text-[10px] text-emerald-500 font-bold">RECEIVED R {Number(inv.paid_amount).toLocaleString()}</div>
+                    <div className="text-[10px] text-slate-400 font-bold">OPEN R {Math.max(0, Number(inv.amount) - Number(inv.paid_amount)).toLocaleString()}</div>
                   </td>
                   <td className="py-6 px-8">
                        <StatusBadge status={inv.status} />
@@ -276,6 +321,7 @@ export default function ArInvoicesPage() {
                     <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-all">
                       <button onClick={() => handleSendInvoice(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Mail size={16} /></button>
                       <button onClick={() => { setSelectedInvoice(inv); setPaymentForm((prev) => ({ ...prev, amount: String(Number(inv.amount) - Number(inv.paid_amount)) })); setShowPaymentForm(true); }} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><CreditCard size={16} /></button>
+                      <button onClick={() => handleViewReceipts(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><History size={16} /></button>
                       <button onClick={() => handleOpenCollectionCase(inv)} className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><AlertCircle size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><Download size={16} /></button>
                       <button className="p-2.5 bg-white border border-slate-100 rounded-xl text-slate-400 hover:text-brand-navy shadow-sm"><MoreVertical size={16} /></button>
@@ -353,6 +399,21 @@ export default function ArInvoicesPage() {
               </button>
             </div>
             <form onSubmit={handlePayment} className="grid grid-cols-2 gap-6 p-8">
+              <div className="col-span-2 rounded-3xl border border-slate-100 bg-slate-50 p-5 text-sm text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span>Outstanding balance</span>
+                  <span className="font-bold text-brand-navy">
+                    R {Math.max(0, Number(selectedInvoice.amount) - Number(selectedInvoice.paid_amount)).toLocaleString()}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaymentForm((prev) => ({ ...prev, amount: String(Math.max(0, Number(selectedInvoice.amount) - Number(selectedInvoice.paid_amount))) }))}
+                  className="mt-4 text-xs font-black uppercase tracking-widest text-brand-gold hover:underline"
+                >
+                  Apply Full Outstanding
+                </button>
+              </div>
               <Field label="Amount">
                 <input
                   value={paymentForm.amount}
@@ -405,6 +466,60 @@ export default function ArInvoicesPage() {
           </div>
         </div>
       )}
+
+      {showReceiptHistory && receiptSummary && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-3xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Receipt Allocation</h2>
+                <p className="text-sm text-slate-400">Invoice #{receiptSummary.invoice.invoice_no} · {receiptSummary.invoice.customer?.name}</p>
+              </div>
+              <button onClick={() => setShowReceiptHistory(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-6 p-8">
+              <div className="grid grid-cols-3 gap-4">
+                <ReceiptMetric label="Invoice Total" value={`R ${Number(receiptSummary.invoice.amount).toLocaleString()}`} />
+                <ReceiptMetric label="Received" value={`R ${receiptSummary.total_received.toLocaleString()}`} />
+                <ReceiptMetric label="Outstanding" value={`R ${receiptSummary.outstanding_balance.toLocaleString()}`} />
+              </div>
+              <div className="rounded-3xl border border-slate-100 bg-white">
+                <div className="border-b border-slate-100 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                  Applied Receipts
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {receiptSummary.invoice.payments?.length ? (
+                    receiptSummary.invoice.payments.map((payment) => (
+                      <div key={payment.id} className="flex items-center justify-between px-6 py-4 text-sm">
+                        <div>
+                          <div className="font-semibold text-slate-900">{payment.method || 'Receipt'}</div>
+                          <div className="text-xs text-slate-400">
+                            {new Date(payment.payment_date).toLocaleDateString()} {payment.reference ? `· ${payment.reference}` : ''}
+                          </div>
+                        </div>
+                        <div className="font-bold text-brand-navy">R {Number(payment.amount).toLocaleString()}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-6 py-10 text-center text-sm italic text-slate-400">No receipts have been applied to this invoice yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReceiptMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
+      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
     </div>
   );
 }
