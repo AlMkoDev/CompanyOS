@@ -2,8 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, CheckCircle2, ChevronLeft, Clock3, Plus, RotateCw, Send, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronLeft, Clock3, Filter, Lock, Plus, RotateCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
@@ -39,18 +38,31 @@ interface JournalEntryRecord {
   }>;
 }
 
+interface PeriodReadiness {
+  period: { year: number; month: number; status: string };
+  draftEntries: number;
+  postedEntries: number;
+  reversedEntries: number;
+  bankStatements: number;
+  can_close: boolean;
+  blockers: string[];
+}
+
 type JournalLineField = keyof JournalEntryLine;
+type EntryFilter = 'all' | 'draft' | 'posted' | 'reversed';
 
 export default function JournalEntryPage() {
   const { isAuthenticated } = useAuthStore();
-  const router = useRouter();
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
   const [entries, setEntries] = React.useState<JournalEntryRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [actionId, setActionId] = React.useState<string | null>(null);
+  const [pendingAction, setPendingAction] = React.useState<{ type: 'post' | 'reverse'; entry: JournalEntryRecord } | null>(null);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
+  const [filter, setFilter] = React.useState<EntryFilter>('all');
+  const [readiness, setReadiness] = React.useState<PeriodReadiness | null>(null);
 
   const [header, setHeader] = React.useState({
     entry_date: new Date().toISOString().split('T')[0],
@@ -84,9 +96,31 @@ export default function JournalEntryPage() {
     }
   }, []);
 
+  const loadReadiness = React.useCallback(async (entryDate: string) => {
+    try {
+      const date = new Date(entryDate);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const res = await apiFetch(`/accounting/periods/close-readiness?year=${year}&month=${month}`);
+      if (res.ok) {
+        setReadiness(await res.json());
+      }
+    } catch (err) {
+      console.error('Failed to fetch close readiness:', err);
+    }
+  }, []);
+
   React.useEffect(() => {
-    if (isAuthenticated) loadJournal();
+    if (isAuthenticated) {
+      loadJournal();
+    }
   }, [isAuthenticated, loadJournal]);
+
+  React.useEffect(() => {
+    if (isAuthenticated) {
+      loadReadiness(header.entry_date);
+    }
+  }, [isAuthenticated, header.entry_date, loadReadiness]);
 
   const addLine = () => {
     setLines((prev) => [...prev, { account_id: '', debit: 0, credit: 0, narration: '' }]);
@@ -121,6 +155,10 @@ export default function JournalEntryPage() {
     }
   }, []);
 
+  const refreshAndReadiness = React.useCallback(async () => {
+    await Promise.all([refreshEntries(), loadReadiness(header.entry_date)]);
+  }, [refreshEntries, loadReadiness, header.entry_date]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -154,7 +192,7 @@ export default function JournalEntryPage() {
           { account_id: '', debit: 0, credit: 0, narration: '' },
         ]);
         setMessage('Journal entry saved successfully.');
-        await refreshEntries();
+        await refreshAndReadiness();
       } else {
         const data = await res.json().catch(() => null);
         setError(data?.message || 'Failed to create journal entry');
@@ -166,45 +204,32 @@ export default function JournalEntryPage() {
     }
   };
 
-  const handlePost = async (entryId: string) => {
+  const executeAction = async (entryId: string, type: 'post' | 'reverse') => {
     setActionId(entryId);
     setMessage('');
     setError('');
     try {
-      const res = await apiFetch(`/accounting/journal-entries/${entryId}/post`, { method: 'POST' });
+      const res = await apiFetch(`/accounting/journal-entries/${entryId}/${type === 'post' ? 'post' : 'reverse'}`, { method: 'POST' });
       if (res.ok) {
-        setMessage('Journal entry posted.');
-        await refreshEntries();
+        setMessage(type === 'post' ? 'Journal entry posted.' : 'Journal entry reversed.');
+        await refreshAndReadiness();
       } else {
         const data = await res.json().catch(() => null);
-        setError(data?.message || 'Failed to post journal entry.');
+        setError(data?.message || `Failed to ${type} journal entry.`);
       }
     } catch {
-      setError('Connection error while posting journal entry.');
+      setError(`Connection error while ${type === 'post' ? 'posting' : 'reversing'} journal entry.`);
     } finally {
       setActionId(null);
+      setPendingAction(null);
     }
   };
 
-  const handleReverse = async (entryId: string) => {
-    setActionId(entryId);
-    setMessage('');
-    setError('');
-    try {
-      const res = await apiFetch(`/accounting/journal-entries/${entryId}/reverse`, { method: 'POST' });
-      if (res.ok) {
-        setMessage('Journal entry reversed.');
-        await refreshEntries();
-      } else {
-        const data = await res.json().catch(() => null);
-        setError(data?.message || 'Failed to reverse journal entry.');
-      }
-    } catch {
-      setError('Connection error while reversing journal entry.');
-    } finally {
-      setActionId(null);
-    }
-  };
+  const filteredEntries = entries.filter((entry) => filter === 'all' ? true : entry.status === filter);
+
+  const currentPeriodLabel = readiness
+    ? `${readiness.period.month}/${readiness.period.year}`
+    : new Date(header.entry_date).toLocaleDateString();
 
   if (loading) return <div className="p-10 text-center font-heading text-xl">Loading Accounts...</div>;
 
@@ -255,6 +280,44 @@ export default function JournalEntryPage() {
                   className="w-full p-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-brand-gold outline-none transition-all"
                 />
               </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Posting Controls</h3>
+                  <p className="text-xs text-slate-500">Current period readiness for {currentPeriodLabel}.</p>
+                </div>
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                  <ShieldCheck size={14} className="text-brand-gold" />
+                  {readiness?.can_close ? 'Ready to close' : 'Review required'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Metric label="Draft journals" value={readiness?.draftEntries ?? 0} tone={readiness?.draftEntries ? 'rose' : 'emerald'} />
+                <Metric label="Posted journals" value={readiness?.postedEntries ?? 0} tone="navy" />
+                <Metric label="Reversed journals" value={readiness?.reversedEntries ?? 0} tone="slate" />
+                <Metric label="Bank statements" value={readiness?.bankStatements ?? 0} tone="gold" />
+              </div>
+
+              {readiness?.blockers?.length ? (
+                <div className="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-rose-600 text-sm">
+                  <div className="flex items-center gap-2 font-bold mb-1">
+                    <AlertCircle size={16} />
+                    Close blockers
+                  </div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {readiness.blockers.map((blocker, index) => (
+                      <li key={index}>{blocker}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-emerald-600 text-sm">
+                  No blockers detected for this period.
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -391,23 +454,39 @@ export default function JournalEntryPage() {
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            {(['all', 'draft', 'posted', 'reversed'] as EntryFilter[]).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-widest border transition-colors ${
+                  filter === item
+                    ? 'bg-brand-navy text-white border-brand-navy'
+                    : 'bg-white text-slate-500 border-slate-200 hover:border-brand-gold hover:text-brand-navy'
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+
           <div className="space-y-3">
-            {entries.length === 0 && (
+            {filteredEntries.length === 0 && (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-sm text-slate-400 italic">
-                No journal entries yet. Create the first posting above.
+                No journal entries match this view.
               </div>
             )}
 
-            {entries.map((entry) => {
+            {filteredEntries.map((entry) => {
               const entryDebit = entry.lines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
               const entryCredit = entry.lines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
-              const latestLine = entry.lines[0];
 
               return (
                 <div key={entry.id} className="rounded-3xl border border-slate-100 bg-slate-50/60 p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-lg font-heading text-brand-navy">{entry.description}</h3>
                         <span
                           className={`text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-widest ${
@@ -474,7 +553,7 @@ export default function JournalEntryPage() {
                       {entry.status === 'draft' && (
                         <button
                           type="button"
-                          onClick={() => handlePost(entry.id)}
+                          onClick={() => setPendingAction({ type: 'post', entry })}
                           disabled={actionId === entry.id}
                           className="inline-flex items-center gap-2 rounded-full bg-brand-navy px-4 py-2 text-xs font-black text-white disabled:opacity-60"
                         >
@@ -485,7 +564,7 @@ export default function JournalEntryPage() {
                       {entry.status === 'posted' && (
                         <button
                           type="button"
-                          onClick={() => handleReverse(entry.id)}
+                          onClick={() => setPendingAction({ type: 'reverse', entry })}
                           disabled={actionId === entry.id}
                           className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black text-slate-600 disabled:opacity-60"
                         >
@@ -501,6 +580,88 @@ export default function JournalEntryPage() {
           </div>
         </div>
       </div>
+
+      {pendingAction && (
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-[32px] bg-white border border-slate-100 shadow-2xl p-8">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
+                  {pendingAction.type === 'post' ? 'Posting Control' : 'Reversal Control'}
+                </div>
+                <h3 className="text-2xl font-heading text-brand-navy mt-2">{pendingAction.entry.description}</h3>
+                <p className="text-sm text-slate-500 mt-2">
+                  {pendingAction.type === 'post'
+                    ? 'This will move the entry into the posted ledger and make it part of the live trial balance.'
+                    : 'This will create a reversal entry and mark the original posting as reversed.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="text-sm font-bold text-slate-400 hover:text-brand-navy"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="rounded-3xl bg-slate-50 border border-slate-100 p-4 text-sm text-slate-600 space-y-2">
+              <div className="flex items-center gap-2 font-bold text-brand-navy">
+                <Lock size={16} />
+                Posting details
+              </div>
+              <div>Entry date: {new Date(pendingAction.entry.entry_date).toLocaleDateString()}</div>
+              <div>Reference: {pendingAction.entry.reference || 'No reference'}</div>
+              <div>Status: {pendingAction.entry.status}</div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="px-5 py-3 rounded-2xl border border-slate-200 text-slate-600 font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeAction(pendingAction.entry.id, pendingAction.type)}
+                className={`px-5 py-3 rounded-2xl font-bold text-white inline-flex items-center gap-2 ${
+                  pendingAction.type === 'post' ? 'bg-brand-navy' : 'bg-amber-600'
+                }`}
+              >
+                {pendingAction.type === 'post' ? <Send size={16} /> : <RotateCw size={16} />}
+                Confirm {pendingAction.type === 'post' ? 'Posting' : 'Reversal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: 'rose' | 'emerald' | 'navy' | 'slate' | 'gold';
+}) {
+  const toneClasses = {
+    rose: 'bg-rose-50 text-rose-600 border-rose-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    navy: 'bg-slate-50 text-brand-navy border-slate-100',
+    slate: 'bg-slate-50 text-slate-500 border-slate-100',
+    gold: 'bg-amber-50 text-amber-700 border-amber-100',
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${toneClasses}`}>
+      <div className="text-[10px] uppercase tracking-widest opacity-80">{label}</div>
+      <div className="text-xl font-bold">{value}</div>
     </div>
   );
 }
