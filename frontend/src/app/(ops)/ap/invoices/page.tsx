@@ -111,7 +111,7 @@ export default function InvoicesPage() {
       });
 
       if (res.ok) {
-        setMessage('Invoice recorded successfully.');
+        setMessage('Vendor bill recorded successfully.');
         setShowForm(false);
         setForm({
           vendor_id: '',
@@ -124,10 +124,10 @@ export default function InvoicesPage() {
         await fetchInvoices();
       } else {
         const data = await res.json().catch(() => null);
-        setMessage(data?.message || 'Failed to record invoice.');
+        setMessage(data?.message || 'Failed to record vendor bill.');
       }
     } catch {
-      setMessage('Connection error while recording invoice.');
+      setMessage('Connection error while recording vendor bill.');
     } finally {
       setSaving(false);
     }
@@ -154,15 +154,15 @@ export default function InvoicesPage() {
         method: 'POST',
       });
       if (res.ok) {
-        setMessage('Invoice approved for payment.');
+                          setMessage('Bill approved for payment.');
         await fetchInvoices();
       } else {
         const data = await res.json().catch(() => null);
-        setMessage(data?.message || 'Failed to approve invoice.');
+        setMessage(data?.message || 'Failed to approve bill.');
       }
     } catch (err) {
       console.error(err);
-      setMessage('Connection error while approving invoice.');
+      setMessage('Connection error while approving bill.');
     }
   };
 
@@ -174,8 +174,8 @@ export default function InvoicesPage() {
             <ChevronLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-3xl font-heading text-brand-navy font-bold">Invoice Intelligence</h1>
-            <p className="text-slate-500 text-sm">Automated reconciliation and approval workflows.</p>
+            <h1 className="text-3xl font-heading text-brand-navy font-bold">Vendor Bill Intake</h1>
+            <p className="text-slate-500 text-sm">Capture supplier bills for receipt, matching, and approval.</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -185,7 +185,7 @@ export default function InvoicesPage() {
            </button>
            <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-6 py-3 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all">
               <ExternalLink size={18} />
-              Record Invoice
+              Record Vendor Bill
            </button>
         </div>
       </div>
@@ -201,7 +201,7 @@ export default function InvoicesPage() {
               <table className="w-full text-left">
                  <thead>
                     <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                       <th className="py-5 px-8">Invoice Identity</th>
+                       <th className="py-5 px-8">Bill Identity</th>
                        <th className="py-5 px-8">PO Reference</th>
                        <th className="py-5 px-8 text-right">Amount (ZAR)</th>
                        <th className="py-5 px-8">Matching status</th>
@@ -245,7 +245,7 @@ export default function InvoicesPage() {
         <div className="space-y-8">
            {selectedInvoice ? (
               <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-2xl animate-in fade-in slide-in-from-right-5 duration-300">
-                 <h3 className="text-xl font-heading text-brand-navy mb-8 border-b border-slate-50 pb-4">Match Inspector</h3>
+                 <h3 className="text-xl font-heading text-brand-navy mb-8 border-b border-slate-50 pb-4">Bill Inspector</h3>
                  <div className="space-y-8 mb-10">
                     <MatchItem
                       label="Purchase Order"
@@ -259,14 +259,14 @@ export default function InvoicesPage() {
                         ? `${selectedInvoice.po?.goods_receipts?.length} receipt(s)`
                         : 'Awaiting receipt'}
                     />
-                    <MatchItem label="Invoice Total" status="verified" value={`R ${Number(selectedInvoice.amount).toLocaleString()}`} />
+                    <MatchItem label="Bill Total" status="verified" value={`R ${Number(selectedInvoice.amount).toLocaleString()}`} />
                  </div>
 
                  <div className="space-y-3">
                     {selectedInvoice.status === 'pending' && (
                        <button 
                         onClick={() => handleMatch(selectedInvoice.id)}
-                        className="w-full py-4 bg-brand-gold text-brand-navy rounded-2xl font-bold text-sm shadow-xl shadow-brand-gold/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
+                       className="w-full py-4 bg-brand-gold text-brand-navy rounded-2xl font-bold text-sm shadow-xl shadow-brand-gold/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-2"
                        >
                           <CheckCircle2 size={18} />
                           Run 3-Way Match
@@ -278,7 +278,7 @@ export default function InvoicesPage() {
                         className="w-full py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
                        >
                           <CheckCircle size={18} />
-                          Approve for Payment
+                          Approve Bill for Payment
                        </button>
                     )}
                     <button className="w-full py-4 bg-white border border-rose-100 text-rose-500 rounded-2xl font-bold text-xs hover:bg-rose-50 transition-all">
@@ -316,8 +316,8 @@ export default function InvoicesPage() {
           <div className="bg-white rounded-[40px] w-full max-w-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             <div className="p-8 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-heading text-brand-navy">Record AP Invoice</h2>
-                <p className="text-slate-400 text-sm">Capture a vendor bill for approval and matching.</p>
+              <h2 className="text-2xl font-heading text-brand-navy">Record Vendor Bill</h2>
+              <p className="text-slate-400 text-sm">Capture a supplier bill for approval and matching.</p>
               </div>
               <button onClick={() => setShowForm(false)} className="p-3 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all">
                 <X size={20} />
@@ -337,12 +337,12 @@ export default function InvoicesPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="Invoice No">
+                <Field label="Bill No">
                 <input
                   value={form.invoice_no}
                   onChange={(e) => setForm((prev) => ({ ...prev, invoice_no: e.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
-                  placeholder="INV-0001"
+                  placeholder="BILL-0001"
                 />
               </Field>
               <Field label="Amount">
@@ -365,7 +365,7 @@ export default function InvoicesPage() {
                   placeholder="Optional purchase order id"
                 />
               </Field>
-              <Field label="Invoice Date">
+                <Field label="Bill Date">
                 <input
                   value={form.invoice_date}
                   onChange={(e) => setForm((prev) => ({ ...prev, invoice_date: e.target.value }))}
@@ -373,7 +373,7 @@ export default function InvoicesPage() {
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white"
                 />
               </Field>
-              <Field label="Due Date">
+                <Field label="Due Date">
                 <input
                   value={form.due_date}
                   onChange={(e) => setForm((prev) => ({ ...prev, due_date: e.target.value }))}

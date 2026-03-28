@@ -171,7 +171,7 @@ export default function PaymentRunsPage() {
                     </div>
                     <p className="text-slate-400 text-sm mb-4">
                       Executed on {new Date(run.run_date).toLocaleDateString()}
-                      {typeof run.invoice_count === 'number' ? ` — ${run.invoice_count} invoices` : ' — invoice count not loaded'}
+                  {typeof run.invoice_count === 'number' ? ` — ${run.invoice_count} bills` : ' — bill count not loaded'}
                     </p>
                     <div className="text-2xl font-heading text-brand-navy font-bold">R {Number(run.total_amount).toLocaleString()}</div>
                  </div>
@@ -283,7 +283,7 @@ export default function PaymentRunsPage() {
                       <div className="flex items-center gap-4">
                         <div className="text-right">
                           <div className="text-lg font-bold text-brand-navy">R {Number(invoice.amount).toLocaleString()}</div>
-                          <div className="text-[10px] text-slate-400">Approved invoices only</div>
+                          <div className="text-[10px] text-slate-400">Approved bills only</div>
                         </div>
                         <input
                           type="checkbox"
@@ -311,7 +311,7 @@ export default function PaymentRunsPage() {
                   disabled={saving || selectedInvoiceIds.length === 0}
                   className="rounded-2xl bg-brand-navy px-10 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {saving ? 'Running...' : 'Start Run'}
+                    {saving ? 'Running...' : 'Start Run'}
                 </button>
               </div>
             </form>

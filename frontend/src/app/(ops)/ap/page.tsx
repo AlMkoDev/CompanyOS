@@ -97,9 +97,9 @@ export default function ApDashboardPage() {
             <Building2 size={18} />
             Vendor Directory
           </Link>
-          <Link href="/ap/invoices" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
+          <Link href="/ap/vendor-bills" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
             <Plus size={18} />
-            Record Invoice
+            Record Vendor Bill
           </Link>
         </div>
       </div>
@@ -194,8 +194,8 @@ export default function ApDashboardPage() {
             </table>
           </div>
           <div className="p-6 bg-slate-50/50 border-t border-slate-50 text-center">
-             <Link href="/ap/invoices" className="text-xs font-bold text-brand-gold uppercase tracking-widest hover:underline">
-                Batch Process {dashboard?.pendingInvoices?.length ?? 0} Invoices →
+             <Link href="/ap/vendor-bills" className="text-xs font-bold text-brand-gold uppercase tracking-widest hover:underline">
+                Batch Review {dashboard?.pendingInvoices?.length ?? 0} Vendor Bills →
              </Link>
           </div>
         </div>
@@ -247,9 +247,9 @@ export default function ApDashboardPage() {
                         <div className="text-xl font-heading text-brand-navy font-bold">No payment run yet</div>
                         <div className="mt-3 flex justify-between items-center text-[10px]">
                            <span className="text-slate-500 font-bold">
-                              {dashboard?.pendingInvoices?.length ?? 0} INVOICES READY
+                              {dashboard?.pendingInvoices?.length ?? 0} BILLS READY
                            </span>
-                           <span className="text-brand-navy font-black italic">READY TO BATCH</span>
+                           <span className="text-brand-navy font-black italic">READY TO REVIEW</span>
                         </div>
                       </>
                     )}
