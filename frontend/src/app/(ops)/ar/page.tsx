@@ -47,6 +47,8 @@ interface ArDashboardData {
     openCount?: number;
     overdueValue?: number;
     healthPenalty?: number;
+    evidencePendingCount?: number;
+    overdueEvidenceCount?: number;
   };
   topEscalations?: Array<{
     id: string;
@@ -169,9 +171,9 @@ export default function ArDashboardPage() {
         <StatCard
           label="Disputes At Risk"
           value={`R ${(dashboard?.disputesAtRisk?.total || 0).toLocaleString()}`}
-          subtext={`${dashboard?.disputesAtRisk?.openCount || 0} open disputes`}
+          subtext={`${dashboard?.disputesAtRisk?.openCount || 0} open disputes · ${dashboard?.disputesAtRisk?.evidencePendingCount || 0} awaiting evidence`}
           icon={<AlertCircle className="text-orange-500" />}
-          trend={dashboard?.disputesAtRisk?.healthPenalty ? `-${Math.round(dashboard.disputesAtRisk.healthPenalty)} pts` : 'Live'}
+          trend={dashboard?.disputesAtRisk?.overdueEvidenceCount ? `${dashboard.disputesAtRisk.overdueEvidenceCount} late` : dashboard?.disputesAtRisk?.healthPenalty ? `-${Math.round(dashboard.disputesAtRisk.healthPenalty)} pts` : 'Live'}
           isWarning
         />
       </div>

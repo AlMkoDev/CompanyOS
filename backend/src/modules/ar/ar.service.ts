@@ -4,6 +4,7 @@ import {
   ApproveDisputeResolutionDto,
   CollectionActionDto,
   CreateARInvoiceDto,
+  CreateDisputeAttachmentDto,
   CreateDisputeActivityDto,
   CreateDisputeDto,
   CreateDisputeResolutionDto,
@@ -62,6 +63,7 @@ export class ArService {
         invoice: { include: { customer: true } },
         activities: { orderBy: { created_at: 'desc' } },
         resolutions: { orderBy: { created_at: 'desc' } },
+        attachments: { orderBy: { created_at: 'desc' } },
       },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
@@ -96,6 +98,14 @@ export class ArService {
     const target = this.disputeSlaTargets[normalized] || this.disputeSlaTargets.MEDIUM;
     const dueDate = new Date(raisedDate);
     dueDate.setDate(dueDate.getDate() + target.resolutionDays);
+    return dueDate;
+  }
+
+  private getDisputeEvidenceDueDate(priority?: string, raisedDate = new Date()) {
+    const normalized = this.normalizeDisputePriority(priority);
+    const target = this.disputeSlaTargets[normalized] || this.disputeSlaTargets.MEDIUM;
+    const dueDate = new Date(raisedDate);
+    dueDate.setDate(dueDate.getDate() + target.evidenceDays);
     return dueDate;
   }
 
@@ -249,6 +259,7 @@ export class ArService {
     const raisedDate = new Date();
     const priority = this.normalizeDisputePriority(data.priority);
     const dueDate = this.getDisputeDueDate(priority, raisedDate);
+    const evidenceDueDate = this.getDisputeEvidenceDueDate(priority, raisedDate);
 
     return this.prisma.$transaction(async (tx) => {
       const dispute = await tx.disputeCase.create({
@@ -268,10 +279,12 @@ export class ArService {
           blocks_payment: data.blocks_payment ?? true,
           product_code: data.product_code,
           evidence_required: data.evidence_required || [],
+          evidence_due_date: evidenceDueDate,
         },
         include: {
           invoice: { include: { customer: true } },
           activities: true,
+          attachments: true,
         },
       });
 
@@ -301,6 +314,9 @@ export class ArService {
         resolutions: {
           orderBy: { created_at: 'desc' },
         },
+        attachments: {
+          orderBy: { created_at: 'desc' },
+        },
       },
       orderBy: [{ due_date: 'asc' }, { created_at: 'desc' }],
     });
@@ -316,6 +332,9 @@ export class ArService {
           orderBy: { created_at: 'desc' },
         },
         resolutions: {
+          orderBy: { created_at: 'desc' },
+        },
+        attachments: {
           orderBy: { created_at: 'desc' },
         },
       },
@@ -384,6 +403,49 @@ export class ArService {
       });
 
       return resolution;
+    });
+  }
+
+  async addDisputeAttachment(companyId: string, disputeId: string, userId: string, data: CreateDisputeAttachmentDto) {
+    const dispute = await this.getCompanyDispute(companyId, disputeId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const attachment = await tx.disputeAttachment.create({
+        data: {
+          company_id: companyId,
+          dispute_id: disputeId,
+          file_name: data.file_name,
+          file_type: data.file_type,
+          category: data.category,
+          file_url: data.file_url,
+          notes: data.notes,
+          uploaded_by: userId,
+        },
+      });
+
+      const nextStatus =
+        ['OPEN', 'RAISED'].includes(dispute.status) && (dispute.evidence_required?.length || 0) > 0
+          ? 'EVIDENCE_PENDING'
+          : dispute.status;
+
+      if (nextStatus !== dispute.status) {
+        await tx.disputeCase.update({
+          where: { id: disputeId },
+          data: { status: nextStatus },
+        });
+      }
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: disputeId,
+          activity_type: 'EVIDENCE_UPLOADED',
+          notes: `${data.category} uploaded: ${data.file_name}`,
+          actor_user_id: userId,
+        },
+      });
+
+      return attachment;
     });
   }
 
@@ -858,6 +920,10 @@ export class ArService {
       .filter((dispute) => new Date(dispute.due_date).getTime() < Date.now())
       .reduce((sum, dispute) => sum + Number(dispute.disputed_amount), 0);
     const healthPenalty = totalAr > 0 ? Math.min(15, (overdueDisputeValue / totalAr) * 100) : 0;
+    const evidencePendingCount = openDisputes.filter((dispute) => dispute.status === 'EVIDENCE_PENDING').length;
+    const overdueEvidenceCount = openDisputes.filter(
+      (dispute) => dispute.status === 'EVIDENCE_PENDING' && dispute.evidence_due_date && new Date(dispute.evidence_due_date).getTime() < Date.now(),
+    ).length;
 
     return {
       customerCount: customers,
@@ -872,6 +938,8 @@ export class ArService {
         openCount: openDisputes.length,
         overdueValue: overdueDisputeValue,
         healthPenalty,
+        evidencePendingCount,
+        overdueEvidenceCount,
       },
     };
   }

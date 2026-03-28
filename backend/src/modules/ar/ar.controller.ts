@@ -13,6 +13,7 @@ import {
   ApproveDisputeResolutionDto,
   CollectionActionDto,
   CreateARInvoiceDto,
+  CreateDisputeAttachmentDto,
   CreateDisputeActivityDto,
   CreateDisputeDto,
   CreateDisputeResolutionDto,
@@ -97,6 +98,11 @@ export class ArController {
   @Post('disputes/:id/activity')
   async addDisputeActivity(@Req() req: any, @Param('id') id: string, @Body() body: CreateDisputeActivityDto) {
     return this.arService.addDisputeActivity(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('disputes/:id/attachments')
+  async addDisputeAttachment(@Req() req: any, @Param('id') id: string, @Body() body: CreateDisputeAttachmentDto) {
+    return this.arService.addDisputeAttachment(req.user.companyId, id, req.user.userId, body);
   }
 
   @Post('disputes/:id/status')

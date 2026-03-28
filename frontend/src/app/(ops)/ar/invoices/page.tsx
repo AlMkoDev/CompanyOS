@@ -99,11 +99,14 @@ interface DisputeCase {
   due_date: string;
   reason_code?: string | null;
   product_code?: string | null;
+  evidence_due_date?: string | null;
+  evidence_required?: string[];
   blocks_payment: boolean;
   affects_revenue: boolean;
   resolution_notes?: string | null;
   activities: DisputeActivity[];
   resolutions?: DisputeResolution[];
+  attachments?: DisputeAttachment[];
 }
 
 interface DisputeResolution {
@@ -120,6 +123,16 @@ interface DisputeResolution {
     approved_by?: string | null;
     timestamp?: string | null;
   }> | null;
+}
+
+interface DisputeAttachment {
+  id: string;
+  file_name: string;
+  file_type: string;
+  category: string;
+  file_url?: string | null;
+  notes?: string | null;
+  created_at: string;
 }
 
 interface InvoiceActionButtonProps {
@@ -179,6 +192,13 @@ export default function ArInvoicesPage() {
     resolution_type: 'CREDIT_NOTE',
     credit_amount: '',
     writeoff_amount: '',
+  });
+  const [attachmentForm, setAttachmentForm] = React.useState({
+    file_name: '',
+    file_type: 'image',
+    category: 'PHOTO',
+    file_url: '',
+    notes: '',
   });
 
   const fetchInvoices = React.useCallback(async () => {
@@ -548,6 +568,44 @@ export default function ArInvoicesPage() {
       }
     } catch {
       setFeedback({ tone: 'error', text: 'Connection error while posting resolution.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddAttachment = async (disputeId: string) => {
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch(`/ar/disputes/${disputeId}/attachments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_name: attachmentForm.file_name,
+          file_type: attachmentForm.file_type,
+          category: attachmentForm.category,
+          file_url: attachmentForm.file_url || undefined,
+          notes: attachmentForm.notes || undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: 'Evidence item logged on the dispute.' });
+        setAttachmentForm({
+          file_name: '',
+          file_type: 'image',
+          category: 'PHOTO',
+          file_url: '',
+          notes: '',
+        });
+        if (selectedInvoice) await handleOpenDisputePanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to add dispute evidence.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while adding dispute evidence.' });
     } finally {
       setSaving(false);
     }
@@ -1091,6 +1149,88 @@ export default function ArInvoicesPage() {
                                 <div className="text-xs italic text-slate-400">No dispute activity logged yet.</div>
                               )}
                             </div>
+                          </div>
+                          <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Evidence</div>
+                                <div className="mt-2 text-sm font-semibold text-slate-900">
+                                  Deadline {dispute.evidence_due_date ? new Date(dispute.evidence_due_date).toLocaleDateString() : 'Not set'}
+                                </div>
+                              </div>
+                              <StatusBadge status={dispute.status.toLowerCase()} />
+                            </div>
+                            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
+                              <div className="rounded-2xl bg-slate-50 p-4">
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Required Checklist</div>
+                                <div className="mt-3 space-y-2">
+                                  {dispute.evidence_required?.length ? (
+                                    dispute.evidence_required.map((item) => (
+                                      <div key={item} className="text-sm text-slate-600">
+                                        {dispute.attachments?.some((attachment) => attachment.category === item) ? '✓' : '○'} {item}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-xs italic text-slate-400">No evidence checklist has been configured for this dispute.</div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="rounded-2xl bg-slate-50 p-4">
+                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Logged Evidence</div>
+                                <div className="mt-3 space-y-2">
+                                  {dispute.attachments?.length ? (
+                                    dispute.attachments.map((attachment) => (
+                                      <div key={attachment.id} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-600">
+                                        <div className="font-semibold text-slate-900">{attachment.category} · {attachment.file_name}</div>
+                                        <div className="text-xs text-slate-400">
+                                          {attachment.file_type} · {new Date(attachment.created_at).toLocaleDateString()}
+                                        </div>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-xs italic text-slate-400">No evidence items logged yet.</div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-4 grid gap-3 md:grid-cols-2">
+                              <Field label="Evidence Name">
+                                <input value={attachmentForm.file_name} onChange={(e) => setAttachmentForm((prev) => ({ ...prev, file_name: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="Dispatch photo batch 17" />
+                              </Field>
+                              <Field label="Category">
+                                <select value={attachmentForm.category} onChange={(e) => setAttachmentForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white">
+                                  <option value="PHOTO">PHOTO</option>
+                                  <option value="POD">POD</option>
+                                  <option value="LAB_REPORT">LAB_REPORT</option>
+                                  <option value="CONTRACT">CONTRACT</option>
+                                  <option value="TEMPERATURE_LOG">TEMPERATURE_LOG</option>
+                                </select>
+                              </Field>
+                              <Field label="File Type">
+                                <select value={attachmentForm.file_type} onChange={(e) => setAttachmentForm((prev) => ({ ...prev, file_type: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white">
+                                  <option value="image">image</option>
+                                  <option value="pdf">pdf</option>
+                                  <option value="doc">doc</option>
+                                  <option value="link">link</option>
+                                </select>
+                              </Field>
+                              <Field label="File URL">
+                                <input value={attachmentForm.file_url} onChange={(e) => setAttachmentForm((prev) => ({ ...prev, file_url: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="Optional evidence link" />
+                              </Field>
+                            </div>
+                            <div className="mt-3">
+                              <Field label="Evidence Notes">
+                                <textarea value={attachmentForm.notes} onChange={(e) => setAttachmentForm((prev) => ({ ...prev, notes: e.target.value }))} className="min-h-24 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="What this evidence proves or supports." />
+                              </Field>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={saving || !attachmentForm.file_name}
+                              onClick={() => handleAddAttachment(dispute.id)}
+                              className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-3 text-sm font-bold text-sky-700 transition-all hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Log Evidence Item
+                            </button>
                           </div>
                           <div className="rounded-2xl border border-slate-100 bg-white p-4">
                             <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resolution Controls</div>

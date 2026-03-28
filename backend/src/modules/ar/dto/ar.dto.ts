@@ -208,3 +208,30 @@ export class MarkResolutionPostedDto {
   @IsOptional()
   posted_to_gl?: boolean;
 }
+
+export class CreateDisputeAttachmentDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  file_name: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  file_type: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  category: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  file_url?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+}

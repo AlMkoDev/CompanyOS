@@ -54,6 +54,7 @@ model Company {
   disputeCases         DisputeCase[]
   disputeActivities    DisputeActivity[]
   disputeResolutions   DisputeResolution[]
+  disputeAttachments   DisputeAttachment[]
   cashForecasts        CashForecast[]
   scenarioAssumptions  ScenarioAssumption[]
   salaryRecords        SalaryRecord[]
@@ -160,6 +161,7 @@ model User {
   disputesCreated     DisputeCase[] @relation("DisputeCreator")
   disputeActivities   DisputeActivity[] @relation("DisputeActivityActor")
   disputeResolutionsApproved DisputeResolution[] @relation("DisputeResolutionApprover")
+  disputeAttachmentsUploaded DisputeAttachment[] @relation("DisputeAttachmentUploader")
 }
 
 model Department {
@@ -894,6 +896,7 @@ model DisputeCase {
   blocks_payment    Boolean   @default(false)
   product_code      String?
   evidence_required String[]
+  evidence_due_date DateTime?
   created_at        DateTime  @default(now())
   updated_at        DateTime  @updatedAt
 
@@ -904,6 +907,7 @@ model DisputeCase {
   creator    User?             @relation("DisputeCreator", fields: [created_by], references: [id])
   activities DisputeActivity[]
   resolutions DisputeResolution[]
+  attachments DisputeAttachment[]
 }
 
 model DisputeActivity {
@@ -937,6 +941,23 @@ model DisputeResolution {
   company  Company     @relation(fields: [company_id], references: [id])
   dispute  DisputeCase @relation(fields: [dispute_id], references: [id])
   approver User?       @relation("DisputeResolutionApprover", fields: [approved_by], references: [id])
+}
+
+model DisputeAttachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  company_id   String   @db.Uuid
+  dispute_id   String   @db.Uuid
+  file_name    String
+  file_type    String
+  category     String
+  file_url     String?
+  notes        String?
+  uploaded_by  String?  @db.Uuid
+  created_at   DateTime @default(now())
+
+  company  Company     @relation(fields: [company_id], references: [id])
+  dispute  DisputeCase @relation(fields: [dispute_id], references: [id])
+  uploader User?       @relation("DisputeAttachmentUploader", fields: [uploaded_by], references: [id])
 }
 
 // VF-FIN-004: Cash Flow

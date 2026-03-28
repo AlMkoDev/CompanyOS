@@ -25,6 +25,9 @@ describe('ArService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    disputeAttachment: {
+      create: jest.fn(),
+    },
     disputeActivity: {
       create: jest.fn(),
     },
@@ -318,5 +321,87 @@ describe('ArService', () => {
 
     expect(resolution.status).toBe('PENDING_APPROVAL');
     expect(resolution.approval_chain).toHaveLength(2);
+  });
+
+  it('sets an evidence due date when a dispute is opened', async () => {
+    prisma.aRInvoice.findFirst.mockResolvedValue({
+      id: 'invoice-1',
+      company_id: 'company-1',
+      customer_id: 'customer-1',
+      invoice_no: 'AR-001',
+      amount: 500,
+      paid_amount: 0,
+      due_date: new Date('2026-03-31T00:00:00.000Z'),
+      customer: { name: 'North Buyer' },
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          create: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            status: 'OPEN',
+            priority: 'HIGH',
+            evidence_due_date: new Date('2026-03-30T00:00:00.000Z'),
+            invoice: { customer: { name: 'North Buyer' } },
+            activities: [],
+            attachments: [],
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const dispute = await service.createDispute('company-1', 'user-1', {
+      invoice_id: 'invoice-1',
+      dispute_type: 'QUALITY',
+      priority: 'HIGH',
+      disputed_amount: 150,
+      evidence_required: ['PHOTO', 'POD'],
+    });
+
+    expect(dispute.evidence_due_date).toBeDefined();
+  });
+
+  it('logs dispute evidence and records an activity', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      status: 'OPEN',
+      evidence_required: ['PHOTO'],
+      invoice: { customer: { name: 'North Buyer' } },
+      activities: [],
+      resolutions: [],
+      attachments: [],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeAttachment: {
+          create: jest.fn().mockResolvedValue({
+            id: 'attachment-1',
+            category: 'PHOTO',
+            file_name: 'dispatch-photo.jpg',
+          }),
+        },
+        disputeCase: {
+          update: jest.fn().mockResolvedValue({ id: 'dispute-1', status: 'EVIDENCE_PENDING' }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const attachment = await service.addDisputeAttachment('company-1', 'dispute-1', 'user-1', {
+      file_name: 'dispatch-photo.jpg',
+      file_type: 'image',
+      category: 'PHOTO',
+      notes: 'Visible shell damage on arrival.',
+    });
+
+    expect(attachment.category).toBe('PHOTO');
   });
 });
