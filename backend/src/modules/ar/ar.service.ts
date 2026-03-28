@@ -1,11 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  ApproveDisputeResolutionDto,
   CollectionActionDto,
   CreateARInvoiceDto,
   CreateDisputeActivityDto,
   CreateDisputeDto,
+  CreateDisputeResolutionDto,
   CreateCustomerDto,
+  MarkResolutionPostedDto,
   RecordPaymentDto,
   SendReminderDto,
   UpdateDisputeStatusDto,
@@ -24,6 +27,13 @@ export class ArService {
     MEDIUM: { initialResponseHours: 24, evidenceDays: 3, resolutionDays: 7, escalationDays: 5 },
     LOW: { initialResponseHours: 48, evidenceDays: 5, resolutionDays: 10, escalationDays: 8 },
   };
+
+  private readonly writeOffApprovalThresholds = [
+    { role: 'AR_Officer', min: 0, max: 50 },
+    { role: 'Finance_Manager', min: 51, max: 200 },
+    { role: 'Operations_Director', min: 201, max: 500 },
+    { role: 'CEO', min: 501, max: Number.POSITIVE_INFINITY },
+  ];
 
   private getOverdueDays(dueDate: Date | string, now = new Date()) {
     const diffMs = now.getTime() - new Date(dueDate).getTime();
@@ -51,10 +61,26 @@ export class ArService {
       include: {
         invoice: { include: { customer: true } },
         activities: { orderBy: { created_at: 'desc' } },
+        resolutions: { orderBy: { created_at: 'desc' } },
       },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
     return dispute;
+  }
+
+  private async getCompanyResolution(companyId: string, resolutionId: string) {
+    const resolution = await this.prisma.disputeResolution.findFirst({
+      where: { id: resolutionId, company_id: companyId },
+      include: {
+        dispute: {
+          include: {
+            invoice: { include: { customer: true } },
+          },
+        },
+      },
+    });
+    if (!resolution) throw new NotFoundException('Dispute resolution not found');
+    return resolution;
   }
 
   private getOutstandingBalance(invoice: { amount: any; paid_amount: any }) {
@@ -77,6 +103,18 @@ export class ArService {
     return ['OPEN', 'RAISED', 'UNDER_REVIEW', 'EVIDENCE_PENDING', 'ESCALATED', 'RESOLUTION_PROPOSED', 'CUSTOMER_APPROVAL', 'NEGOTIATION'].includes(
       status,
     );
+  }
+
+  private getResolutionAmount(data: { credit_amount?: number | null; writeoff_amount?: number | null }) {
+    return Number(data.credit_amount || 0) + Number(data.writeoff_amount || 0);
+  }
+
+  private getRequiredApprovers(totalAmount: number) {
+    const primary =
+      this.writeOffApprovalThresholds.find((threshold) => totalAmount >= threshold.min && totalAmount <= threshold.max) ||
+      this.writeOffApprovalThresholds[this.writeOffApprovalThresholds.length - 1];
+
+    return ['Finance_Manager', primary.role];
   }
 
   private async getCompanyCollectionCase(companyId: string, caseId: string) {
@@ -260,6 +298,9 @@ export class ArService {
           take: 3,
           orderBy: { created_at: 'desc' },
         },
+        resolutions: {
+          orderBy: { created_at: 'desc' },
+        },
       },
       orderBy: [{ due_date: 'asc' }, { created_at: 'desc' }],
     });
@@ -272,6 +313,9 @@ export class ArService {
       where: { company_id: companyId, invoice_id: invoiceId },
       include: {
         activities: {
+          orderBy: { created_at: 'desc' },
+        },
+        resolutions: {
           orderBy: { created_at: 'desc' },
         },
       },
@@ -293,10 +337,166 @@ export class ArService {
     });
   }
 
+  async createDisputeResolution(companyId: string, disputeId: string, userId: string, data: CreateDisputeResolutionDto) {
+    const dispute = await this.getCompanyDispute(companyId, disputeId);
+
+    if (!['RESOLUTION_PROPOSED', 'RESOLVED', 'CUSTOMER_APPROVAL', 'NEGOTIATION'].includes(dispute.status)) {
+      throw new BadRequestException('Resolution records can only be created once the dispute is in a resolution phase');
+    }
+
+    const resolutionAmount = this.getResolutionAmount(data);
+    if (resolutionAmount <= 0) {
+      throw new BadRequestException('A credit amount or write-off amount is required');
+    }
+
+    if (resolutionAmount > Number(dispute.disputed_amount) + 0.009) {
+      throw new BadRequestException('Resolution amount cannot exceed the disputed amount');
+    }
+
+    const approvalChain = this.getRequiredApprovers(resolutionAmount).map((role, index) => ({
+      level: index + 1,
+      role,
+      status: index === 0 ? 'pending' : 'queued',
+      approved_by: null,
+      timestamp: null,
+    }));
+
+    return this.prisma.$transaction(async (tx) => {
+      const resolution = await tx.disputeResolution.create({
+        data: {
+          company_id: companyId,
+          dispute_id: disputeId,
+          resolution_type: data.resolution_type,
+          credit_amount: data.credit_amount,
+          writeoff_amount: data.writeoff_amount,
+          approval_chain: approvalChain,
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: disputeId,
+          activity_type: 'RESOLUTION_RECORDED',
+          notes: `${data.resolution_type} recorded for ${resolutionAmount.toFixed(2)} and routed for approval.`,
+          actor_user_id: userId,
+        },
+      });
+
+      return resolution;
+    });
+  }
+
+  async approveDisputeResolution(companyId: string, resolutionId: string, userId: string, data: ApproveDisputeResolutionDto) {
+    const resolution = await this.getCompanyResolution(companyId, resolutionId);
+    const action = data.action.toUpperCase();
+
+    if (!['APPROVE', 'REJECT'].includes(action)) {
+      throw new BadRequestException('Resolution action must be APPROVE or REJECT');
+    }
+
+    const chain = Array.isArray(resolution.approval_chain) ? [...(resolution.approval_chain as any[])] : [];
+    const currentStepIndex = chain.findIndex((step) => step.status === 'pending');
+
+    if (currentStepIndex === -1 && action === 'APPROVE') {
+      throw new BadRequestException('No approval is currently pending for this resolution');
+    }
+
+    const now = new Date().toISOString();
+    let nextStatus = resolution.status;
+
+    if (action === 'REJECT') {
+      nextStatus = 'REJECTED';
+      chain.forEach((step) => {
+        if (step.status === 'pending' || step.status === 'queued') {
+          step.status = 'cancelled';
+        }
+      });
+    } else {
+      chain[currentStepIndex] = {
+        ...chain[currentStepIndex],
+        status: 'approved',
+        approved_by: userId,
+        timestamp: now,
+      };
+
+      const nextQueuedIndex = chain.findIndex((step) => step.status === 'queued');
+      if (nextQueuedIndex >= 0) {
+        chain[nextQueuedIndex] = {
+          ...chain[nextQueuedIndex],
+          status: 'pending',
+        };
+        nextStatus = 'PENDING_APPROVAL';
+      } else {
+        nextStatus = 'APPROVED';
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedResolution = await tx.disputeResolution.update({
+        where: { id: resolutionId },
+        data: {
+          status: nextStatus,
+          approval_chain: chain,
+          approved_by: action === 'APPROVE' ? userId : resolution.approved_by,
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: resolution.dispute_id,
+          activity_type: 'RESOLUTION_APPROVAL',
+          notes: action === 'APPROVE' ? `Resolution approved at level ${currentStepIndex + 1}.` : 'Resolution rejected.',
+          actor_user_id: userId,
+        },
+      });
+
+      return updatedResolution;
+    });
+  }
+
+  async markResolutionPosted(companyId: string, resolutionId: string, userId: string, data?: MarkResolutionPostedDto) {
+    const resolution = await this.getCompanyResolution(companyId, resolutionId);
+
+    if (resolution.status !== 'APPROVED') {
+      throw new BadRequestException('Resolution must be approved before posting to GL');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.disputeResolution.update({
+        where: { id: resolutionId },
+        data: {
+          posted_to_gl: data?.posted_to_gl ?? true,
+          status: 'POSTED',
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: resolution.dispute_id,
+          activity_type: 'RESOLUTION_POSTED',
+          notes: 'Resolution marked as posted to the general ledger.',
+          actor_user_id: userId,
+        },
+      });
+
+      return updated;
+    });
+  }
+
   async updateDisputeStatus(companyId: string, disputeId: string, userId: string, data: UpdateDisputeStatusDto) {
     const dispute = await this.getCompanyDispute(companyId, disputeId);
     const nextStatus = data.status.toUpperCase();
     const resolvedStates = ['RESOLVED', 'CLOSED', 'CREDIT_ISSUED', 'AUTO_CLOSED'];
+
+    if (['CLOSED', 'CREDIT_ISSUED'].includes(nextStatus)) {
+      const latestResolution = dispute.resolutions[0];
+      if (!latestResolution || latestResolution.status !== 'POSTED') {
+        throw new BadRequestException('Dispute cannot close until the resolution is approved and posted to GL');
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.disputeCase.update({
@@ -310,6 +510,7 @@ export class ArService {
         include: {
           invoice: { include: { customer: true } },
           activities: { orderBy: { created_at: 'desc' } },
+          resolutions: { orderBy: { created_at: 'desc' } },
         },
       });
 

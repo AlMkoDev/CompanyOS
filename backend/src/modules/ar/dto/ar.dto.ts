@@ -179,3 +179,32 @@ export class CreateDisputeActivityDto {
   @MaxLength(2000)
   notes?: string;
 }
+
+export class CreateDisputeResolutionDto {
+  @IsString()
+  @MinLength(1)
+  resolution_type: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  credit_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  writeoff_amount?: number;
+}
+
+export class ApproveDisputeResolutionDto {
+  @IsString()
+  @MinLength(1)
+  action: string;
+}
+
+export class MarkResolutionPostedDto {
+  @IsOptional()
+  posted_to_gl?: boolean;
+}

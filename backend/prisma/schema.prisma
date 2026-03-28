@@ -53,6 +53,7 @@ model Company {
   collectionCases      CollectionCase[]
   disputeCases         DisputeCase[]
   disputeActivities    DisputeActivity[]
+  disputeResolutions   DisputeResolution[]
   cashForecasts        CashForecast[]
   scenarioAssumptions  ScenarioAssumption[]
   salaryRecords        SalaryRecord[]
@@ -158,6 +159,7 @@ model User {
   disputesAssigned    DisputeCase[] @relation("DisputeAssignee")
   disputesCreated     DisputeCase[] @relation("DisputeCreator")
   disputeActivities   DisputeActivity[] @relation("DisputeActivityActor")
+  disputeResolutionsApproved DisputeResolution[] @relation("DisputeResolutionApprover")
 }
 
 model Department {
@@ -901,6 +903,7 @@ model DisputeCase {
   assignee   User?             @relation("DisputeAssignee", fields: [assigned_to], references: [id])
   creator    User?             @relation("DisputeCreator", fields: [created_by], references: [id])
   activities DisputeActivity[]
+  resolutions DisputeResolution[]
 }
 
 model DisputeActivity {
@@ -915,6 +918,25 @@ model DisputeActivity {
   company Company     @relation(fields: [company_id], references: [id])
   dispute DisputeCase @relation(fields: [dispute_id], references: [id])
   actor   User?       @relation("DisputeActivityActor", fields: [actor_user_id], references: [id])
+}
+
+model DisputeResolution {
+  id               String   @id @default(uuid()) @db.Uuid
+  company_id       String   @db.Uuid
+  dispute_id       String   @db.Uuid
+  resolution_type  String
+  credit_amount    Decimal? @db.Decimal(15, 2)
+  writeoff_amount  Decimal? @db.Decimal(15, 2)
+  approved_by      String?  @db.Uuid
+  approval_chain   Json?
+  status           String   @default("PENDING_APPROVAL")
+  posted_to_gl     Boolean  @default(false)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  company  Company     @relation(fields: [company_id], references: [id])
+  dispute  DisputeCase @relation(fields: [dispute_id], references: [id])
+  approver User?       @relation("DisputeResolutionApprover", fields: [approved_by], references: [id])
 }
 
 // VF-FIN-004: Cash Flow

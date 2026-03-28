@@ -103,6 +103,23 @@ interface DisputeCase {
   affects_revenue: boolean;
   resolution_notes?: string | null;
   activities: DisputeActivity[];
+  resolutions?: DisputeResolution[];
+}
+
+interface DisputeResolution {
+  id: string;
+  resolution_type: string;
+  credit_amount?: number | string | null;
+  writeoff_amount?: number | string | null;
+  status: string;
+  posted_to_gl: boolean;
+  approval_chain?: Array<{
+    level: number;
+    role: string;
+    status: string;
+    approved_by?: string | null;
+    timestamp?: string | null;
+  }> | null;
 }
 
 interface InvoiceActionButtonProps {
@@ -157,6 +174,11 @@ export default function ArInvoicesPage() {
     notes: '',
     blocks_payment: true,
     affects_revenue: true,
+  });
+  const [resolutionForm, setResolutionForm] = React.useState({
+    resolution_type: 'CREDIT_NOTE',
+    credit_amount: '',
+    writeoff_amount: '',
   });
 
   const fetchInvoices = React.useCallback(async () => {
@@ -447,6 +469,85 @@ export default function ArInvoicesPage() {
       }
     } catch {
       setFeedback({ tone: 'error', text: 'Connection error while updating dispute status.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateResolution = async (disputeId: string) => {
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch(`/ar/disputes/${disputeId}/resolutions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resolution_type: resolutionForm.resolution_type,
+          credit_amount: resolutionForm.credit_amount ? Number(resolutionForm.credit_amount) : undefined,
+          writeoff_amount: resolutionForm.writeoff_amount ? Number(resolutionForm.writeoff_amount) : undefined,
+        }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: 'Resolution record created and routed for approval.' });
+        if (selectedInvoice) await handleOpenDisputePanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to create resolution record.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while creating dispute resolution.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleApproveResolution = async (resolutionId: string, action: 'APPROVE' | 'REJECT') => {
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch(`/ar/dispute-resolutions/${resolutionId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: `Resolution ${action === 'APPROVE' ? 'approved' : 'rejected'}.` });
+        if (selectedInvoice) await handleOpenDisputePanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to update resolution approval.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while updating resolution approval.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePostResolution = async (resolutionId: string) => {
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch(`/ar/dispute-resolutions/${resolutionId}/post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posted_to_gl: true }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: 'Resolution marked as posted to GL.' });
+        if (selectedInvoice) await handleOpenDisputePanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to mark resolution as posted.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while posting resolution.' });
     } finally {
       setSaving(false);
     }
@@ -991,6 +1092,59 @@ export default function ArInvoicesPage() {
                               )}
                             </div>
                           </div>
+                          <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resolution Controls</div>
+                            {dispute.resolutions?.length ? (
+                              <div className="mt-3 space-y-4">
+                                {dispute.resolutions.map((resolution) => (
+                                  <div key={resolution.id} className="rounded-2xl bg-slate-50 p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <div className="font-semibold text-slate-900">
+                                          {resolution.resolution_type.replaceAll('_', ' ')}
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                          Credit: R {Number(resolution.credit_amount || 0).toLocaleString()} · Write-off: R {Number(resolution.writeoff_amount || 0).toLocaleString()}
+                                        </div>
+                                      </div>
+                                      <StatusBadge status={resolution.status.toLowerCase()} />
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={saving || resolution.status === 'POSTED'}
+                                        onClick={() => handleApproveResolution(resolution.id, 'APPROVE')}
+                                        className="rounded-full border border-emerald-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={saving || resolution.status === 'POSTED'}
+                                        onClick={() => handleApproveResolution(resolution.id, 'REJECT')}
+                                        className="rounded-full border border-rose-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-rose-700 transition-all hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        Reject
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={saving || resolution.status !== 'APPROVED'}
+                                        onClick={() => handlePostResolution(resolution.id)}
+                                        className="rounded-full border border-sky-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-sky-700 transition-all hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                      >
+                                        Mark Posted
+                                      </button>
+                                    </div>
+                                    <div className="mt-3 text-xs text-slate-500">
+                                      {resolution.approval_chain?.map((step) => `${step.role}: ${step.status}`).join(' · ') || 'Approval chain not configured'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="mt-3 text-xs italic text-slate-400">No resolution record has been created yet.</div>
+                            )}
+                          </div>
                         </div>
                       ))
                     ) : (
@@ -1043,6 +1197,32 @@ export default function ArInvoicesPage() {
                   <input type="checkbox" checked={disputeForm.affects_revenue} onChange={(e) => setDisputeForm((prev) => ({ ...prev, affects_revenue: e.target.checked }))} />
                   Count amount as revenue at risk
                 </label>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resolution Draft</div>
+                  <div className="mt-4 space-y-4">
+                    <Field label="Resolution Type">
+                      <select value={resolutionForm.resolution_type} onChange={(e) => setResolutionForm((prev) => ({ ...prev, resolution_type: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white">
+                        <option value="CREDIT_NOTE">CREDIT NOTE</option>
+                        <option value="WRITE_OFF">WRITE OFF</option>
+                        <option value="PRICE_ADJUSTMENT">PRICE ADJUSTMENT</option>
+                      </select>
+                    </Field>
+                    <Field label="Credit Amount">
+                      <input value={resolutionForm.credit_amount} onChange={(e) => setResolutionForm((prev) => ({ ...prev, credit_amount: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" />
+                    </Field>
+                    <Field label="Write-Off Amount">
+                      <input value={resolutionForm.writeoff_amount} onChange={(e) => setResolutionForm((prev) => ({ ...prev, writeoff_amount: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" />
+                    </Field>
+                    <button
+                      type="button"
+                      disabled={saving || !disputes.length}
+                      onClick={() => handleCreateResolution(disputes[0].id)}
+                      className="w-full rounded-2xl border border-brand-gold bg-brand-gold/10 px-5 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-brand-gold/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Create Resolution Record For Latest Dispute
+                    </button>
+                  </div>
+                </div>
                 {feedback && (
                   <div
                     className={`rounded-2xl px-4 py-3 text-sm ${

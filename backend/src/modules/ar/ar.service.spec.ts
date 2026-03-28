@@ -20,6 +20,11 @@ describe('ArService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    disputeResolution: {
+      create: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
     disputeActivity: {
       create: jest.fn(),
     },
@@ -251,5 +256,67 @@ describe('ArService', () => {
 
     expect(aging.disputed).toBe(250);
     expect(aging['1-30']).toBe(150);
+  });
+
+  it('blocks dispute closure until resolution is posted to GL', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      status: 'RESOLVED',
+      disputed_amount: 200,
+      invoice: { customer: { name: 'North Buyer' } },
+      activities: [],
+      resolutions: [
+        {
+          id: 'resolution-1',
+          status: 'APPROVED',
+          posted_to_gl: false,
+        },
+      ],
+    });
+
+    await expect(
+      service.updateDisputeStatus('company-1', 'dispute-1', 'user-1', {
+        status: 'CLOSED',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('creates a dispute resolution with a two-level approval chain', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      status: 'RESOLUTION_PROPOSED',
+      disputed_amount: 300,
+      invoice: { customer: { name: 'North Buyer' } },
+      activities: [],
+      resolutions: [],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeResolution: {
+          create: jest.fn().mockResolvedValue({
+            id: 'resolution-1',
+            status: 'PENDING_APPROVAL',
+            approval_chain: [
+              { role: 'Finance_Manager', status: 'pending' },
+              { role: 'Operations_Director', status: 'queued' },
+            ],
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const resolution = await service.createDisputeResolution('company-1', 'dispute-1', 'user-1', {
+      resolution_type: 'WRITE_OFF',
+      writeoff_amount: 250,
+    });
+
+    expect(resolution.status).toBe('PENDING_APPROVAL');
+    expect(resolution.approval_chain).toHaveLength(2);
   });
 });

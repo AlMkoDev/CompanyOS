@@ -10,12 +10,15 @@ import {
 import { ArService } from './ar.service';
 import { JwtAuthGuard } from '../auth/jwt.strategy';
 import {
+  ApproveDisputeResolutionDto,
   CollectionActionDto,
   CreateARInvoiceDto,
   CreateDisputeActivityDto,
   CreateDisputeDto,
+  CreateDisputeResolutionDto,
   CreateCollectionCaseDto,
   CreateCustomerDto,
+  MarkResolutionPostedDto,
   RecordPaymentDto,
   SendReminderDto,
   UpdateDisputeStatusDto,
@@ -99,6 +102,21 @@ export class ArController {
   @Post('disputes/:id/status')
   async updateDisputeStatus(@Req() req: any, @Param('id') id: string, @Body() body: UpdateDisputeStatusDto) {
     return this.arService.updateDisputeStatus(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('disputes/:id/resolutions')
+  async createDisputeResolution(@Req() req: any, @Param('id') id: string, @Body() body: CreateDisputeResolutionDto) {
+    return this.arService.createDisputeResolution(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('dispute-resolutions/:id/approve')
+  async approveDisputeResolution(@Req() req: any, @Param('id') id: string, @Body() body: ApproveDisputeResolutionDto) {
+    return this.arService.approveDisputeResolution(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('dispute-resolutions/:id/post')
+  async markResolutionPosted(@Req() req: any, @Param('id') id: string, @Body() body: MarkResolutionPostedDto) {
+    return this.arService.markResolutionPosted(req.user.companyId, id, req.user.userId, body);
   }
 
   @Post('collections')
