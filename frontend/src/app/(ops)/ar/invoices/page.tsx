@@ -59,6 +59,7 @@ export default function ArInvoicesPage() {
   const [invoices, setInvoices] = React.useState<ArInvoice[]>([]);
   const [customers, setCustomers] = React.useState<ArCustomer[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState('');
   const [showForm, setShowForm] = React.useState(false);
   const [showPaymentForm, setShowPaymentForm] = React.useState(false);
   const [showReceiptHistory, setShowReceiptHistory] = React.useState(false);
@@ -83,9 +84,16 @@ export default function ArInvoicesPage() {
   const fetchInvoices = React.useCallback(async () => {
     try {
       const res = await apiFetch('/ar/invoices');
-      if (res.ok) setInvoices(await res.json());
+      if (res.ok) {
+        setInvoices(await res.json());
+        setLoadError('');
+      } else {
+        const data = await res.json().catch(() => null);
+        setLoadError(data?.message || `Failed to load invoices (${res.status}).`);
+      }
     } catch (err) {
       console.error('Failed to fetch invoices:', err);
+      setLoadError('Connection error while loading invoices.');
     } finally {
       setLoading(false);
     }
@@ -283,6 +291,12 @@ export default function ArInvoicesPage() {
           <input type="text" placeholder="Search by customer name, invoice #, or reference..." className="w-full pl-14 pr-4 py-4 bg-slate-50 border border-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-brand-gold text-sm font-medium" />
         </div>
 
+        {loadError && (
+          <div className="mx-8 mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+            {loadError}
+          </div>
+        )}
+
         <div className="flex-1 overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -329,7 +343,7 @@ export default function ArInvoicesPage() {
                   </td>
                 </tr>
               ))}
-              {invoices.length === 0 && !loading && (
+              {invoices.length === 0 && !loading && !loadError && (
                 <tr>
                   <td colSpan={6} className="py-20 text-center text-slate-400 italic">No invoices found.</td>
                 </tr>
