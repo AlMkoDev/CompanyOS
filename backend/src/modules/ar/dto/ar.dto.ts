@@ -104,3 +104,78 @@ export class SendReminderDto {
   @MaxLength(40)
   channel?: string;
 }
+
+export class CreateDisputeDto {
+  @IsString()
+  @MinLength(1)
+  invoice_id: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  dispute_type: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  priority?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  disputed_amount: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  reason_code?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  product_code?: string;
+
+  @IsOptional()
+  evidence_required?: string[];
+
+  @IsOptional()
+  blocks_payment?: boolean;
+
+  @IsOptional()
+  affects_revenue?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+}
+
+export class UpdateDisputeStatusDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  status: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  resolved_amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  resolution_notes?: string;
+}
+
+export class CreateDisputeActivityDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  activity_type: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  notes?: string;
+}

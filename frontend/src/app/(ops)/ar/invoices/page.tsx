@@ -14,6 +14,7 @@ import {
   Download,
   MoreVertical,
   BellRing,
+  ShieldAlert,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -81,6 +82,29 @@ interface InvoiceDunningSummary {
   reminder_history: DunningEvent[];
 }
 
+interface DisputeActivity {
+  id: string;
+  activity_type: string;
+  notes?: string | null;
+  created_at: string;
+}
+
+interface DisputeCase {
+  id: string;
+  status: string;
+  priority: string;
+  dispute_type: string;
+  disputed_amount: number | string;
+  resolved_amount?: number | string | null;
+  due_date: string;
+  reason_code?: string | null;
+  product_code?: string | null;
+  blocks_payment: boolean;
+  affects_revenue: boolean;
+  resolution_notes?: string | null;
+  activities: DisputeActivity[];
+}
+
 interface InvoiceActionButtonProps {
   label: string;
   onClick?: () => void;
@@ -103,9 +127,11 @@ export default function ArInvoicesPage() {
   const [showPaymentForm, setShowPaymentForm] = React.useState(false);
   const [showReceiptHistory, setShowReceiptHistory] = React.useState(false);
   const [showDunningPanel, setShowDunningPanel] = React.useState(false);
+  const [showDisputePanel, setShowDisputePanel] = React.useState(false);
   const [selectedInvoice, setSelectedInvoice] = React.useState<ArInvoice | null>(null);
   const [receiptSummary, setReceiptSummary] = React.useState<InvoiceReceiptSummary | null>(null);
   const [dunningSummary, setDunningSummary] = React.useState<InvoiceDunningSummary | null>(null);
+  const [disputes, setDisputes] = React.useState<DisputeCase[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [feedback, setFeedback] = React.useState<FeedbackState>(null);
@@ -121,6 +147,16 @@ export default function ArInvoicesPage() {
     payment_date: new Date().toISOString().split('T')[0],
     method: 'Bank Transfer',
     reference: '',
+  });
+  const [disputeForm, setDisputeForm] = React.useState({
+    dispute_type: 'QUALITY',
+    priority: 'MEDIUM',
+    disputed_amount: '',
+    reason_code: '',
+    product_code: '',
+    notes: '',
+    blocks_payment: true,
+    affects_revenue: true,
   });
 
   const fetchInvoices = React.useCallback(async () => {
@@ -326,6 +362,96 @@ export default function ArInvoicesPage() {
     }
   };
 
+  const handleOpenDisputePanel = async (invoice: ArInvoice) => {
+    setMessage('');
+    setFeedback(null);
+    setSelectedInvoice(invoice);
+    setDisputeForm((prev) => ({
+      ...prev,
+      disputed_amount: String(Math.max(0, Number(invoice.amount) - Number(invoice.paid_amount))),
+    }));
+
+    try {
+      const res = await apiFetch(`/ar/invoices/${invoice.id}/disputes`);
+      if (res.ok) {
+        setDisputes(await res.json());
+        setShowDisputePanel(true);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to load disputes.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while loading disputes.' });
+    }
+  };
+
+  const handleCreateDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedInvoice) return;
+
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch('/ar/disputes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_id: selectedInvoice.id,
+          dispute_type: disputeForm.dispute_type,
+          priority: disputeForm.priority,
+          disputed_amount: Number(disputeForm.disputed_amount),
+          reason_code: disputeForm.reason_code || undefined,
+          product_code: disputeForm.product_code || undefined,
+          notes: disputeForm.notes || undefined,
+          blocks_payment: disputeForm.blocks_payment,
+          affects_revenue: disputeForm.affects_revenue,
+        }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: `Dispute opened for invoice ${selectedInvoice.invoice_no}.` });
+        await fetchInvoices();
+        await handleOpenDisputePanel(selectedInvoice);
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to open dispute.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while opening dispute.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateDisputeStatus = async (disputeId: string, status: string) => {
+    setSaving(true);
+    setFeedback(null);
+
+    try {
+      const res = await apiFetch(`/ar/disputes/${disputeId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (res.ok) {
+        setFeedback({ tone: 'success', text: `Dispute moved to ${status.replaceAll('_', ' ')}.` });
+        if (selectedInvoice) {
+          await fetchInvoices();
+          await handleOpenDisputePanel(selectedInvoice);
+        }
+      } else {
+        const data = await res.json().catch(() => null);
+        setFeedback({ tone: 'error', text: data?.message || 'Failed to update dispute status.' });
+      }
+    } catch {
+      setFeedback({ tone: 'error', text: 'Connection error while updating dispute status.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSendReminder = async () => {
     if (!selectedInvoice) return;
 
@@ -501,6 +627,9 @@ export default function ArInvoicesPage() {
                       </InvoiceActionButton>
                       <InvoiceActionButton label="Delivery & reminders" onClick={() => handleOpenDunningPanel(inv)}>
                         <BellRing size={16} />
+                      </InvoiceActionButton>
+                      <InvoiceActionButton label="Manage disputes" onClick={() => handleOpenDisputePanel(inv)}>
+                        <ShieldAlert size={16} />
                       </InvoiceActionButton>
                       <InvoiceActionButton label="Download invoice PDF (Coming soon)" onClick={() => handleComingSoonAction('Invoice PDF download')} disabled>
                         <Download size={16} />
@@ -790,6 +919,151 @@ export default function ArInvoicesPage() {
           </div>
         </div>
       )}
+
+      {showDisputePanel && selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 backdrop-blur-sm px-4 py-10">
+          <div className="w-full max-w-5xl overflow-hidden rounded-[40px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="text-2xl font-heading text-brand-navy">Dispute Workflow</h2>
+                <p className="text-sm text-slate-400">
+                  Invoice #{selectedInvoice.invoice_no} · {selectedInvoice.customer?.name}
+                </p>
+              </div>
+              <button onClick={() => setShowDisputePanel(false)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="grid gap-8 p-8 lg:grid-cols-[1.15fr_0.85fr]">
+              <div className="space-y-6">
+                <div className="rounded-3xl border border-slate-100 bg-white">
+                  <div className="border-b border-slate-100 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                    Active Disputes
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {disputes.length ? (
+                      disputes.map((dispute) => (
+                        <div key={dispute.id} className="space-y-4 px-6 py-5">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-slate-900">
+                                {dispute.dispute_type} · {dispute.priority}
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                Due {new Date(dispute.due_date).toLocaleDateString()}
+                                {dispute.product_code ? ` · ${dispute.product_code}` : ''}
+                                {dispute.reason_code ? ` · ${dispute.reason_code}` : ''}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <StatusBadge status={dispute.status.toLowerCase()} />
+                              <span className="text-sm font-bold text-brand-navy">R {Number(dispute.disputed_amount).toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {['UNDER_REVIEW', 'EVIDENCE_PENDING', 'RESOLUTION_PROPOSED', 'RESOLVED', 'CLOSED'].map((nextStatus) => (
+                              <button
+                                key={nextStatus}
+                                type="button"
+                                disabled={saving || dispute.status === nextStatus}
+                                onClick={() => handleUpdateDisputeStatus(dispute.id, nextStatus)}
+                                className="rounded-full border border-slate-200 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 transition-all hover:border-brand-gold hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {nextStatus.replaceAll('_', ' ')}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Activity</div>
+                            <div className="mt-3 space-y-3">
+                              {dispute.activities.length ? (
+                                dispute.activities.map((activity) => (
+                                  <div key={activity.id} className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-semibold text-slate-900">{activity.activity_type.replaceAll('_', ' ')}</div>
+                                      <div className="text-xs text-slate-500">{activity.notes || 'No notes captured.'}</div>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400">{new Date(activity.created_at).toLocaleDateString()}</div>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-xs italic text-slate-400">No dispute activity logged yet.</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-6 py-10 text-center text-sm italic text-slate-400">No disputes raised for this invoice yet.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleCreateDispute} className="space-y-5 rounded-[32px] border border-slate-100 bg-slate-50 p-6">
+                <div>
+                  <h3 className="text-xl font-heading text-brand-navy">Raise Dispute</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Opening a blocked-payment dispute pauses normal aging and moves the amount into the disputed bucket.
+                  </p>
+                </div>
+                <Field label="Dispute Type">
+                  <select value={disputeForm.dispute_type} onChange={(e) => setDisputeForm((prev) => ({ ...prev, dispute_type: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white">
+                    <option value="QUALITY">QUALITY</option>
+                    <option value="PRICING">PRICING</option>
+                    <option value="QUANTITY">QUANTITY</option>
+                    <option value="OTHER">OTHER</option>
+                  </select>
+                </Field>
+                <Field label="Priority">
+                  <select value={disputeForm.priority} onChange={(e) => setDisputeForm((prev) => ({ ...prev, priority: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white">
+                    <option value="LOW">LOW</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="CRITICAL">CRITICAL</option>
+                  </select>
+                </Field>
+                <Field label="Disputed Amount">
+                  <input value={disputeForm.disputed_amount} onChange={(e) => setDisputeForm((prev) => ({ ...prev, disputed_amount: e.target.value }))} type="number" min="0" step="0.01" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" required />
+                </Field>
+                <Field label="Reason Code">
+                  <input value={disputeForm.reason_code} onChange={(e) => setDisputeForm((prev) => ({ ...prev, reason_code: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="DAMAGED_IN_TRANSIT" />
+                </Field>
+                <Field label="Product Code">
+                  <input value={disputeForm.product_code} onChange={(e) => setDisputeForm((prev) => ({ ...prev, product_code: e.target.value }))} className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="EGG / POTATO / MARROW" />
+                </Field>
+                <Field label="Notes">
+                  <textarea value={disputeForm.notes} onChange={(e) => setDisputeForm((prev) => ({ ...prev, notes: e.target.value }))} className="min-h-28 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 outline-none transition-all focus:border-brand-gold focus:bg-white" placeholder="Capture the customer claim and evidence request." />
+                </Field>
+                <label className="flex items-center gap-3 text-sm text-slate-600">
+                  <input type="checkbox" checked={disputeForm.blocks_payment} onChange={(e) => setDisputeForm((prev) => ({ ...prev, blocks_payment: e.target.checked }))} />
+                  Block payment and pause normal aging
+                </label>
+                <label className="flex items-center gap-3 text-sm text-slate-600">
+                  <input type="checkbox" checked={disputeForm.affects_revenue} onChange={(e) => setDisputeForm((prev) => ({ ...prev, affects_revenue: e.target.checked }))} />
+                  Count amount as revenue at risk
+                </label>
+                {feedback && (
+                  <div
+                    className={`rounded-2xl px-4 py-3 text-sm ${
+                      feedback.tone === 'success'
+                        ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : feedback.tone === 'error'
+                          ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                          : 'border border-sky-200 bg-sky-50 text-sky-700'
+                    }`}
+                  >
+                    {feedback.text}
+                  </div>
+                )}
+                <button type="submit" disabled={saving} className="w-full rounded-2xl bg-brand-navy px-6 py-4 font-heading text-lg text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+                  {saving ? 'Saving...' : 'Raise Dispute'}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -832,6 +1106,12 @@ function StatusBadge({ status }: { status: string }) {
     partially_paid: 'bg-orange-50 text-orange-600',
     paid: 'bg-emerald-50 text-emerald-600',
     overdue: 'bg-rose-50 text-rose-600',
+    open: 'bg-rose-50 text-rose-600',
+    under_review: 'bg-amber-50 text-amber-700',
+    evidence_pending: 'bg-sky-50 text-sky-700',
+    resolution_proposed: 'bg-indigo-50 text-indigo-700',
+    resolved: 'bg-emerald-50 text-emerald-600',
+    closed: 'bg-slate-100 text-slate-600',
   };
   const labels: Record<string, string> = {
     draft: 'Draft',
@@ -839,6 +1119,12 @@ function StatusBadge({ status }: { status: string }) {
     partially_paid: 'Partial Pay',
     paid: 'Settled',
     overdue: 'Action Required',
+    open: 'Open',
+    under_review: 'Under Review',
+    evidence_pending: 'Evidence Pending',
+    resolution_proposed: 'Resolution Proposed',
+    resolved: 'Resolved',
+    closed: 'Closed',
   };
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider ${styles[status] ?? styles.draft}`}>

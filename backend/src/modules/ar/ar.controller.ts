@@ -12,10 +12,13 @@ import { JwtAuthGuard } from '../auth/jwt.strategy';
 import {
   CollectionActionDto,
   CreateARInvoiceDto,
+  CreateDisputeActivityDto,
+  CreateDisputeDto,
   CreateCollectionCaseDto,
   CreateCustomerDto,
   RecordPaymentDto,
   SendReminderDto,
+  UpdateDisputeStatusDto,
 } from './dto/ar.dto';
 
 @Controller('ar')
@@ -53,6 +56,11 @@ export class ArController {
     return this.arService.getInvoiceDunning(req.user.companyId, id);
   }
 
+  @Get('invoices/:id/disputes')
+  async getInvoiceDisputes(@Req() req: any, @Param('id') id: string) {
+    return this.arService.getInvoiceDisputes(req.user.companyId, id);
+  }
+
   @Post('payments')
   async recordPayment(@Req() req: any, @Body() data: RecordPaymentDto) {
     return this.arService.recordPayment(req.user.companyId, data, req.user.userId);
@@ -71,6 +79,26 @@ export class ArController {
   @Get('collections')
   async getCollectionQueue(@Req() req: any) {
     return this.arService.getCollectionQueue(req.user.companyId);
+  }
+
+  @Get('disputes')
+  async getDisputes(@Req() req: any) {
+    return this.arService.getDisputes(req.user.companyId);
+  }
+
+  @Post('disputes')
+  async createDispute(@Req() req: any, @Body() body: CreateDisputeDto) {
+    return this.arService.createDispute(req.user.companyId, req.user.userId, body);
+  }
+
+  @Post('disputes/:id/activity')
+  async addDisputeActivity(@Req() req: any, @Param('id') id: string, @Body() body: CreateDisputeActivityDto) {
+    return this.arService.addDisputeActivity(req.user.companyId, id, req.user.userId, body);
+  }
+
+  @Post('disputes/:id/status')
+  async updateDisputeStatus(@Req() req: any, @Param('id') id: string, @Body() body: UpdateDisputeStatusDto) {
+    return this.arService.updateDisputeStatus(req.user.companyId, id, req.user.userId, body);
   }
 
   @Post('collections')

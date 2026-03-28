@@ -3,14 +3,27 @@ import { PrismaService } from '../../database/prisma.service';
 import {
   CollectionActionDto,
   CreateARInvoiceDto,
+  CreateDisputeActivityDto,
+  CreateDisputeDto,
   CreateCustomerDto,
   RecordPaymentDto,
   SendReminderDto,
+  UpdateDisputeStatusDto,
 } from './dto/ar.dto';
 
 @Injectable()
 export class ArService {
   constructor(private prisma: PrismaService) {}
+
+  private readonly disputeSlaTargets: Record<
+    string,
+    { initialResponseHours: number; evidenceDays: number; resolutionDays: number; escalationDays: number }
+  > = {
+    CRITICAL: { initialResponseHours: 2, evidenceDays: 1, resolutionDays: 3, escalationDays: 2 },
+    HIGH: { initialResponseHours: 4, evidenceDays: 2, resolutionDays: 5, escalationDays: 3 },
+    MEDIUM: { initialResponseHours: 24, evidenceDays: 3, resolutionDays: 7, escalationDays: 5 },
+    LOW: { initialResponseHours: 48, evidenceDays: 5, resolutionDays: 10, escalationDays: 8 },
+  };
 
   private getOverdueDays(dueDate: Date | string, now = new Date()) {
     const diffMs = now.getTime() - new Date(dueDate).getTime();
@@ -32,8 +45,38 @@ export class ArService {
     return invoice;
   }
 
+  private async getCompanyDispute(companyId: string, disputeId: string) {
+    const dispute = await this.prisma.disputeCase.findFirst({
+      where: { id: disputeId, company_id: companyId },
+      include: {
+        invoice: { include: { customer: true } },
+        activities: { orderBy: { created_at: 'desc' } },
+      },
+    });
+    if (!dispute) throw new NotFoundException('Dispute not found');
+    return dispute;
+  }
+
   private getOutstandingBalance(invoice: { amount: any; paid_amount: any }) {
     return Number(invoice.amount) - Number(invoice.paid_amount);
+  }
+
+  private normalizeDisputePriority(priority?: string) {
+    return (priority || 'MEDIUM').toUpperCase();
+  }
+
+  private getDisputeDueDate(priority?: string, raisedDate = new Date()) {
+    const normalized = this.normalizeDisputePriority(priority);
+    const target = this.disputeSlaTargets[normalized] || this.disputeSlaTargets.MEDIUM;
+    const dueDate = new Date(raisedDate);
+    dueDate.setDate(dueDate.getDate() + target.resolutionDays);
+    return dueDate;
+  }
+
+  private isActiveDisputeStatus(status: string) {
+    return ['OPEN', 'RAISED', 'UNDER_REVIEW', 'EVIDENCE_PENDING', 'ESCALATED', 'RESOLUTION_PROPOSED', 'CUSTOMER_APPROVAL', 'NEGOTIATION'].includes(
+      status,
+    );
   }
 
   private async getCompanyCollectionCase(companyId: string, caseId: string) {
@@ -148,6 +191,142 @@ export class ArService {
     };
   }
 
+  async createDispute(companyId: string, userId: string, data: CreateDisputeDto) {
+    const invoice = await this.prisma.aRInvoice.findFirst({
+      where: { id: data.invoice_id, company_id: companyId },
+      include: { customer: true },
+    });
+
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    const outstandingBalance = this.getOutstandingBalance(invoice);
+    if (outstandingBalance <= 0) {
+      throw new BadRequestException('A settled invoice cannot be disputed');
+    }
+
+    if (Number(data.disputed_amount) > outstandingBalance + 0.009) {
+      throw new BadRequestException(`Disputed amount exceeds outstanding balance of ${outstandingBalance.toFixed(2)}`);
+    }
+
+    const raisedDate = new Date();
+    const priority = this.normalizeDisputePriority(data.priority);
+    const dueDate = this.getDisputeDueDate(priority, raisedDate);
+
+    return this.prisma.$transaction(async (tx) => {
+      const dispute = await tx.disputeCase.create({
+        data: {
+          company_id: companyId,
+          invoice_id: invoice.id,
+          customer_id: invoice.customer_id,
+          status: 'OPEN',
+          priority,
+          dispute_type: data.dispute_type,
+          reason_code: data.reason_code,
+          disputed_amount: data.disputed_amount,
+          due_date: dueDate,
+          assigned_to: userId,
+          created_by: userId,
+          affects_revenue: data.affects_revenue ?? true,
+          blocks_payment: data.blocks_payment ?? true,
+          product_code: data.product_code,
+          evidence_required: data.evidence_required || [],
+        },
+        include: {
+          invoice: { include: { customer: true } },
+          activities: true,
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: dispute.id,
+          activity_type: 'DISPUTE_RAISED',
+          notes: data.notes || `Dispute opened for invoice ${invoice.invoice_no}.`,
+          actor_user_id: userId,
+        },
+      });
+
+      return dispute;
+    });
+  }
+
+  async getDisputes(companyId: string) {
+    return this.prisma.disputeCase.findMany({
+      where: { company_id: companyId },
+      include: {
+        invoice: { include: { customer: true } },
+        activities: {
+          take: 3,
+          orderBy: { created_at: 'desc' },
+        },
+      },
+      orderBy: [{ due_date: 'asc' }, { created_at: 'desc' }],
+    });
+  }
+
+  async getInvoiceDisputes(companyId: string, invoiceId: string) {
+    await this.getCompanyInvoice(companyId, invoiceId);
+
+    return this.prisma.disputeCase.findMany({
+      where: { company_id: companyId, invoice_id: invoiceId },
+      include: {
+        activities: {
+          orderBy: { created_at: 'desc' },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async addDisputeActivity(companyId: string, disputeId: string, userId: string, data: CreateDisputeActivityDto) {
+    await this.getCompanyDispute(companyId, disputeId);
+
+    return this.prisma.disputeActivity.create({
+      data: {
+        company_id: companyId,
+        dispute_id: disputeId,
+        activity_type: data.activity_type,
+        notes: data.notes,
+        actor_user_id: userId,
+      },
+    });
+  }
+
+  async updateDisputeStatus(companyId: string, disputeId: string, userId: string, data: UpdateDisputeStatusDto) {
+    const dispute = await this.getCompanyDispute(companyId, disputeId);
+    const nextStatus = data.status.toUpperCase();
+    const resolvedStates = ['RESOLVED', 'CLOSED', 'CREDIT_ISSUED', 'AUTO_CLOSED'];
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.disputeCase.update({
+        where: { id: disputeId },
+        data: {
+          status: nextStatus,
+          resolved_amount: data.resolved_amount,
+          resolution_notes: data.resolution_notes ?? dispute.resolution_notes,
+          resolved_date: resolvedStates.includes(nextStatus) ? new Date() : null,
+        },
+        include: {
+          invoice: { include: { customer: true } },
+          activities: { orderBy: { created_at: 'desc' } },
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: companyId,
+          dispute_id: disputeId,
+          activity_type: 'STATUS_CHANGED',
+          notes: data.resolution_notes ? `${nextStatus}: ${data.resolution_notes}` : `Status changed to ${nextStatus}.`,
+          actor_user_id: userId,
+        },
+      });
+
+      return updated;
+    });
+  }
+
   // --- Payments ---
 
   async recordPayment(companyId: string, data: RecordPaymentDto, userId?: string) {
@@ -238,12 +417,30 @@ export class ArService {
   // --- AR Aging & Collections (VF-FIN-003) ---
 
   async getAgingReport(companyId: string) {
-    const invoices = await this.prisma.aRInvoice.findMany({
-      where: {
-        company_id: companyId,
-        status: { not: 'paid' },
-      },
-    });
+    const [invoices, activeDisputes] = await Promise.all([
+      this.prisma.aRInvoice.findMany({
+        where: {
+          company_id: companyId,
+          status: { not: 'paid' },
+        },
+      }),
+      this.prisma.disputeCase.findMany({
+        where: {
+          company_id: companyId,
+          blocks_payment: true,
+        },
+      }),
+    ]);
+
+    const disputedInvoiceMap = new Map<string, number>();
+    activeDisputes
+      .filter((dispute) => this.isActiveDisputeStatus(dispute.status))
+      .forEach((dispute) => {
+        disputedInvoiceMap.set(
+          dispute.invoice_id,
+          (disputedInvoiceMap.get(dispute.invoice_id) || 0) + Number(dispute.disputed_amount),
+        );
+      });
 
     const now = new Date();
     const buckets = {
@@ -252,6 +449,7 @@ export class ArService {
       '31-60': 0,
       '61-90': 0,
       '90plus': 0,
+      disputed: 0,
     };
 
     invoices.forEach((inv) => {
@@ -259,12 +457,18 @@ export class ArService {
       const diffTime = now.getTime() - dueDate.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       const balance = Number(inv.amount) - Number(inv.paid_amount);
+      const disputedAmount = disputedInvoiceMap.get(inv.id) || 0;
+      const collectibleBalance = Math.max(0, balance - disputedAmount);
 
-      if (diffDays <= 0) buckets.current += balance;
-      else if (diffDays <= 30) buckets['1-30'] += balance;
-      else if (diffDays <= 60) buckets['31-60'] += balance;
-      else if (diffDays <= 90) buckets['61-90'] += balance;
-      else buckets['90plus'] += balance;
+      if (disputedAmount > 0) buckets.disputed += disputedAmount;
+
+      if (collectibleBalance <= 0) return;
+
+      if (diffDays <= 0) buckets.current += collectibleBalance;
+      else if (diffDays <= 30) buckets['1-30'] += collectibleBalance;
+      else if (diffDays <= 60) buckets['31-60'] += collectibleBalance;
+      else if (diffDays <= 90) buckets['61-90'] += collectibleBalance;
+      else buckets['90plus'] += collectibleBalance;
     });
 
     return buckets;
@@ -406,7 +610,7 @@ export class ArService {
   }
 
   async getARDashboard(companyId: string) {
-    const [customers, invoices, aging, collectionCases] = await Promise.all([
+    const [customers, invoices, aging, collectionCases, disputes] = await Promise.all([
       this.prisma.customer.count({ where: { company_id: companyId } }),
       this.prisma.aRInvoice.findMany({
         where: { company_id: companyId, status: { not: 'paid' } },
@@ -432,9 +636,14 @@ export class ArService {
         ],
         take: 3,
       }),
+      this.prisma.disputeCase.findMany({
+        where: { company_id: companyId },
+      }),
     ]);
 
-    const totalAr = Object.values(aging).reduce((a, b) => a + b, 0);
+    const totalAr = Object.entries(aging)
+      .filter(([bucket]) => bucket !== 'disputed')
+      .reduce((sum, [, value]) => sum + value, 0);
     const remindersDue = invoices.filter((invoice) => {
       const outstandingBalance = this.getOutstandingBalance(invoice);
       if (outstandingBalance <= 0) return false;
@@ -442,6 +651,12 @@ export class ArService {
       const overdueDays = this.getOverdueDays(invoice.due_date);
       return this.getNextDunningStage(overdueDays, invoice.reminder_count || 0) !== null;
     }).length;
+    const openDisputes = disputes.filter((dispute) => this.isActiveDisputeStatus(dispute.status));
+    const disputedAmount = openDisputes.reduce((sum, dispute) => sum + Number(dispute.disputed_amount), 0);
+    const overdueDisputeValue = openDisputes
+      .filter((dispute) => new Date(dispute.due_date).getTime() < Date.now())
+      .reduce((sum, dispute) => sum + Number(dispute.disputed_amount), 0);
+    const healthPenalty = totalAr > 0 ? Math.min(15, (overdueDisputeValue / totalAr) * 100) : 0;
 
     return {
       customerCount: customers,
@@ -451,6 +666,12 @@ export class ArService {
       collectionCases: collectionCases.length,
       topEscalations: collectionCases,
       remindersDue,
+      disputesAtRisk: {
+        total: disputedAmount,
+        openCount: openDisputes.length,
+        overdueValue: overdueDisputeValue,
+        healthPenalty,
+      },
     };
   }
 

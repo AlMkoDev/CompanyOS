@@ -32,6 +32,7 @@ interface ArAgingSummary {
   '31-60'?: number;
   '61-90'?: number;
   '90plus'?: number;
+  disputed?: number;
 }
 
 interface ArDashboardData {
@@ -41,6 +42,12 @@ interface ArDashboardData {
   pendingInvoices?: ArInvoice[];
   collectionCases?: number;
   remindersDue?: number;
+  disputesAtRisk?: {
+    total?: number;
+    openCount?: number;
+    overdueValue?: number;
+    healthPenalty?: number;
+  };
   topEscalations?: Array<{
     id: string;
     escalation_level: number;
@@ -128,7 +135,7 @@ export default function ArDashboardPage() {
       </div>
 
       {/* Stats Table & Aging */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
         <StatCard 
           label="Total AR" 
           value={`R ${(dashboard?.totalAr || 0).toLocaleString()}`} 
@@ -159,17 +166,26 @@ export default function ArDashboardPage() {
           icon={<Clock className="text-brand-gold" />}
           trend="Live"
         />
+        <StatCard
+          label="Disputes At Risk"
+          value={`R ${(dashboard?.disputesAtRisk?.total || 0).toLocaleString()}`}
+          subtext={`${dashboard?.disputesAtRisk?.openCount || 0} open disputes`}
+          icon={<AlertCircle className="text-orange-500" />}
+          trend={dashboard?.disputesAtRisk?.healthPenalty ? `-${Math.round(dashboard.disputesAtRisk.healthPenalty)} pts` : 'Live'}
+          isWarning
+        />
       </div>
 
       {/* Aging Baskets */}
       <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm">
         <h3 className="text-xl font-heading text-brand-navy mb-8">AR Aging Profile</h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <AgingBucket label="Current" value={dashboard?.aging?.current} total={dashboard?.totalAr || 1} color="bg-brand-navy/20" />
           <AgingBucket label="1-30 Days" value={dashboard?.aging?.['1-30']} total={dashboard?.totalAr || 1} color="bg-emerald-500/20" />
           <AgingBucket label="31-60 Days" value={dashboard?.aging?.['31-60']} total={dashboard?.totalAr || 1} color="bg-brand-gold/20" />
           <AgingBucket label="61-90 Days" value={dashboard?.aging?.['61-90']} total={dashboard?.totalAr || 1} color="bg-orange-500/20" />
           <AgingBucket label="90+ Days" value={dashboard?.aging?.['90plus']} total={dashboard?.totalAr || 1} color="bg-rose-500/20" />
+          <AgingBucket label="Disputed" value={dashboard?.aging?.disputed} total={dashboard?.totalAr || 1} color="bg-sky-500/20" />
         </div>
       </div>
 

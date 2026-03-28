@@ -9,9 +9,22 @@ describe('ArService', () => {
     aRInvoice: {
       findFirst: jest.fn(),
       update: jest.fn(),
+      findMany: jest.fn(),
     },
     aRDunningEvent: {
       create: jest.fn(),
+    },
+    disputeCase: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    disputeActivity: {
+      create: jest.fn(),
+    },
+    customer: {
+      count: jest.fn(),
     },
     payment: {
       create: jest.fn(),
@@ -168,5 +181,75 @@ describe('ArService', () => {
     expect(result.event.stage).toBe(7);
     expect(result.invoice.reminder_count).toBe(2);
     expect(result.next_stage_after_send).toBe(15);
+  });
+
+  it('creates a blocked-payment dispute with SLA due date and activity log', async () => {
+    prisma.aRInvoice.findFirst.mockResolvedValue({
+      id: 'invoice-1',
+      company_id: 'company-1',
+      customer_id: 'customer-1',
+      invoice_no: 'AR-001',
+      amount: 500,
+      paid_amount: 100,
+      due_date: new Date('2026-03-31T00:00:00.000Z'),
+      customer: { name: 'North Buyer' },
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          create: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            status: 'OPEN',
+            priority: 'HIGH',
+            disputed_amount: 200,
+            invoice: { customer: { name: 'North Buyer' } },
+            activities: [],
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const result = await service.createDispute('company-1', 'user-1', {
+      invoice_id: 'invoice-1',
+      dispute_type: 'QUALITY',
+      priority: 'HIGH',
+      disputed_amount: 200,
+      notes: 'Cracked shells in delivered batch.',
+      blocks_payment: true,
+      affects_revenue: true,
+    });
+
+    expect(result.status).toBe('OPEN');
+    expect(result.priority).toBe('HIGH');
+  });
+
+  it('moves blocked-payment disputes into the disputed aging bucket', async () => {
+    prisma.aRInvoice.findMany.mockResolvedValue([
+      {
+        id: 'invoice-1',
+        company_id: 'company-1',
+        amount: 500,
+        paid_amount: 100,
+        due_date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+      },
+    ]);
+    prisma.disputeCase.findMany.mockResolvedValue([
+      {
+        id: 'dispute-1',
+        invoice_id: 'invoice-1',
+        status: 'OPEN',
+        blocks_payment: true,
+        disputed_amount: 250,
+      },
+    ]);
+
+    const aging = await service.getAgingReport('company-1');
+
+    expect(aging.disputed).toBe(250);
+    expect(aging['1-30']).toBe(150);
   });
 });
