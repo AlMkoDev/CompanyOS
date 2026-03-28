@@ -29,6 +29,10 @@ interface InvoiceRecord {
   amount: number | string;
   status: string;
   po_id?: string | null;
+  po?: {
+    id: string;
+    goods_receipts?: { id: string }[];
+  } | null;
   vendor?: VendorSummary;
 }
 
@@ -134,8 +138,32 @@ export default function InvoicesPage() {
         const res = await apiFetch(`/ap/invoices/${id}/match`, {
            method: 'POST',
         });
-        if (res.ok) fetchInvoices();
+        if (res.ok) {
+          setMessage('3-way match completed.');
+          await fetchInvoices();
+        } else {
+          const data = await res.json().catch(() => null);
+          setMessage(data?.message || 'Failed to run 3-way match.');
+        }
      } catch (err) { console.error(err); }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      const res = await apiFetch(`/ap/invoices/${id}/approve`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        setMessage('Invoice approved for payment.');
+        await fetchInvoices();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to approve invoice.');
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage('Connection error while approving invoice.');
+    }
   };
 
   return (
@@ -190,7 +218,9 @@ export default function InvoicesPage() {
                           <td className="py-6 px-8">
                              <div className="flex items-center gap-2">
                                 <span className="p-1.5 bg-brand-gold/10 text-brand-gold rounded-lg"><FileText size={14} /></span>
-                                <span className="text-xs font-bold text-slate-600">PO-88293</span>
+                                <span className="text-xs font-bold text-slate-600">
+                                  {inv.po?.id ? `PO-${inv.po.id.slice(0, 8).toUpperCase()}` : 'No PO linked'}
+                                </span>
                              </div>
                           </td>
                           <td className="py-6 px-8 text-right font-bold text-slate-700">
@@ -217,8 +247,18 @@ export default function InvoicesPage() {
               <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-2xl animate-in fade-in slide-in-from-right-5 duration-300">
                  <h3 className="text-xl font-heading text-brand-navy mb-8 border-b border-slate-50 pb-4">Match Inspector</h3>
                  <div className="space-y-8 mb-10">
-                    <MatchItem label="Purchase Order" status={selectedInvoice.po_id ? 'verified' : 'missing'} value="PO-88293" />
-                    <MatchItem label="Goods Receipt" status={selectedInvoice.status === 'matched' ? 'verified' : 'pending'} value="GR-1102" />
+                    <MatchItem
+                      label="Purchase Order"
+                      status={selectedInvoice.po?.id || selectedInvoice.po_id ? 'verified' : 'missing'}
+                      value={selectedInvoice.po?.id || selectedInvoice.po_id ? `PO-${(selectedInvoice.po?.id || selectedInvoice.po_id || '').slice(0, 8).toUpperCase()}` : 'No PO linked'}
+                    />
+                    <MatchItem
+                      label="Goods Receipt"
+                      status={(selectedInvoice.po?.goods_receipts?.length ?? 0) > 0 ? 'verified' : 'pending'}
+                      value={(selectedInvoice.po?.goods_receipts?.length ?? 0) > 0
+                        ? `${selectedInvoice.po?.goods_receipts?.length} receipt(s)`
+                        : 'Awaiting receipt'}
+                    />
                     <MatchItem label="Invoice Total" status="verified" value={`R ${Number(selectedInvoice.amount).toLocaleString()}`} />
                  </div>
 
@@ -233,7 +273,10 @@ export default function InvoicesPage() {
                        </button>
                     )}
                     {selectedInvoice.status === 'matched' && (
-                       <button className="w-full py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                       <button
+                        onClick={() => handleApprove(selectedInvoice.id)}
+                        className="w-full py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm shadow-xl hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                       >
                           <CheckCircle size={18} />
                           Approve for Payment
                        </button>

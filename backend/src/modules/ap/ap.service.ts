@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CreateAPGoodsReceiptDto,
@@ -126,7 +126,11 @@ export class ApService {
 
   async approveInvoice(companyId: string, invoiceId: string, userId: string) {
     // Tiered approval logic could be added here based on userId's authority
-    await this.getCompanyInvoice(companyId, invoiceId);
+    const invoice = await this.getCompanyInvoice(companyId, invoiceId);
+
+    if (invoice.status !== 'matched') {
+      throw new BadRequestException('Invoice must be matched before approval');
+    }
 
     return this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -184,12 +188,22 @@ export class ApService {
       }),
       this.prisma.invoice.findMany({ 
         where: { company_id: companyId, status: { not: 'paid' } },
-        include: { vendor: true }
+        include: {
+          vendor: true,
+          po: {
+            include: {
+              goods_receipts: true,
+            },
+          },
+        }
       }),
       this.prisma.paymentRun.findMany({
         where: { company_id: companyId },
         orderBy: { created_at: 'desc' },
-        take: 3
+        take: 3,
+        include: {
+          invoices: true,
+        },
       })
     ]);
 
@@ -200,7 +214,10 @@ export class ApService {
       totalOutstanding,
       recentPOs: pos,
       pendingInvoices: invoices,
-      recentPaymentRuns: paymentRuns
+      recentPaymentRuns: paymentRuns.map((run) => ({
+        ...run,
+        invoice_count: run.invoices.length,
+      })),
     };
   }
 }
