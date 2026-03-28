@@ -34,6 +34,15 @@ export class ApService {
     return invoice;
   }
 
+  private async getCompanyPaymentRun(companyId: string, runId: string) {
+    const paymentRun = await this.prisma.paymentRun.findFirst({
+      where: { id: runId, company_id: companyId },
+      include: { invoices: true },
+    });
+    if (!paymentRun) throw new NotFoundException('Payment run not found');
+    return paymentRun;
+  }
+
   // --- Vendors ---
 
   async createVendor(companyId: string, data: CreateVendorDto) {
@@ -174,6 +183,43 @@ export class ApService {
     return this.prisma.paymentRun.findUnique({
       where: { id: paymentRun.id },
       include: { invoices: true } as any, // Cast to any to bypass temporary lint discrepancy
+    });
+  }
+
+  async approvePaymentRun(companyId: string, runId: string, approverId: string) {
+    const paymentRun = await this.getCompanyPaymentRun(companyId, runId);
+
+    if (paymentRun.status !== 'draft') {
+      throw new BadRequestException('Payment run must be draft before approval');
+    }
+
+    return this.prisma.paymentRun.update({
+      where: { id: runId },
+      data: {
+        status: 'approved',
+        approved_by: approverId,
+      },
+      include: {
+        invoices: true,
+      } as any,
+    });
+  }
+
+  async completePaymentRun(companyId: string, runId: string) {
+    const paymentRun = await this.getCompanyPaymentRun(companyId, runId);
+
+    if (paymentRun.status !== 'approved') {
+      throw new BadRequestException('Payment run must be approved before completion');
+    }
+
+    return this.prisma.paymentRun.update({
+      where: { id: runId },
+      data: {
+        status: 'completed',
+      },
+      include: {
+        invoices: true,
+      } as any,
     });
   }
 

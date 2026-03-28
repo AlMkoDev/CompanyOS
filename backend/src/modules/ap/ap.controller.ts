@@ -71,6 +71,16 @@ export class ApController {
     return this.apService.generatePaymentRun(req.user.companyId, body.invoiceIds);
   }
 
+  @Post('payment-runs/:id/approve')
+  async approvePaymentRun(@Req() req: any, @Param('id') id: string) {
+    return this.apService.approvePaymentRun(req.user.companyId, id, req.user.userId);
+  }
+
+  @Post('payment-runs/:id/complete')
+  async completePaymentRun(@Req() req: any, @Param('id') id: string) {
+    return this.apService.completePaymentRun(req.user.companyId, id);
+  }
+
   @Get('dashboard')
   async getAPDashboard(@Req() req: any) {
     return this.apService.getAPDashboard(req.user.companyId);

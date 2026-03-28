@@ -21,6 +21,7 @@ interface PaymentRun {
   run_date: string;
   total_amount: number | string;
   invoice_count?: number;
+  bank_file_url?: string | null;
 }
 
 interface PaymentRunsResponse {
@@ -104,6 +105,36 @@ export default function PaymentRunsPage() {
     }
   };
 
+  const handleApproveRun = async (runId: string) => {
+    try {
+      const res = await apiFetch(`/ap/payment-runs/${runId}/approve`, { method: 'POST' });
+      if (res.ok) {
+        setMessage('Payment run approved.');
+        await fetchRuns();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to approve payment run.');
+      }
+    } catch {
+      setMessage('Connection error while approving payment run.');
+    }
+  };
+
+  const handleCompleteRun = async (runId: string) => {
+    try {
+      const res = await apiFetch(`/ap/payment-runs/${runId}/complete`, { method: 'POST' });
+      if (res.ok) {
+        setMessage('Payment run completed.');
+        await fetchRuns();
+      } else {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to complete payment run.');
+      }
+    } catch {
+      setMessage('Connection error while completing payment run.');
+    }
+  };
+
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
       <div className="flex justify-between items-center">
@@ -148,9 +179,27 @@ export default function PaymentRunsPage() {
                     <button className="p-4 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-brand-navy hover:shadow-md transition-all">
                        <Download size={20} />
                     </button>
-                    <button className="px-6 py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all">
-                       View Details
-                    </button>
+                    {run.status === 'draft' && (
+                      <button
+                        onClick={() => handleApproveRun(run.id)}
+                        className="px-6 py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-bold text-sm hover:bg-emerald-100 transition-all"
+                      >
+                        Approve Run
+                      </button>
+                    )}
+                    {run.status === 'approved' && (
+                      <button
+                        onClick={() => handleCompleteRun(run.id)}
+                        className="px-6 py-4 bg-brand-gold text-brand-navy rounded-2xl font-bold text-sm hover:opacity-90 transition-all"
+                      >
+                        Mark Completed
+                      </button>
+                    )}
+                    {run.status === 'completed' && (
+                      <button className="px-6 py-4 bg-brand-navy text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all">
+                         Completed
+                      </button>
+                    )}
                  </div>
               </div>
            ))}
