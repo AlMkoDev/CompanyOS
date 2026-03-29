@@ -58,6 +58,8 @@ const AR_WORKSPACE_ALLOWED_ROLES = new Set([
   'financial controller',
   'finance director',
   'chief financial officer (cfo)',
+  'system administrator',
+  'super admin',
 ]);
 
 export default function PublicDisputePortalPage() {
