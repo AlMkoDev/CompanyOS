@@ -143,6 +143,10 @@ export default function ArDashboardPage() {
             <Users size={18} />
             Customer List
           </Link>
+          <Link href="/ar/disputes" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
+            <AlertCircle size={18} />
+            Dispute Register
+          </Link>
           <Link href="/disputes" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
             <AlertCircle size={18} />
             Dispute Portal
