@@ -55,6 +55,7 @@ model Company {
   disputeActivities    DisputeActivity[]
   disputeResolutions   DisputeResolution[]
   disputeAttachments   DisputeAttachment[]
+  disputeDocuments     DisputeDocument[]
   cashForecasts        CashForecast[]
   scenarioAssumptions  ScenarioAssumption[]
   salaryRecords        SalaryRecord[]
@@ -163,6 +164,7 @@ model User {
   disputeActivityTasksAssigned DisputeActivity[] @relation("DisputeActivityTaskAssignee")
   disputeResolutionsApproved DisputeResolution[] @relation("DisputeResolutionApprover")
   disputeAttachmentsUploaded DisputeAttachment[] @relation("DisputeAttachmentUploader")
+  disputeDocumentsGenerated DisputeDocument[] @relation("DisputeDocumentGenerator")
 }
 
 model Department {
@@ -917,6 +919,7 @@ model DisputeCase {
   activities DisputeActivity[]
   resolutions DisputeResolution[]
   attachments DisputeAttachment[]
+  documents   DisputeDocument[]
 }
 
 model DisputeActivity {
@@ -979,6 +982,24 @@ model DisputeAttachment {
   company  Company     @relation(fields: [company_id], references: [id])
   dispute  DisputeCase @relation(fields: [dispute_id], references: [id])
   uploader User?       @relation("DisputeAttachmentUploader", fields: [uploaded_by], references: [id])
+}
+
+model DisputeDocument {
+  id             String   @id @default(uuid()) @db.Uuid
+  company_id     String   @db.Uuid
+  dispute_id     String   @db.Uuid
+  document_type  String
+  title          String
+  file_url       String?
+  template_version String?
+  customer_visible Boolean @default(true)
+  generated_by   String?  @db.Uuid
+  metadata       Json?
+  created_at     DateTime @default(now())
+
+  company Company     @relation(fields: [company_id], references: [id])
+  dispute DisputeCase @relation(fields: [dispute_id], references: [id])
+  generator User?     @relation("DisputeDocumentGenerator", fields: [generated_by], references: [id])
 }
 
 // VF-FIN-004: Cash Flow

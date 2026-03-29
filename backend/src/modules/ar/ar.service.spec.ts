@@ -28,6 +28,9 @@ describe('ArService', () => {
     disputeAttachment: {
       create: jest.fn(),
     },
+    disputeDocument: {
+      create: jest.fn(),
+    },
     disputeActivity: {
       create: jest.fn(),
     },
@@ -638,6 +641,16 @@ describe('ArService', () => {
           file_name: 'damage-photo.jpg',
         },
       ],
+      documents: [
+        {
+          id: 'doc-1',
+          document_type: 'RESOLUTION_LETTER',
+          title: 'Resolution Letter - DSP-2026-12345678',
+          file_url: null,
+          created_at: new Date('2026-03-29T11:00:00.000Z'),
+          customer_visible: true,
+        },
+      ],
       resolutions: [],
     });
 
@@ -646,5 +659,78 @@ describe('ArService', () => {
     expect(result.case_number).toBe('DSP-2026-12345678');
     expect(result.timeline).toHaveLength(1);
     expect(result.evidence_items).toHaveLength(1);
+    expect(result.documents).toHaveLength(1);
+    expect(result.documents[0].document_type).toBe('RESOLUTION_LETTER');
+  });
+
+  it('generates closure documents when a dispute is closed after posting', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'RESOLVED',
+      due_date: new Date('2026-04-03T10:00:00.000Z'),
+      disputed_amount: 200,
+      resolution_notes: null,
+      invoice: {
+        invoice_no: 'AR-1001',
+        customer: { name: 'North Buyer' },
+      },
+      activities: [],
+      attachments: [],
+      documents: [],
+      resolutions: [
+        {
+          id: 'resolution-1',
+          status: 'POSTED',
+          resolution_type: 'PARTIAL_CREDIT',
+          credit_amount: 120,
+          writeoff_amount: 0,
+        },
+      ],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          update: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            company_id: 'company-1',
+            case_number: 'DSP-2026-12345678',
+            status: 'CLOSED',
+            due_date: new Date('2026-04-03T10:00:00.000Z'),
+            disputed_amount: 200,
+            resolution_notes: null,
+            assigned_to: null,
+            invoice: {
+              invoice_no: 'AR-1001',
+              customer: { name: 'North Buyer' },
+            },
+            activities: [],
+            resolutions: [
+              {
+                id: 'resolution-1',
+                status: 'POSTED',
+                resolution_type: 'PARTIAL_CREDIT',
+                credit_amount: 120,
+                writeoff_amount: 0,
+              },
+            ],
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+        disputeDocument: {
+          create: jest.fn().mockResolvedValue({ id: 'doc-1' }),
+        },
+      }),
+    );
+
+    const result = await service.updateDisputeStatus('company-1', 'dispute-1', 'user-1', {
+      status: 'CLOSED',
+    });
+
+    expect(result.status).toBe('CLOSED');
   });
 });

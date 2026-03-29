@@ -40,6 +40,7 @@ type LookupResult = {
   invoice_no?: string;
   timeline: Array<{ id: string; activity_type: string; notes?: string; created_at: string }>;
   evidence_items: Array<{ id: string; category: string; file_name: string; notes?: string | null }>;
+  documents: Array<{ id: string; document_type: string; title: string; file_url?: string | null; created_at: string }>;
 };
 
 const emptyEvidence = (): EvidenceItem => ({
@@ -94,6 +95,30 @@ export default function PublicDisputePortalPage() {
   const [lookupResult, setLookupResult] = React.useState<LookupResult | null>(null);
   const [lookupMessage, setLookupMessage] = React.useState('');
   const [lookingUp, setLookingUp] = React.useState(false);
+  const groupedTimeline = React.useMemo(() => {
+    if (!lookupResult) return [];
+
+    return lookupResult.timeline.reduce<Array<{ key: string; label: string; created_at: string; items: LookupResult['timeline'] }>>((groups, item) => {
+      const dateKey = new Date(item.created_at).toLocaleDateString('en-ZA', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.key === dateKey) {
+        lastGroup.items.push(item);
+        return groups;
+      }
+
+      groups.push({
+        key: dateKey,
+        label: dateKey,
+        created_at: item.created_at,
+        items: [item],
+      });
+      return groups;
+    }, []);
+  }, [lookupResult]);
 
   React.useEffect(() => {
     const verifyWorkspaceAccess = async () => {
@@ -609,15 +634,63 @@ export default function PublicDisputePortalPage() {
 
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold uppercase tracking-widest text-slate-400">Case timeline</h4>
-                  {lookupResult.timeline.map((item) => (
-                    <div key={item.id} className="rounded-2xl border border-slate-100 px-4 py-3">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="text-sm font-semibold text-brand-navy">{item.activity_type.replace(/_/g, ' ')}</div>
-                        <div className="text-[11px] text-slate-400">{new Date(item.created_at).toLocaleString()}</div>
+                  {groupedTimeline.map((group) => (
+                    <div key={group.key} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-4">
+                        <div className="text-sm font-semibold text-brand-navy">{group.label}</div>
+                        <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                          {group.items.length} update{group.items.length === 1 ? '' : 's'}
+                        </div>
                       </div>
-                      {item.notes && <p className="mt-2 text-sm text-slate-500">{item.notes}</p>}
+                      <div className="space-y-3">
+                        {group.items.map((item) => (
+                          <div key={item.id} className="rounded-2xl border border-white bg-white px-4 py-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="text-sm font-semibold text-brand-navy">{item.activity_type.replace(/_/g, ' ')}</div>
+                              <div className="text-[11px] text-slate-400">{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                            </div>
+                            {item.notes && <p className="mt-2 text-sm text-slate-500">{item.notes}</p>}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <h4 className="text-sm font-bold uppercase tracking-widest text-slate-400">Document hub</h4>
+                  {lookupResult.documents.length ? (
+                    <div className="space-y-3">
+                      {lookupResult.documents.map((document) => (
+                        <div key={document.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 px-4 py-3">
+                          <div>
+                            <div className="text-sm font-semibold text-brand-navy">{document.title}</div>
+                            <div className="mt-1 text-[11px] uppercase tracking-widest text-slate-400">
+                              {document.document_type.replace(/_/g, ' ')} · {new Date(document.created_at).toLocaleDateString('en-ZA')}
+                            </div>
+                          </div>
+                          {document.file_url ? (
+                            <a
+                              href={document.file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-bold text-brand-navy"
+                            >
+                              Download
+                            </a>
+                          ) : (
+                            <span className="rounded-2xl bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-widest text-slate-400">
+                              Ready in portal
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                      Final dispute documents will appear here once a resolution is confirmed and the case is closed.
+                    </div>
+                  )}
                 </div>
               </div>
             )}

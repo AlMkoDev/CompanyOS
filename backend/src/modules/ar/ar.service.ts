@@ -72,6 +72,7 @@ export class ArService {
         },
         resolutions: { orderBy: { created_at: 'desc' } },
         attachments: { orderBy: { created_at: 'desc' } },
+        documents: { orderBy: { created_at: 'desc' } },
       },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
@@ -179,6 +180,106 @@ export class ArService {
     const priority = disputedAmount >= 500 ? 'CRITICAL' : normalized === 'QUALITY' || normalized === 'DELIVERY' ? 'HIGH' : 'MEDIUM';
 
     return { route, priority };
+  }
+
+  private getMilestoneExplanation(status: string) {
+    const normalized = status.toUpperCase();
+    const map: Record<string, string> = {
+      AWAITING_FINANCE: "We're finalising the credit note with our finance team. This usually takes 24 hours. No action is needed from you.",
+      UNDER_REVIEW: "Our disputes team is reviewing the information submitted. We aim to update you within 2 business days.",
+      EVIDENCE_PENDING: "We need one more document from you to proceed. Please check the portal for details and upload when ready.",
+      RESOLUTION_PROPOSED: "We've reached a resolution on your dispute. Please review the details below and let us know if you accept.",
+      CLOSED: "Your dispute has been closed and your final documents are ready below. No further action is required unless you choose to request a reopen review.",
+      RESOLVED: "We've completed our review and your dispute outcome is now confirmed. We'll keep the full record available in your portal history.",
+      CUSTOMER_APPROVAL: "We're waiting for your confirmation on the proposed resolution before we lock the case.",
+      NEGOTIATION: "We're reviewing your latest feedback and preparing an updated response.",
+    };
+
+    return map[normalized] || "We've recorded a new update on your dispute and refreshed the timeline below.";
+  }
+
+  private getMilestoneNextAction(status: string) {
+    const normalized = status.toUpperCase();
+    const map: Record<string, string> = {
+      UNDER_REVIEW: 'What happens next: our reviewer checks the evidence pack and confirms the next milestone.',
+      EVIDENCE_PENDING: 'What happens next: please upload the requested evidence so we can continue the review.',
+      RESOLUTION_PROPOSED: 'What happens next: review the proposal and accept or raise questions through the portal.',
+      CLOSED: 'What happens next: download your closure documents below if you need a permanent copy.',
+      RESOLVED: 'What happens next: our team will keep the final record available in the portal and send any required closure documents.',
+      CUSTOMER_APPROVAL: 'What happens next: please confirm whether you accept the resolution terms.',
+      NEGOTIATION: 'What happens next: we will review your response and return with an updated position.',
+    };
+
+    return map[normalized] || 'What happens next: we will keep you updated as the dispute progresses.';
+  }
+
+  private buildPolishedMilestoneMessage(status: string, dueDate?: Date | string | null) {
+    const explanation = this.getMilestoneExplanation(status);
+    const nextAction = this.getMilestoneNextAction(status);
+    const dueText = dueDate ? `Expected resolution by: ${new Date(dueDate).toLocaleDateString('en-ZA')}.` : '';
+
+    return [explanation, nextAction, dueText].filter(Boolean).join(' ');
+  }
+
+  private buildResolutionLetterSummary(dispute: any, resolution: any) {
+    const customerName = dispute.invoice?.customer?.name || dispute.submitter_name || 'Customer';
+    const resolutionType = String(resolution.resolution_type || 'resolution').replaceAll('_', ' ').toLowerCase();
+    const creditAmount = Number(resolution.credit_amount || 0);
+    const writeoffAmount = Number(resolution.writeoff_amount || 0);
+    const amountText = creditAmount > 0
+      ? `A credit of R ${creditAmount.toLocaleString('en-ZA')}`
+      : writeoffAmount > 0
+        ? `A write-off of R ${writeoffAmount.toLocaleString('en-ZA')}`
+        : `A ${resolutionType}`;
+
+    return `${customerName}, ${amountText} has been approved for dispute ${dispute.case_number || dispute.id}. This letter records the final outcome in plain language before the formal terms below.`;
+  }
+
+  private getResolutionTemplateMetadata(resolutionType: string) {
+    const normalized = resolutionType.toUpperCase();
+    const map: Record<string, { clauseId: string; templateVersion: string }> = {
+      FULL_REFUND: { clauseId: 'REFUND_STD_04', templateVersion: 'v2.0_legal' },
+      PARTIAL_CREDIT: { clauseId: 'CREDIT_PARTIAL_02', templateVersion: 'v2.0_legal' },
+      REJECTED: { clauseId: 'NO_ACTION_01', templateVersion: 'v2.0_legal' },
+      SETTLEMENT: { clauseId: 'SETTLEMENT_WAIVER_03', templateVersion: 'v2.0_legal' },
+      GOODWILL: { clauseId: 'GOODWILL_01', templateVersion: 'v2.0_legal' },
+      CREDIT_NOTE: { clauseId: 'CREDIT_PARTIAL_02', templateVersion: 'v2.0_legal' },
+    };
+
+    return map[normalized] || { clauseId: 'GOODWILL_01', templateVersion: 'v2.0_legal' };
+  }
+
+  private getResolutionSignatory(totalAmount: number) {
+    if (totalAmount > 50000) return 'Head of Disputes';
+    if (totalAmount >= 5000) return 'Operations Manager';
+    return 'Senior Support Agent';
+  }
+
+  private async createDisputeDocument(
+    tx: any,
+    params: {
+      companyId: string;
+      disputeId: string;
+      generatedBy?: string | null;
+      documentType: string;
+      title: string;
+      templateVersion?: string | null;
+      customerVisible?: boolean;
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    return tx.disputeDocument.create({
+      data: {
+        company_id: params.companyId,
+        dispute_id: params.disputeId,
+        generated_by: params.generatedBy ?? undefined,
+        document_type: params.documentType,
+        title: params.title,
+        template_version: params.templateVersion ?? undefined,
+        customer_visible: params.customerVisible ?? true,
+        metadata: params.metadata ?? undefined,
+      },
+    });
   }
 
   private async generatePortalCaseNumber() {
@@ -586,6 +687,10 @@ export class ArService {
           },
         },
         attachments: { orderBy: { created_at: 'asc' } },
+        documents: {
+          where: { customer_visible: true },
+          orderBy: { created_at: 'desc' },
+        },
         resolutions: { orderBy: { created_at: 'desc' } },
       },
     });
@@ -607,6 +712,7 @@ export class ArService {
       invoice_no: dispute.invoice?.invoice_no,
       timeline: dispute.activities.filter((activity) => activity.activity_type !== 'INTERNAL_COMMENT'),
       evidence_items: dispute.attachments,
+      documents: dispute.documents,
       latest_resolution: dispute.resolutions[0] || null,
     };
   }
@@ -874,11 +980,16 @@ export class ArService {
         disputeId,
         actorUserId: userId,
         templateKey: 'resolution_summary',
-        notes: `Resolution summary sent to customer for ${data.resolution_type.replaceAll('_', ' ')} in the amount of ${resolutionAmount.toFixed(2)}.`,
+        notes: this.buildPolishedMilestoneMessage('RESOLUTION_PROPOSED', dispute.due_date),
         metadata: {
           trigger_id: 'T-004',
           resolution_type: data.resolution_type,
           resolution_amount: resolutionAmount,
+          plain_language_summary: this.buildResolutionLetterSummary(dispute, {
+            resolution_type: data.resolution_type,
+            credit_amount: data.credit_amount,
+            writeoff_amount: data.writeoff_amount,
+          }),
         },
       });
 
@@ -1097,7 +1208,9 @@ export class ArService {
         companyId,
         disputeId,
         activityType: 'STATUS_CHANGED',
-        notes: data.resolution_notes ? `${nextStatus}: ${data.resolution_notes}` : `Status changed to ${nextStatus}.`,
+        notes: data.resolution_notes
+          ? `${this.buildPolishedMilestoneMessage(nextStatus, updated.due_date)} Notes: ${data.resolution_notes}`
+          : this.buildPolishedMilestoneMessage(nextStatus, updated.due_date),
         actorUserId: userId,
         customerVisible: ['UNDER_REVIEW', 'EVIDENCE_PENDING', 'CUSTOMER_APPROVAL', 'NEGOTIATION', 'RESOLVED', 'CLOSED', 'CREDIT_ISSUED'].includes(nextStatus),
       });
@@ -1128,15 +1241,63 @@ export class ArService {
       }
 
       if (nextStatus === 'CLOSED') {
+        const latestResolution = updated.resolutions[0];
+        const totalResolutionAmount = latestResolution
+          ? Number(latestResolution.credit_amount || 0) + Number(latestResolution.writeoff_amount || 0)
+          : 0;
+        const templateMetadata = this.getResolutionTemplateMetadata(latestResolution?.resolution_type || 'GOODWILL');
+
+        if (latestResolution) {
+          await this.createDisputeDocument(tx, {
+            companyId,
+            disputeId,
+            generatedBy: userId,
+            documentType: 'RESOLUTION_LETTER',
+            title: `Resolution Letter - ${updated.case_number || updated.id}`,
+            templateVersion: templateMetadata.templateVersion,
+            metadata: {
+              clause_id: templateMetadata.clauseId,
+              signatory: this.getResolutionSignatory(totalResolutionAmount),
+              resolution_type: latestResolution.resolution_type,
+              resolution_amount: totalResolutionAmount,
+              summary: this.buildResolutionLetterSummary(updated, latestResolution),
+            },
+          });
+        }
+
+        await this.createDisputeDocument(tx, {
+          companyId,
+          disputeId,
+          generatedBy: userId,
+          documentType: 'CLOSURE_RECEIPT',
+          title: `Closure Receipt - ${updated.case_number || updated.id}`,
+          templateVersion: 'v2.0_closure',
+          metadata: {
+            closed_at: new Date().toISOString(),
+            closure_status: nextStatus,
+            signatory: latestResolution ? this.getResolutionSignatory(totalResolutionAmount) : 'Senior Support Agent',
+          },
+        });
+
+        await this.createDisputeActivityRecord(tx, {
+          companyId,
+          disputeId,
+          activityType: 'LETTER_GENERATED',
+          notes: 'Final closure documents are ready in the portal document hub.',
+          actorUserId: userId,
+          customerVisible: true,
+        });
+
         await this.createCustomerNotificationActivity(tx, {
           companyId,
           disputeId,
           actorUserId: userId,
           templateKey: 'dispute_closure_confirmation',
-          notes: 'Closure confirmation and CSAT survey trigger sent to the customer.',
+          notes: `${this.buildPolishedMilestoneMessage('CLOSED', updated.due_date)} Your final documents are available in the portal document hub.`,
           metadata: {
             trigger_id: 'T-005',
             survey_triggered: true,
+            document_hub_ready: true,
           },
         });
       }
