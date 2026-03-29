@@ -359,3 +359,32 @@ export class CreatePortalDisputeIntakeDto {
   @Type(() => IntakeEvidenceItemDto)
   evidence_items?: IntakeEvidenceItemDto[];
 }
+
+export class RespondToPortalClosureDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(20)
+  action: string;
+
+  @IsOptional()
+  @IsBoolean()
+  accept_terms?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  survey_score?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class RequestPortalReopenDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}

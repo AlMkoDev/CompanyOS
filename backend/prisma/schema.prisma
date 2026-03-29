@@ -908,6 +908,14 @@ model DisputeCase {
   product_code      String?
   evidence_required String[]
   evidence_due_date DateTime?
+  acceptance_required Boolean @default(false)
+  acceptance_status   String?
+  accepted_at         DateTime?
+  acceptance_text     String?
+  closure_locked_until DateTime?
+  reopen_request_count Int    @default(0)
+  last_reopen_requested_at DateTime?
+  closure_survey_score Int?
   created_at        DateTime  @default(now())
   updated_at        DateTime  @updatedAt
 

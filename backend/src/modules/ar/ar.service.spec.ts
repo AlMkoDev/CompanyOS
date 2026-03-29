@@ -652,6 +652,13 @@ describe('ArService', () => {
         },
       ],
       resolutions: [],
+      acceptance_required: false,
+      acceptance_status: 'OPTIONAL',
+      accepted_at: null,
+      acceptance_text: 'I acknowledge receipt.',
+      closure_locked_until: new Date('2026-04-12T10:00:00.000Z'),
+      reopen_request_count: 0,
+      closure_survey_score: null,
     });
 
     const result = await service.getPortalDisputeStatus('DSP-2026-12345678', 'AR-1001');
@@ -661,6 +668,84 @@ describe('ArService', () => {
     expect(result.evidence_items).toHaveLength(1);
     expect(result.documents).toHaveLength(1);
     expect(result.documents[0].document_type).toBe('RESOLUTION_LETTER');
+  });
+
+  it('records explicit closure acceptance for settlement cases', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'CLOSED',
+      acceptance_required: true,
+      acceptance_status: 'PENDING',
+      closure_survey_score: null,
+      closure_locked_until: new Date('2026-04-12T10:00:00.000Z'),
+      invoice: { invoice_no: 'AR-1001', customer: { name: 'North Buyer' } },
+      resolutions: [
+        {
+          id: 'resolution-1',
+          resolution_type: 'SETTLEMENT',
+        },
+      ],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          update: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            status: 'CLOSED',
+            acceptance_status: 'ACCEPTED',
+            accepted_at: new Date('2026-03-29T12:00:00.000Z'),
+            closure_locked_until: new Date('2026-04-12T10:00:00.000Z'),
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const result = await service.respondToPortalClosure('DSP-2026-12345678', 'AR-1001', {
+      action: 'ACCEPT',
+      accept_terms: true,
+      survey_score: 5,
+    });
+
+    expect(result.acceptance_status).toBe('ACCEPTED');
+  });
+
+  it('routes locked reopen requests to manager review instead of reopening directly', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'CLOSED',
+      reopen_request_count: 0,
+      closure_locked_until: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          update: jest.fn().mockResolvedValue({
+            id: 'dispute-1',
+            status: 'CLOSED',
+            reopen_request_count: 1,
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+      }),
+    );
+
+    const result = await service.requestPortalReopen('DSP-2026-12345678', 'AR-1001', {
+      notes: 'Please review this closure again.',
+    });
+
+    expect(result.routed_to_manager_review).toBe(true);
+    expect(result.status).toBe('CLOSED');
   });
 
   it('generates closure documents when a dispute is closed after posting', async () => {

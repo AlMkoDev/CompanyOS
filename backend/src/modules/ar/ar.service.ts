@@ -13,6 +13,8 @@ import {
   IntakeEvidenceItemDto,
   MarkResolutionPostedDto,
   RecordPaymentDto,
+  RequestPortalReopenDto,
+  RespondToPortalClosureDto,
   SendReminderDto,
   UpdateDisputeStatusDto,
 } from './dto/ar.dto';
@@ -253,6 +255,23 @@ export class ArService {
     if (totalAmount > 50000) return 'Head of Disputes';
     if (totalAmount >= 5000) return 'Operations Manager';
     return 'Senior Support Agent';
+  }
+
+  private requiresExplicitAcceptance(resolutionType?: string | null) {
+    const normalized = String(resolutionType || '').toUpperCase();
+    return normalized === 'SETTLEMENT' || normalized === 'WAIVER';
+  }
+
+  private getClosureAcceptanceText(required: boolean) {
+    return required
+      ? 'I accept this resolution and confirm no further claims will be made regarding this incident.'
+      : 'I acknowledge receipt of this dispute outcome and understand the closure documents provided.';
+  }
+
+  private getClosureLockDate() {
+    const lockDate = new Date();
+    lockDate.setDate(lockDate.getDate() + 14);
+    return lockDate;
   }
 
   private async createDisputeDocument(
@@ -714,7 +733,187 @@ export class ArService {
       evidence_items: dispute.attachments,
       documents: dispute.documents,
       latest_resolution: dispute.resolutions[0] || null,
+      acceptance_required: dispute.acceptance_required,
+      acceptance_status: dispute.acceptance_status,
+      accepted_at: dispute.accepted_at,
+      acceptance_text: dispute.acceptance_text,
+      closure_locked_until: dispute.closure_locked_until,
+      reopen_request_count: dispute.reopen_request_count,
+      closure_survey_score: dispute.closure_survey_score,
     };
+  }
+
+  async respondToPortalClosure(caseNumber: string, invoiceNo: string, data: RespondToPortalClosureDto) {
+    const dispute = await this.prisma.disputeCase.findFirst({
+      where: {
+        case_number: caseNumber,
+        invoice: { invoice_no: invoiceNo },
+      },
+      include: {
+        invoice: { include: { customer: true } },
+        resolutions: { orderBy: { created_at: 'desc' } },
+      },
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('Dispute case not found');
+    }
+
+    const latestResolution = dispute.resolutions[0] || null;
+    const acceptanceRequired = dispute.acceptance_required || this.requiresExplicitAcceptance(latestResolution?.resolution_type);
+    const action = data.action.toUpperCase();
+
+    if (!['ACCEPT', 'ACKNOWLEDGE', 'REJECT'].includes(action)) {
+      throw new BadRequestException('Unsupported closure action');
+    }
+
+    if (acceptanceRequired && action !== 'ACCEPT' && action !== 'REJECT') {
+      throw new BadRequestException('This settlement requires explicit acceptance or rejection');
+    }
+
+    if (acceptanceRequired && action === 'ACCEPT' && !data.accept_terms) {
+      throw new BadRequestException('You must confirm the acceptance wording before proceeding');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (action === 'REJECT') {
+        const updated = await tx.disputeCase.update({
+          where: { id: dispute.id },
+          data: {
+            status: 'NEGOTIATION',
+            acceptance_status: 'REJECTED',
+          },
+        });
+
+        await this.createDisputeActivityRecord(tx, {
+          companyId: dispute.company_id,
+          disputeId: dispute.id,
+          activityType: 'CLOSURE_REJECTED',
+          notes: data.notes || 'Customer rejected the proposed closure and asked for the dispute to return to negotiation.',
+          customerVisible: true,
+        });
+
+        await this.createInternalTaskActivity(tx, {
+          companyId: dispute.company_id,
+          disputeId: dispute.id,
+          notes: 'Customer rejected the closure terms. Review the dispute again and prepare a revised position.',
+          taskTitle: 'Review rejected dispute closure',
+          taskAssigneeId: dispute.assigned_to,
+          taskPriority: dispute.priority,
+          metadata: {
+            portal_rejection: true,
+          },
+        });
+
+        return {
+          status: updated.status,
+          acceptance_status: updated.acceptance_status,
+          message: 'Your feedback has been recorded and the dispute has been routed back for review.',
+        };
+      }
+
+      const acceptedAt = new Date();
+      const acceptanceText = this.getClosureAcceptanceText(acceptanceRequired);
+      const acceptanceStatus = action === 'ACKNOWLEDGE' ? 'ACKNOWLEDGED' : 'ACCEPTED';
+
+      const updated = await tx.disputeCase.update({
+        where: { id: dispute.id },
+        data: {
+          acceptance_required: acceptanceRequired,
+          acceptance_status: acceptanceStatus,
+          accepted_at: acceptedAt,
+          acceptance_text: acceptanceText,
+          closure_survey_score: data.survey_score ?? dispute.closure_survey_score,
+          closure_locked_until: dispute.closure_locked_until ?? this.getClosureLockDate(),
+        },
+      });
+
+      await this.createDisputeActivityRecord(tx, {
+        companyId: dispute.company_id,
+        disputeId: dispute.id,
+        activityType: 'CLOSURE_ACCEPTED',
+        notes:
+          action === 'ACKNOWLEDGE'
+            ? 'Customer acknowledged receipt of the dispute closure.'
+            : 'Customer accepted the dispute resolution terms through the portal.',
+        customerVisible: true,
+        metadata: {
+          acceptance_required: acceptanceRequired,
+          survey_score: data.survey_score ?? null,
+        },
+      });
+
+      return {
+        status: updated.status,
+        acceptance_status: updated.acceptance_status,
+        accepted_at: updated.accepted_at,
+        closure_locked_until: updated.closure_locked_until,
+        message:
+          action === 'ACKNOWLEDGE'
+            ? 'Your acknowledgement has been recorded. Your closure documents remain available in the portal.'
+            : 'Your acceptance has been recorded. We have locked the case for the standard cooling-off period.',
+      };
+    });
+  }
+
+  async requestPortalReopen(caseNumber: string, invoiceNo: string, data: RequestPortalReopenDto) {
+    const dispute = await this.prisma.disputeCase.findFirst({
+      where: {
+        case_number: caseNumber,
+        invoice: { invoice_no: invoiceNo },
+      },
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('Dispute case not found');
+    }
+
+    if (!['CLOSED', 'CREDIT_ISSUED', 'RESOLVED'].includes(dispute.status)) {
+      throw new BadRequestException('Only closed disputes can be reopened from the portal');
+    }
+
+    const now = new Date();
+    const lockActive = dispute.closure_locked_until ? new Date(dispute.closure_locked_until).getTime() > now.getTime() : false;
+    const selfServeAllowed = !lockActive && (dispute.reopen_request_count || 0) < 1;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.disputeCase.update({
+        where: { id: dispute.id },
+        data: selfServeAllowed
+          ? {
+              status: 'UNDER_REVIEW',
+              reopen_request_count: { increment: 1 },
+              last_reopen_requested_at: now,
+            }
+          : {
+              reopen_request_count: { increment: 1 },
+              last_reopen_requested_at: now,
+            },
+      });
+
+      await this.createDisputeActivityRecord(tx, {
+        companyId: dispute.company_id,
+        disputeId: dispute.id,
+        activityType: 'REOPEN_REQUESTED',
+        notes: data.notes || (selfServeAllowed
+          ? 'Customer requested a reopen through the portal and the dispute was returned to review.'
+          : 'Customer requested a reopen through the portal and the request was routed for manager review.'),
+        customerVisible: true,
+        metadata: {
+          self_serve_reopen: selfServeAllowed,
+          lock_active: lockActive,
+        },
+      });
+
+      return {
+        status: updated.status,
+        reopen_request_count: updated.reopen_request_count,
+        routed_to_manager_review: !selfServeAllowed,
+        message: selfServeAllowed
+          ? 'Your dispute has been reopened and returned to review.'
+          : 'Your reopen request has been recorded and routed to a manager for review.',
+      };
+    });
   }
 
   // --- Sales Invoices ---
@@ -1196,6 +1395,24 @@ export class ArService {
           resolved_amount: data.resolved_amount,
           resolution_notes: data.resolution_notes ?? dispute.resolution_notes,
           resolved_date: resolvedStates.includes(nextStatus) ? new Date() : null,
+          acceptance_required:
+            nextStatus === 'CLOSED'
+              ? this.requiresExplicitAcceptance(dispute.resolutions[0]?.resolution_type)
+              : dispute.acceptance_required,
+          acceptance_status:
+            nextStatus === 'CLOSED'
+              ? this.requiresExplicitAcceptance(dispute.resolutions[0]?.resolution_type)
+                ? 'PENDING'
+                : 'OPTIONAL'
+              : dispute.acceptance_status,
+          acceptance_text:
+            nextStatus === 'CLOSED'
+              ? this.getClosureAcceptanceText(this.requiresExplicitAcceptance(dispute.resolutions[0]?.resolution_type))
+              : dispute.acceptance_text,
+          closure_locked_until:
+            nextStatus === 'CLOSED'
+              ? this.getClosureLockDate()
+              : dispute.closure_locked_until,
         },
         include: {
           invoice: { include: { customer: true } },

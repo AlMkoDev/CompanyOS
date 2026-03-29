@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ArService } from './ar.service';
-import { CreatePortalDisputeIntakeDto } from './dto/ar.dto';
+import { CreatePortalDisputeIntakeDto, RequestPortalReopenDto, RespondToPortalClosureDto } from './dto/ar.dto';
 
 @Controller('ar/public')
 export class ArPublicController {
@@ -19,5 +19,23 @@ export class ArPublicController {
   @Get('disputes/:caseNumber')
   async getDisputeStatus(@Param('caseNumber') caseNumber: string, @Query('invoiceNo') invoiceNo: string) {
     return this.arService.getPortalDisputeStatus(caseNumber, invoiceNo);
+  }
+
+  @Post('disputes/:caseNumber/closure-response')
+  async respondToClosure(
+    @Param('caseNumber') caseNumber: string,
+    @Query('invoiceNo') invoiceNo: string,
+    @Body() body: RespondToPortalClosureDto,
+  ) {
+    return this.arService.respondToPortalClosure(caseNumber, invoiceNo, body);
+  }
+
+  @Post('disputes/:caseNumber/reopen-request')
+  async requestReopen(
+    @Param('caseNumber') caseNumber: string,
+    @Query('invoiceNo') invoiceNo: string,
+    @Body() body: RequestPortalReopenDto,
+  ) {
+    return this.arService.requestPortalReopen(caseNumber, invoiceNo, body);
   }
 }

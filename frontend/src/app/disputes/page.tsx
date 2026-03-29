@@ -41,6 +41,14 @@ type LookupResult = {
   timeline: Array<{ id: string; activity_type: string; notes?: string; created_at: string }>;
   evidence_items: Array<{ id: string; category: string; file_name: string; notes?: string | null }>;
   documents: Array<{ id: string; document_type: string; title: string; file_url?: string | null; created_at: string }>;
+  latest_resolution?: { resolution_type?: string | null } | null;
+  acceptance_required?: boolean;
+  acceptance_status?: string | null;
+  accepted_at?: string | null;
+  acceptance_text?: string | null;
+  closure_locked_until?: string | null;
+  reopen_request_count?: number;
+  closure_survey_score?: number | null;
 };
 
 const emptyEvidence = (): EvidenceItem => ({
@@ -95,6 +103,11 @@ export default function PublicDisputePortalPage() {
   const [lookupResult, setLookupResult] = React.useState<LookupResult | null>(null);
   const [lookupMessage, setLookupMessage] = React.useState('');
   const [lookingUp, setLookingUp] = React.useState(false);
+  const [closureActionMessage, setClosureActionMessage] = React.useState('');
+  const [closureActionPending, setClosureActionPending] = React.useState(false);
+  const [acceptTerms, setAcceptTerms] = React.useState(false);
+  const [surveyScore, setSurveyScore] = React.useState('5');
+  const [reopenNotes, setReopenNotes] = React.useState('');
   const groupedTimeline = React.useMemo(() => {
     if (!lookupResult) return [];
 
@@ -118,6 +131,23 @@ export default function PublicDisputePortalPage() {
       });
       return groups;
     }, []);
+  }, [lookupResult]);
+
+  const closureInteraction = React.useMemo(() => {
+    if (!lookupResult) return null;
+    const isClosedFlow = ['CLOSED', 'CREDIT_ISSUED', 'RESOLVED', 'CUSTOMER_APPROVAL'].includes(lookupResult.status);
+    const requiresAcceptance = !!lookupResult.acceptance_required;
+    const alreadyHandled = ['ACCEPTED', 'ACKNOWLEDGED'].includes(lookupResult.acceptance_status || '');
+    const lockActive = lookupResult.closure_locked_until
+      ? new Date(lookupResult.closure_locked_until).getTime() > Date.now()
+      : false;
+
+    return {
+      isClosedFlow,
+      requiresAcceptance,
+      alreadyHandled,
+      lockActive,
+    };
   }, [lookupResult]);
 
   React.useEffect(() => {
@@ -323,11 +353,91 @@ export default function PublicDisputePortalPage() {
       }
 
       setLookupResult(data as LookupResult);
+      setClosureActionMessage('');
+      setAcceptTerms(false);
+      setReopenNotes('');
+      setSurveyScore(String((data as LookupResult).closure_survey_score || 5));
     } catch {
       setLookupMessage('Unable to look up the case right now.');
       setLookupResult(null);
     } finally {
       setLookingUp(false);
+    }
+  };
+
+  const refreshLookupResult = async () => {
+    if (!lookupCaseNumber.trim() || !lookupInvoiceNo.trim()) return;
+
+    const res = await fetch(
+      apiUrl(`/ar/public/disputes/${encodeURIComponent(lookupCaseNumber.trim())}?invoiceNo=${encodeURIComponent(lookupInvoiceNo.trim())}`),
+    );
+    const data = await res.json().catch(() => null);
+    if (res.ok && data) {
+      setLookupResult(data as LookupResult);
+    }
+  };
+
+  const submitClosureAction = async (action: 'ACCEPT' | 'ACKNOWLEDGE' | 'REJECT') => {
+    if (!lookupResult) return;
+    setClosureActionPending(true);
+    setClosureActionMessage('');
+
+    try {
+      const res = await fetch(
+        apiUrl(`/ar/public/disputes/${encodeURIComponent(lookupResult.case_number)}/closure-response?invoiceNo=${encodeURIComponent(lookupResult.invoice_no || '')}`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action,
+            accept_terms: acceptTerms,
+            survey_score: Number(surveyScore),
+          }),
+        },
+      );
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setClosureActionMessage(data?.message || 'Unable to record your response right now.');
+        return;
+      }
+
+      setClosureActionMessage(data?.message || 'Your response has been recorded.');
+      await refreshLookupResult();
+    } catch {
+      setClosureActionMessage('Unable to record your response right now.');
+    } finally {
+      setClosureActionPending(false);
+    }
+  };
+
+  const submitReopenRequest = async () => {
+    if (!lookupResult) return;
+    setClosureActionPending(true);
+    setClosureActionMessage('');
+
+    try {
+      const res = await fetch(
+        apiUrl(`/ar/public/disputes/${encodeURIComponent(lookupResult.case_number)}/reopen-request?invoiceNo=${encodeURIComponent(lookupResult.invoice_no || '')}`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: reopenNotes }),
+        },
+      );
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setClosureActionMessage(data?.message || 'Unable to submit the reopen request.');
+        return;
+      }
+
+      setClosureActionMessage(data?.message || 'Your reopen request has been recorded.');
+      await refreshLookupResult();
+    } catch {
+      setClosureActionMessage('Unable to submit the reopen request.');
+    } finally {
+      setClosureActionPending(false);
     }
   };
 
@@ -692,6 +802,116 @@ export default function PublicDisputePortalPage() {
                     </div>
                   )}
                 </div>
+
+                {closureInteraction?.isClosedFlow ? (
+                  <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 className="text-sm font-bold uppercase tracking-widest text-slate-400">Closure confirmation</h4>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {closureInteraction.requiresAcceptance
+                            ? 'This outcome includes settlement terms and needs your explicit acceptance before the case is treated as fully locked.'
+                            : 'You can acknowledge receipt of this closure for the record. This is optional for standard dispute outcomes.'}
+                        </p>
+                        {lookupResult.accepted_at ? (
+                          <p className="mt-2 text-xs font-semibold text-emerald-700">
+                            Recorded on {new Date(lookupResult.accepted_at).toLocaleString()}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-500">
+                        {lookupResult.acceptance_status || 'PENDING'}
+                      </div>
+                    </div>
+
+                    {lookupResult.acceptance_text ? (
+                      <label className="mt-4 flex items-start gap-3 rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={acceptTerms}
+                          onChange={(e) => setAcceptTerms(e.target.checked)}
+                          disabled={!closureInteraction.requiresAcceptance || closureInteraction.alreadyHandled}
+                          className="mt-1"
+                        />
+                        <span>{lookupResult.acceptance_text}</span>
+                      </label>
+                    ) : null}
+
+                    <div className="mt-4">
+                      <label className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">
+                        Fairness survey
+                      </label>
+                      <select
+                        value={surveyScore}
+                        onChange={(e) => setSurveyScore(e.target.value)}
+                        disabled={closureInteraction.alreadyHandled}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-gold"
+                      >
+                        <option value="5">5 - Very fair</option>
+                        <option value="4">4 - Fair</option>
+                        <option value="3">3 - Neutral</option>
+                        <option value="2">2 - Unfair</option>
+                        <option value="1">1 - Very unfair</option>
+                      </select>
+                    </div>
+
+                    {!closureInteraction.alreadyHandled ? (
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={closureActionPending || (closureInteraction.requiresAcceptance && !acceptTerms)}
+                          onClick={() => submitClosureAction(closureInteraction.requiresAcceptance ? 'ACCEPT' : 'ACKNOWLEDGE')}
+                          className="rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white disabled:opacity-50"
+                        >
+                          {closureActionPending
+                            ? 'Saving...'
+                            : closureInteraction.requiresAcceptance
+                              ? 'Accept Resolution'
+                              : 'Acknowledge Closure'}
+                        </button>
+                        {closureInteraction.requiresAcceptance ? (
+                          <button
+                            type="button"
+                            disabled={closureActionPending}
+                            onClick={() => submitClosureAction('REJECT')}
+                            className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-brand-navy"
+                          >
+                            Raise Concerns
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 rounded-2xl border border-white bg-white p-4">
+                      <h5 className="text-sm font-semibold text-brand-navy">Reopen request</h5>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {closureInteraction.lockActive
+                          ? 'The standard 14-day cooling-off lock is active. Your request will be routed to a manager review queue.'
+                          : 'You can request one self-service reopen after the cooling-off period. Further reopen requests route to manager review.'}
+                      </p>
+                      <textarea
+                        value={reopenNotes}
+                        onChange={(e) => setReopenNotes(e.target.value.slice(0, 500))}
+                        placeholder="Add context for the reopen request"
+                        className="mt-3 min-h-[96px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-gold"
+                      />
+                      <button
+                        type="button"
+                        disabled={closureActionPending}
+                        onClick={submitReopenRequest}
+                        className="mt-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-brand-navy"
+                      >
+                        Request Reopen Review
+                      </button>
+                    </div>
+
+                    {closureActionMessage ? (
+                      <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm text-brand-navy">
+                        {closureActionMessage}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             )}
 
