@@ -23,6 +23,7 @@ interface CustomerRecord {
   status?: string;
   credit_on_hold?: boolean;
   credit_hold_reason?: string | null;
+  last_dispute_review_at?: string | null;
   dispute_count_30d?: number;
   disputed_value_30d?: number;
   has_open_disputes?: boolean;
@@ -187,6 +188,14 @@ export default function CustomersPage() {
 }
 
 function CustomerCard({ customer }: CustomerCardProps) {
+  const lastDisputeReview = customer.last_dispute_review_at
+    ? new Date(customer.last_dispute_review_at).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
+
   return (
     <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all group">
       <div className="flex justify-between items-start mb-6">
@@ -228,6 +237,12 @@ function CustomerCard({ customer }: CustomerCardProps) {
               <span>R {Number(customer.disputed_value_30d || 0).toLocaleString()}</span>
             </div>
          </div>
+         {lastDisputeReview && (
+           <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3 text-xs text-slate-500">
+             <span className="block font-semibold uppercase tracking-widest text-[10px] text-slate-400">Last dispute review</span>
+             <span className="mt-1 block text-sm font-medium text-slate-700">{lastDisputeReview}</span>
+           </div>
+         )}
          {customer.credit_hold_reason && (
            <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700">
              {customer.credit_hold_reason}

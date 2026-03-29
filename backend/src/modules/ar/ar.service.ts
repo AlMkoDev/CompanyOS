@@ -89,6 +89,14 @@ export class ArService {
     return Number(invoice.amount) - Number(invoice.paid_amount);
   }
 
+  private hasOutstandingBalance(invoice?: { amount?: any; paid_amount?: any } | null) {
+    if (!invoice) return false;
+    return this.getOutstandingBalance({
+      amount: invoice.amount ?? 0,
+      paid_amount: invoice.paid_amount ?? 0,
+    }) > 0;
+  }
+
   private normalizeDisputePriority(priority?: string) {
     return (priority || 'MEDIUM').toUpperCase();
   }
@@ -791,7 +799,7 @@ export class ArService {
   }
 
   async getCollectionQueue(companyId: string) {
-    return this.prisma.collectionCase.findMany({
+    const collectionCases = await this.prisma.collectionCase.findMany({
       where: {
         company_id: companyId,
         escalation_level: { gt: 0 },
@@ -807,6 +815,8 @@ export class ArService {
         { created_at: 'desc' },
       ],
     });
+
+    return collectionCases.filter((collectionCase) => this.hasOutstandingBalance(collectionCase.invoice));
   }
 
   async createCollectionCase(companyId: string, invoiceId: string, notes?: string, userId?: string) {
@@ -978,13 +988,15 @@ export class ArService {
       (dispute) => dispute.status === 'EVIDENCE_PENDING' && dispute.evidence_due_date && new Date(dispute.evidence_due_date).getTime() < Date.now(),
     ).length;
 
+    const activeEscalations = collectionCases.filter((collectionCase) => this.hasOutstandingBalance(collectionCase.invoice));
+
     return {
       customerCount: customers,
       totalAr,
       aging,
       pendingInvoices: invoices,
-      collectionCases: collectionCases.length,
-      topEscalations: collectionCases,
+      collectionCases: activeEscalations.length,
+      topEscalations: activeEscalations,
       remindersDue,
       disputesAtRisk: {
         total: disputedAmount,
