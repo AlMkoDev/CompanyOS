@@ -63,7 +63,13 @@ export class ArService {
       where: { id: disputeId, company_id: companyId },
       include: {
         invoice: { include: { customer: true } },
-        activities: { orderBy: { created_at: 'desc' } },
+        activities: {
+          orderBy: { created_at: 'desc' },
+          include: {
+            actor: true,
+            task_assignee: true,
+          },
+        },
         resolutions: { orderBy: { created_at: 'desc' } },
         attachments: { orderBy: { created_at: 'desc' } },
       },
@@ -199,6 +205,119 @@ export class ArService {
       file_url: item.file_url,
       notes: [item.reference, item.notes, item.file_size_mb ? `${item.file_size_mb}MB` : undefined].filter(Boolean).join(' | ') || null,
     }));
+  }
+
+  private areRequiredEvidenceItemsComplete(
+    dispute: { evidence_required?: string[] | null },
+    attachments: Array<{ category?: string | null }>,
+  ) {
+    const required = (dispute.evidence_required || []).map((item) => item.toUpperCase());
+    if (!required.length) {
+      return true;
+    }
+
+    const available = new Set(attachments.map((attachment) => (attachment.category || '').toUpperCase()).filter(Boolean));
+    return required.every((item) => available.has(item));
+  }
+
+  private async createDisputeActivityRecord(
+    tx: any,
+    params: {
+      companyId: string;
+      disputeId: string;
+      activityType: string;
+      actorUserId?: string | null;
+      notes?: string | null;
+      internalOnly?: boolean;
+      customerVisible?: boolean;
+      mentions?: string[];
+      taskTitle?: string | null;
+      taskAssigneeId?: string | null;
+      taskDueDate?: Date | null;
+      taskPriority?: string | null;
+      taskStatus?: string | null;
+      notificationChannel?: string | null;
+      templateKey?: string | null;
+      metadata?: Record<string, unknown> | null;
+    },
+  ) {
+    return tx.disputeActivity.create({
+      data: {
+        company_id: params.companyId,
+        dispute_id: params.disputeId,
+        activity_type: params.activityType,
+        notes: params.notes ?? undefined,
+        actor_user_id: params.actorUserId ?? undefined,
+        internal_only: params.internalOnly ?? false,
+        customer_visible: params.customerVisible ?? false,
+        mentions: params.mentions || [],
+        task_title: params.taskTitle ?? undefined,
+        task_assignee_id: params.taskAssigneeId ?? undefined,
+        task_due_date: params.taskDueDate ?? undefined,
+        task_priority: params.taskPriority ?? undefined,
+        task_status: params.taskStatus ?? undefined,
+        notification_channel: params.notificationChannel ?? undefined,
+        template_key: params.templateKey ?? undefined,
+        metadata: params.metadata ?? undefined,
+      },
+    });
+  }
+
+  private async createCustomerNotificationActivity(
+    tx: any,
+    params: {
+      companyId: string;
+      disputeId: string;
+      channel?: string;
+      templateKey: string;
+      notes: string;
+      actorUserId?: string | null;
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    return this.createDisputeActivityRecord(tx, {
+      companyId: params.companyId,
+      disputeId: params.disputeId,
+      activityType: 'CUSTOMER_NOTIFICATION',
+      actorUserId: params.actorUserId,
+      notes: params.notes,
+      customerVisible: true,
+      notificationChannel: params.channel || 'email',
+      templateKey: params.templateKey,
+      metadata: params.metadata,
+    });
+  }
+
+  private async createInternalTaskActivity(
+    tx: any,
+    params: {
+      companyId: string;
+      disputeId: string;
+      actorUserId?: string | null;
+      notes: string;
+      taskTitle: string;
+      taskAssigneeId?: string | null;
+      taskDueDate?: Date | null;
+      taskPriority?: string | null;
+      mentions?: string[];
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    return this.createDisputeActivityRecord(tx, {
+      companyId: params.companyId,
+      disputeId: params.disputeId,
+      activityType: 'TASK_CREATED',
+      actorUserId: params.actorUserId,
+      notes: params.notes,
+      internalOnly: true,
+      mentions: params.mentions,
+      taskTitle: params.taskTitle,
+      taskAssigneeId: params.taskAssigneeId,
+      taskDueDate: params.taskDueDate ?? null,
+      taskPriority: params.taskPriority ?? 'MEDIUM',
+      taskStatus: 'OPEN',
+      metadata: params.metadata,
+    });
   }
 
   private async applyCustomerDisputeControls(tx: any, companyId: string, customerId: string) {
@@ -377,22 +496,37 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: invoice.company_id,
-          dispute_id: dispute.id,
-          activity_type: 'DISPUTE_SUBMITTED',
-          notes: `${data.brief_description} | Routed to ${route}. Preferred resolution: ${data.preferred_resolution || 'not specified'}.`,
+      await this.createDisputeActivityRecord(tx, {
+        companyId: invoice.company_id,
+        disputeId: dispute.id,
+        activityType: 'DISPUTE_SUBMITTED',
+        notes: `${data.brief_description} | Routed to ${route}. Preferred resolution: ${data.preferred_resolution || 'not specified'}.`,
+        customerVisible: true,
+        templateKey: 'portal_intake_confirmation',
+        metadata: {
+          route_to: route,
+          preferred_resolution: data.preferred_resolution || null,
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: invoice.company_id,
-          dispute_id: dispute.id,
-          activity_type: 'STATUS_CHANGED',
-          notes: `Portal intake validated against invoice ${invoice.invoice_no}. Status set to ${status}.`,
+      await this.createCustomerNotificationActivity(tx, {
+        companyId: invoice.company_id,
+        disputeId: dispute.id,
+        templateKey: 'dispute_acknowledgement',
+        notes: `Acknowledgement sent to ${data.submitter_email} for case ${caseNumber}. Initial response target: ${this.disputeSlaTargets[priority]?.initialResponseHours ?? this.disputeSlaTargets.MEDIUM.initialResponseHours} hours.`,
+        metadata: {
+          trigger_id: 'T-001',
+          submitter_email: data.submitter_email,
+          case_number: caseNumber,
         },
+      });
+
+      await this.createDisputeActivityRecord(tx, {
+        companyId: invoice.company_id,
+        disputeId: dispute.id,
+        activityType: 'STATUS_CHANGED',
+        notes: `Portal intake validated against invoice ${invoice.invoice_no}. Status set to ${status}.`,
+        customerVisible: true,
       });
 
       for (const item of evidenceItems) {
@@ -410,13 +544,12 @@ export class ArService {
       }
 
       if (evidenceItems.length) {
-        await tx.disputeActivity.create({
-          data: {
-            company_id: invoice.company_id,
-            dispute_id: dispute.id,
-            activity_type: 'EVIDENCE_CAPTURED_AT_INTAKE',
-            notes: `${evidenceItems.length} evidence item(s) captured during submission.`,
-          },
+        await this.createDisputeActivityRecord(tx, {
+          companyId: invoice.company_id,
+          disputeId: dispute.id,
+          activityType: 'EVIDENCE_CAPTURED_AT_INTAKE',
+          notes: `${evidenceItems.length} evidence item(s) captured during submission.`,
+          customerVisible: true,
         });
       }
 
@@ -446,7 +579,12 @@ export class ArService {
       },
       include: {
         invoice: { include: { customer: true } },
-        activities: { orderBy: { created_at: 'asc' } },
+        activities: {
+          orderBy: { created_at: 'asc' },
+          where: {
+            internal_only: false,
+          },
+        },
         attachments: { orderBy: { created_at: 'asc' } },
         resolutions: { orderBy: { created_at: 'desc' } },
       },
@@ -591,13 +729,25 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: dispute.id,
-          activity_type: 'DISPUTE_RAISED',
-          notes: data.notes || `Dispute opened for invoice ${invoice.invoice_no}.`,
-          actor_user_id: userId,
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId: dispute.id,
+        activityType: 'DISPUTE_RAISED',
+        notes: data.notes || `Dispute opened for invoice ${invoice.invoice_no}.`,
+        actorUserId: userId,
+        customerVisible: true,
+      });
+
+      await this.createCustomerNotificationActivity(tx, {
+        companyId,
+        disputeId: dispute.id,
+        actorUserId: userId,
+        templateKey: 'dispute_acknowledgement',
+        notes: `Acknowledgement sent for dispute on invoice ${invoice.invoice_no}. Resolution target is ${dueDate.toLocaleDateString()}.`,
+        metadata: {
+          trigger_id: 'T-001',
+          invoice_no: invoice.invoice_no,
+          due_date: dueDate.toISOString(),
         },
       });
 
@@ -613,8 +763,11 @@ export class ArService {
       include: {
         invoice: { include: { customer: true } },
         activities: {
-          take: 3,
           orderBy: { created_at: 'desc' },
+          include: {
+            actor: true,
+            task_assignee: true,
+          },
         },
         resolutions: {
           orderBy: { created_at: 'desc' },
@@ -635,6 +788,10 @@ export class ArService {
       include: {
         activities: {
           orderBy: { created_at: 'desc' },
+          include: {
+            actor: true,
+            task_assignee: true,
+          },
         },
         resolutions: {
           orderBy: { created_at: 'desc' },
@@ -648,16 +805,22 @@ export class ArService {
   }
 
   async addDisputeActivity(companyId: string, disputeId: string, userId: string, data: CreateDisputeActivityDto) {
-    await this.getCompanyDispute(companyId, disputeId);
+    const dispute = await this.getCompanyDispute(companyId, disputeId);
 
-    return this.prisma.disputeActivity.create({
-      data: {
-        company_id: companyId,
-        dispute_id: disputeId,
-        activity_type: data.activity_type,
-        notes: data.notes,
-        actor_user_id: userId,
-      },
+    return this.createDisputeActivityRecord(this.prisma, {
+      companyId,
+      disputeId,
+      activityType: data.activity_type,
+      notes: data.notes,
+      actorUserId: userId,
+      internalOnly: data.internal_only ?? true,
+      customerVisible: data.customer_visible ?? false,
+      mentions: data.mentions,
+      taskTitle: data.task_title,
+      taskAssigneeId: dispute.assigned_to,
+      taskDueDate: data.task_due_date ? new Date(data.task_due_date) : undefined,
+      taskPriority: data.task_priority,
+      taskStatus: data.task_title ? 'OPEN' : undefined,
     });
   }
 
@@ -697,13 +860,25 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: disputeId,
-          activity_type: 'RESOLUTION_RECORDED',
-          notes: `${data.resolution_type} recorded for ${resolutionAmount.toFixed(2)} and routed for approval.`,
-          actor_user_id: userId,
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId,
+        activityType: 'RESOLUTION_RECORDED',
+        notes: `${data.resolution_type} recorded for ${resolutionAmount.toFixed(2)} and routed for approval.`,
+        actorUserId: userId,
+        internalOnly: true,
+      });
+
+      await this.createCustomerNotificationActivity(tx, {
+        companyId,
+        disputeId,
+        actorUserId: userId,
+        templateKey: 'resolution_summary',
+        notes: `Resolution summary sent to customer for ${data.resolution_type.replaceAll('_', ' ')} in the amount of ${resolutionAmount.toFixed(2)}.`,
+        metadata: {
+          trigger_id: 'T-004',
+          resolution_type: data.resolution_type,
+          resolution_amount: resolutionAmount,
         },
       });
 
@@ -728,10 +903,17 @@ export class ArService {
         },
       });
 
+      const existingAttachments = dispute.attachments || [];
+      const evidenceComplete = this.areRequiredEvidenceItemsComplete(dispute, [
+        ...existingAttachments,
+        { category: data.category },
+      ]);
       const nextStatus =
-        ['OPEN', 'RAISED'].includes(dispute.status) && (dispute.evidence_required?.length || 0) > 0
-          ? 'EVIDENCE_PENDING'
-          : dispute.status;
+        dispute.status === 'EVIDENCE_PENDING' && evidenceComplete
+          ? 'UNDER_REVIEW'
+          : ['OPEN', 'RAISED'].includes(dispute.status) && (dispute.evidence_required?.length || 0) > 0
+            ? 'EVIDENCE_PENDING'
+            : dispute.status;
 
       if (nextStatus !== dispute.status) {
         await tx.disputeCase.update({
@@ -740,15 +922,47 @@ export class ArService {
         });
       }
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: disputeId,
-          activity_type: 'EVIDENCE_UPLOADED',
-          notes: `${data.category} uploaded: ${data.file_name}`,
-          actor_user_id: userId,
-        },
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId,
+        activityType: 'EVIDENCE_UPLOADED',
+        notes: `${data.category} uploaded: ${data.file_name}`,
+        actorUserId: userId,
+        customerVisible: true,
       });
+
+      if (nextStatus === 'UNDER_REVIEW' && evidenceComplete) {
+        await this.createDisputeActivityRecord(tx, {
+          companyId,
+          disputeId,
+          activityType: 'STATUS_CHANGED',
+          notes: 'Required evidence set is complete. Dispute moved back to UNDER REVIEW.',
+          actorUserId: userId,
+          customerVisible: true,
+        });
+
+        await this.createCustomerNotificationActivity(tx, {
+          companyId,
+          disputeId,
+          actorUserId: userId,
+          templateKey: 'evidence_set_complete',
+          notes: 'Customer notified that the evidence set is complete and the dispute is under review.',
+          metadata: {
+            evidence_complete: true,
+          },
+        });
+
+        await this.createInternalTaskActivity(tx, {
+          companyId,
+          disputeId,
+          actorUserId: userId,
+          notes: 'Evidence package is complete and ready for reviewer assessment.',
+          taskTitle: 'Review completed evidence package',
+          taskAssigneeId: dispute.assigned_to,
+          taskDueDate: dispute.due_date,
+          taskPriority: dispute.priority,
+        });
+      }
 
       return attachment;
     });
@@ -809,14 +1023,13 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: resolution.dispute_id,
-          activity_type: 'RESOLUTION_APPROVAL',
-          notes: action === 'APPROVE' ? `Resolution approved at level ${currentStepIndex + 1}.` : 'Resolution rejected.',
-          actor_user_id: userId,
-        },
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId: resolution.dispute_id,
+        activityType: 'RESOLUTION_APPROVAL',
+        notes: action === 'APPROVE' ? `Resolution approved at level ${currentStepIndex + 1}.` : 'Resolution rejected.',
+        actorUserId: userId,
+        internalOnly: true,
       });
 
       return updatedResolution;
@@ -839,14 +1052,13 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: resolution.dispute_id,
-          activity_type: 'RESOLUTION_POSTED',
-          notes: 'Resolution marked as posted to the general ledger.',
-          actor_user_id: userId,
-        },
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId: resolution.dispute_id,
+        activityType: 'RESOLUTION_POSTED',
+        notes: 'Resolution marked as posted to the general ledger.',
+        actorUserId: userId,
+        internalOnly: true,
       });
 
       return updated;
@@ -881,15 +1093,53 @@ export class ArService {
         },
       });
 
-      await tx.disputeActivity.create({
-        data: {
-          company_id: companyId,
-          dispute_id: disputeId,
-          activity_type: 'STATUS_CHANGED',
-          notes: data.resolution_notes ? `${nextStatus}: ${data.resolution_notes}` : `Status changed to ${nextStatus}.`,
-          actor_user_id: userId,
-        },
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId,
+        activityType: 'STATUS_CHANGED',
+        notes: data.resolution_notes ? `${nextStatus}: ${data.resolution_notes}` : `Status changed to ${nextStatus}.`,
+        actorUserId: userId,
+        customerVisible: ['UNDER_REVIEW', 'EVIDENCE_PENDING', 'CUSTOMER_APPROVAL', 'NEGOTIATION', 'RESOLVED', 'CLOSED', 'CREDIT_ISSUED'].includes(nextStatus),
       });
+
+      if (nextStatus === 'EVIDENCE_PENDING') {
+        await this.createCustomerNotificationActivity(tx, {
+          companyId,
+          disputeId,
+          actorUserId: userId,
+          templateKey: 'evidence_requested',
+          notes: 'Customer notified that more evidence is required to proceed with the dispute review.',
+          metadata: {
+            trigger_id: 'T-002',
+            evidence_due_date: updated.evidence_due_date?.toISOString?.() || null,
+          },
+        });
+
+        await this.createInternalTaskActivity(tx, {
+          companyId,
+          disputeId,
+          actorUserId: userId,
+          notes: 'Follow up with the customer on missing evidence and monitor the evidence deadline.',
+          taskTitle: 'Follow up on customer evidence',
+          taskAssigneeId: updated.assigned_to,
+          taskDueDate: updated.evidence_due_date,
+          taskPriority: updated.priority,
+        });
+      }
+
+      if (nextStatus === 'CLOSED') {
+        await this.createCustomerNotificationActivity(tx, {
+          companyId,
+          disputeId,
+          actorUserId: userId,
+          templateKey: 'dispute_closure_confirmation',
+          notes: 'Closure confirmation and CSAT survey trigger sent to the customer.',
+          metadata: {
+            trigger_id: 'T-005',
+            survey_triggered: true,
+          },
+        });
+      }
 
       return updated;
     });

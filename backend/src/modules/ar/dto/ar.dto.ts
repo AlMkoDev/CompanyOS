@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsNumber,
@@ -180,6 +181,33 @@ export class CreateDisputeActivityDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  internal_only?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  customer_visible?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  mentions?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  task_title?: string;
+
+  @IsOptional()
+  @IsDateString()
+  task_due_date?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  task_priority?: string;
 }
 
 export class CreateDisputeResolutionDto {

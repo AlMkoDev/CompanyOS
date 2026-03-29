@@ -160,6 +160,7 @@ model User {
   disputesAssigned    DisputeCase[] @relation("DisputeAssignee")
   disputesCreated     DisputeCase[] @relation("DisputeCreator")
   disputeActivities   DisputeActivity[] @relation("DisputeActivityActor")
+  disputeActivityTasksAssigned DisputeActivity[] @relation("DisputeActivityTaskAssignee")
   disputeResolutionsApproved DisputeResolution[] @relation("DisputeResolutionApprover")
   disputeAttachmentsUploaded DisputeAttachment[] @relation("DisputeAttachmentUploader")
 }
@@ -925,11 +926,23 @@ model DisputeActivity {
   activity_type String
   notes         String?
   actor_user_id String?  @db.Uuid
+  internal_only Boolean  @default(false)
+  customer_visible Boolean @default(false)
+  mentions      String[]
+  task_title    String?
+  task_assignee_id String? @db.Uuid
+  task_due_date DateTime?
+  task_priority String?
+  task_status   String?
+  notification_channel String?
+  template_key  String?
+  metadata      Json?
   created_at    DateTime @default(now())
 
   company Company     @relation(fields: [company_id], references: [id])
   dispute DisputeCase @relation(fields: [dispute_id], references: [id])
   actor   User?       @relation("DisputeActivityActor", fields: [actor_user_id], references: [id])
+  task_assignee User? @relation("DisputeActivityTaskAssignee", fields: [task_assignee_id], references: [id])
 }
 
 model DisputeResolution {

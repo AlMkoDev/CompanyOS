@@ -4,12 +4,29 @@ import React from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
-import { AlertCircle, ChevronLeft, Clock3, Filter, FileText, Search, ShieldAlert } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Clock3, Filter, FileText, Search, ShieldAlert, MessageSquare, X } from 'lucide-react';
 
 interface DisputeActivity {
   id: string;
   activity_type: string;
   notes?: string | null;
+  internal_only?: boolean;
+  customer_visible?: boolean;
+  mentions?: string[];
+  task_title?: string | null;
+  task_due_date?: string | null;
+  task_priority?: string | null;
+  task_status?: string | null;
+  notification_channel?: string | null;
+  template_key?: string | null;
+  actor?: {
+    first_name?: string;
+    last_name?: string;
+  } | null;
+  task_assignee?: {
+    first_name?: string;
+    last_name?: string;
+  } | null;
   created_at: string;
 }
 
@@ -64,13 +81,27 @@ export default function ArDisputesPage() {
   const [query, setQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('ALL');
   const [message, setMessage] = React.useState('');
+  const [selectedDispute, setSelectedDispute] = React.useState<DisputeRecord | null>(null);
+  const [savingComment, setSavingComment] = React.useState(false);
+  const [activityForm, setActivityForm] = React.useState({
+    notes: '',
+    mentions: '',
+    internal_only: true,
+    create_task: false,
+    task_title: '',
+    task_due_date: '',
+    task_priority: 'MEDIUM',
+  });
 
   const fetchDisputes = React.useCallback(async () => {
     try {
       const res = await apiFetch('/ar/disputes');
       if (res.ok) {
-        setDisputes(await res.json());
+        const data = await res.json();
+        setDisputes(data);
+        setSelectedDispute((current) => (current ? data.find((item: DisputeRecord) => item.id === current.id) || null : null));
         setMessage('');
+        return data as DisputeRecord[];
       } else {
         const data = await res.json().catch(() => null);
         setMessage(data?.message || 'Failed to load dispute register.');
@@ -80,6 +111,7 @@ export default function ArDisputesPage() {
     } finally {
       setLoading(false);
     }
+    return [];
   }, []);
 
   React.useEffect(() => {
@@ -120,6 +152,66 @@ export default function ArDisputesPage() {
 
     return { open, evidencePending, resolutionQueue, postedResolutions };
   }, [disputes]);
+
+  const handleOpenHub = (dispute: DisputeRecord) => {
+    setSelectedDispute(dispute);
+    setActivityForm({
+      notes: '',
+      mentions: '',
+      internal_only: true,
+      create_task: false,
+      task_title: '',
+      task_due_date: '',
+      task_priority: 'MEDIUM',
+    });
+    setMessage('');
+  };
+
+  const refreshDisputes = async () => {
+    await fetchDisputes();
+  };
+
+  const handleAddActivity = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedDispute || !activityForm.notes.trim()) {
+      return;
+    }
+
+    setSavingComment(true);
+    try {
+      const mentions = activityForm.mentions
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      const res = await apiFetch(`/ar/disputes/${selectedDispute.id}/activity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          activity_type: activityForm.create_task ? 'INTERNAL_TASK_COMMENT' : 'INTERNAL_COMMENT',
+          notes: activityForm.notes,
+          internal_only: activityForm.internal_only,
+          mentions,
+          task_title: activityForm.create_task ? activityForm.task_title || 'Dispute follow-up' : undefined,
+          task_due_date: activityForm.create_task && activityForm.task_due_date ? new Date(activityForm.task_due_date).toISOString() : undefined,
+          task_priority: activityForm.create_task ? activityForm.task_priority : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to add collaboration update.');
+        return;
+      }
+
+      setMessage('Collaboration update saved.');
+      await refreshDisputes();
+    } catch {
+      setMessage('Connection error while saving collaboration update.');
+    } finally {
+      setSavingComment(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-8 p-6 pb-20 md:p-10">
@@ -240,6 +332,13 @@ export default function ArDisputesPage() {
                       >
                         Open Invoice Workspace
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenHub(dispute)}
+                        className="rounded-full border border-brand-gold/30 bg-brand-gold/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-brand-navy transition-all hover:bg-brand-gold/20"
+                      >
+                        Collaboration Hub
+                      </button>
                       {dispute.resolutions?.[0] && (
                         <div className="text-[10px] uppercase tracking-widest text-slate-400">
                           Latest resolution: {dispute.resolutions[0].status}
@@ -267,6 +366,191 @@ export default function ArDisputesPage() {
           </table>
         </div>
       </div>
+
+      {selectedDispute ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 px-4 py-10 backdrop-blur-sm">
+          <div className="w-full max-w-6xl overflow-hidden rounded-[36px] bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
+              <div>
+                <h2 className="font-heading text-2xl text-brand-navy">Collaboration Hub</h2>
+                <p className="text-sm text-slate-500">
+                  {selectedDispute.case_number || selectedDispute.id} · {selectedDispute.invoice?.customer?.name || 'Unknown customer'} · Invoice {selectedDispute.invoice?.invoice_no || 'Unlinked'}
+                </p>
+              </div>
+              <button onClick={() => setSelectedDispute(null)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid gap-8 p-8 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="rounded-[32px] border border-slate-100 bg-white">
+                <div className="border-b border-slate-100 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                  Unified Timeline
+                </div>
+                <div className="max-h-[520px] space-y-4 overflow-y-auto p-6">
+                  {selectedDispute.activities?.length ? (
+                    selectedDispute.activities.map((activity) => (
+                      <div key={activity.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-brand-navy">{activity.activity_type.replaceAll('_', ' ')}</span>
+                              {activity.internal_only ? (
+                                <span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-slate-600">Internal Only</span>
+                              ) : null}
+                              {activity.customer_visible ? (
+                                <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">Customer Visible</span>
+                              ) : null}
+                              {activity.notification_channel ? (
+                                <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-sky-700">{activity.notification_channel}</span>
+                              ) : null}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              {activity.actor?.first_name || activity.actor?.last_name
+                                ? `${activity.actor?.first_name || ''} ${activity.actor?.last_name || ''}`.trim()
+                                : 'System'}
+                              {' · '}
+                              {new Date(activity.created_at).toLocaleString()}
+                            </div>
+                          </div>
+                          {activity.template_key ? (
+                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                              Template {activity.template_key}
+                            </div>
+                          ) : null}
+                        </div>
+                        {activity.notes ? <div className="mt-4 text-sm text-slate-600">{activity.notes}</div> : null}
+                        {activity.mentions?.length ? (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {activity.mentions.map((mention) => (
+                              <span key={mention} className="rounded-full bg-brand-navy/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-brand-navy">
+                                @{mention}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {activity.task_title ? (
+                          <div className="mt-4 rounded-2xl border border-brand-gold/20 bg-white px-4 py-3 text-sm text-slate-600">
+                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Follow-up Task</div>
+                            <div className="mt-2 font-semibold text-slate-900">{activity.task_title}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {activity.task_assignee?.first_name || activity.task_assignee?.last_name
+                                ? `Assigned to ${`${activity.task_assignee?.first_name || ''} ${activity.task_assignee?.last_name || ''}`.trim()}`
+                                : 'Assigned to dispute owner'}
+                              {activity.task_due_date ? ` · Due ${new Date(activity.task_due_date).toLocaleDateString()}` : ''}
+                              {activity.task_priority ? ` · ${activity.task_priority}` : ''}
+                              {activity.task_status ? ` · ${activity.task_status}` : ''}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-12 text-center text-sm italic text-slate-400">No collaboration history yet.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+                  <div className="mb-4 flex items-center gap-3">
+                    <MessageSquare className="text-brand-gold" size={18} />
+                    <div>
+                      <h3 className="font-heading text-xl text-brand-navy">Add Collaboration Update</h3>
+                      <p className="text-sm text-slate-500">Post an internal note, tag teammates, and optionally create a follow-up task.</p>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleAddActivity} className="space-y-4">
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">Internal note</span>
+                      <textarea
+                        value={activityForm.notes}
+                        onChange={(e) => setActivityForm((prev) => ({ ...prev, notes: e.target.value }))}
+                        className="min-h-[120px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-brand-gold focus:bg-white"
+                        placeholder="Summarize the issue, next action, or decision."
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">@Mentions</span>
+                      <input
+                        value={activityForm.mentions}
+                        onChange={(e) => setActivityForm((prev) => ({ ...prev, mentions: e.target.value }))}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-brand-gold focus:bg-white"
+                        placeholder="jane.doe, finance.manager"
+                      />
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={activityForm.internal_only}
+                        onChange={(e) => setActivityForm((prev) => ({ ...prev, internal_only: e.target.checked }))}
+                      />
+                      Mark as internal-only
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={activityForm.create_task}
+                        onChange={(e) => setActivityForm((prev) => ({ ...prev, create_task: e.target.checked }))}
+                      />
+                      Create follow-up task from this note
+                    </label>
+
+                    {activityForm.create_task ? (
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block md:col-span-2">
+                          <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">Task title</span>
+                          <input
+                            value={activityForm.task_title}
+                            onChange={(e) => setActivityForm((prev) => ({ ...prev, task_title: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-brand-gold focus:bg-white"
+                            placeholder="Follow up with customer on missing POD"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">Due date</span>
+                          <input
+                            type="date"
+                            value={activityForm.task_due_date}
+                            onChange={(e) => setActivityForm((prev) => ({ ...prev, task_due_date: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-brand-gold focus:bg-white"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">Priority</span>
+                          <select
+                            value={activityForm.task_priority}
+                            onChange={(e) => setActivityForm((prev) => ({ ...prev, task_priority: e.target.value }))}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition-all focus:border-brand-gold focus:bg-white"
+                          >
+                            <option value="LOW">LOW</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="CRITICAL">CRITICAL</option>
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
+
+                    {message ? <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-600">{message}</div> : null}
+
+                    <button
+                      type="submit"
+                      disabled={savingComment || !activityForm.notes.trim()}
+                      className="rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {savingComment ? 'Saving...' : 'Save Collaboration Update'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
