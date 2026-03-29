@@ -351,7 +351,14 @@ export default function ArDisputesPage() {
               {!filteredDisputes.length && !loading && (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-sm italic text-slate-400">
-                    No disputes match the current filter.
+                    <div className="space-y-2">
+                      <div>No disputes match the current filter.</div>
+                      {!disputes.length ? (
+                        <div className="text-xs not-italic text-slate-500">
+                          The Collaboration Hub becomes available once at least one dispute is logged in the register.
+                        </div>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               )}
