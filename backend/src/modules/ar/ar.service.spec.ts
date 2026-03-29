@@ -461,4 +461,88 @@ describe('ArService', () => {
 
     expect(dispute.status).toBe('OPEN');
   });
+
+  it('returns dispute analytics by product and customer on the AR dashboard', async () => {
+    prisma.customer.count.mockResolvedValue(4);
+    prisma.aRInvoice.findMany.mockResolvedValue([
+      {
+        id: 'invoice-1',
+        company_id: 'company-1',
+        invoice_no: 'AR-001',
+        amount: 500,
+        paid_amount: 0,
+        due_date: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+        reminder_count: 0,
+        customer: { name: 'North Buyer' },
+      },
+    ]);
+    prisma.collectionCase.findMany.mockResolvedValue([
+      {
+        id: 'case-1',
+        escalation_level: 2,
+        invoice: {
+          amount: 500,
+          paid_amount: 0,
+          due_date: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000),
+          customer: { name: 'North Buyer' },
+        },
+      },
+    ]);
+    prisma.disputeCase.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'dispute-1',
+          customer_id: 'customer-1',
+          product_code: 'EGG',
+          disputed_amount: 300,
+          priority: 'HIGH',
+          status: 'OPEN',
+          due_date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+          created_at: new Date('2026-03-01T00:00:00.000Z'),
+          resolved_date: null,
+          evidence_due_date: null,
+          invoice: { customer: { name: 'North Buyer' } },
+        },
+        {
+          id: 'dispute-2',
+          customer_id: 'customer-1',
+          product_code: 'EGG',
+          disputed_amount: 120,
+          priority: 'MEDIUM',
+          status: 'RESOLVED',
+          due_date: new Date('2026-03-10T00:00:00.000Z'),
+          created_at: new Date('2026-03-01T00:00:00.000Z'),
+          resolved_date: new Date('2026-03-05T00:00:00.000Z'),
+          evidence_due_date: null,
+          invoice: { customer: { name: 'North Buyer' } },
+        },
+        {
+          id: 'dispute-3',
+          customer_id: 'customer-2',
+          product_code: 'MARROW',
+          disputed_amount: 180,
+          priority: 'LOW',
+          status: 'EVIDENCE_PENDING',
+          due_date: new Date('2026-03-12T00:00:00.000Z'),
+          created_at: new Date('2026-03-02T00:00:00.000Z'),
+          resolved_date: null,
+          evidence_due_date: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          invoice: { customer: { name: 'South Buyer' } },
+        },
+      ]);
+
+    const dashboard = await service.getARDashboard('company-1');
+
+    expect(dashboard.disputesAtRisk?.total).toBe(480);
+    expect(dashboard.disputesAtRisk?.byProduct?.[0]).toMatchObject({
+      product_code: 'EGG',
+      disputed_value: 300,
+    });
+    expect(dashboard.disputesAtRisk?.topCustomers?.[0]).toMatchObject({
+      customer_name: 'North Buyer',
+      dispute_count: 1,
+    });
+    expect(dashboard.disputesAtRisk?.resolvedWithinSlaRate).toBeGreaterThan(0);
+  });
 });

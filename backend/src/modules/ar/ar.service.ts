@@ -97,6 +97,19 @@ export class ArService {
     }) > 0;
   }
 
+  private getDisputeResolutionDays(dispute: { created_at?: Date | string; resolved_date?: Date | string | null }) {
+    if (!dispute.created_at || !dispute.resolved_date) return null;
+    const start = new Date(dispute.created_at).getTime();
+    const end = new Date(dispute.resolved_date).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null;
+    return Math.max(0, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+  }
+
+  private getDisputeSlaDays(priority?: string | null) {
+    const normalized = this.normalizeDisputePriority(priority || undefined);
+    return (this.disputeSlaTargets[normalized] || this.disputeSlaTargets.MEDIUM).resolutionDays;
+  }
+
   private normalizeDisputePriority(priority?: string) {
     return (priority || 'MEDIUM').toUpperCase();
   }
@@ -964,6 +977,13 @@ export class ArService {
       }),
       this.prisma.disputeCase.findMany({
         where: { company_id: companyId },
+        include: {
+          invoice: {
+            include: {
+              customer: true,
+            },
+          },
+        },
       }),
     ]);
 
@@ -987,6 +1007,48 @@ export class ArService {
     const overdueEvidenceCount = openDisputes.filter(
       (dispute) => dispute.status === 'EVIDENCE_PENDING' && dispute.evidence_due_date && new Date(dispute.evidence_due_date).getTime() < Date.now(),
     ).length;
+    const productHotspotsMap = new Map<string, { product_code: string; dispute_count: number; disputed_value: number }>();
+    const topCustomersMap = new Map<string, { customer_id: string; customer_name: string; dispute_count: number; disputed_value: number }>();
+    const resolvedDisputes = disputes.filter((dispute) => dispute.resolved_date);
+
+    for (const dispute of openDisputes) {
+      const productCode = dispute.product_code || 'UNSPECIFIED';
+      const existingProduct = productHotspotsMap.get(productCode) || {
+        product_code: productCode,
+        dispute_count: 0,
+        disputed_value: 0,
+      };
+      existingProduct.dispute_count += 1;
+      existingProduct.disputed_value += Number(dispute.disputed_amount);
+      productHotspotsMap.set(productCode, existingProduct);
+
+      const customerId = dispute.customer_id;
+      const customerName = dispute.invoice?.customer?.name || 'Unknown customer';
+      const existingCustomer = topCustomersMap.get(customerId) || {
+        customer_id: customerId,
+        customer_name: customerName,
+        dispute_count: 0,
+        disputed_value: 0,
+      };
+      existingCustomer.dispute_count += 1;
+      existingCustomer.disputed_value += Number(dispute.disputed_amount);
+      topCustomersMap.set(customerId, existingCustomer);
+    }
+
+    const resolutionSamples = resolvedDisputes
+      .map((dispute) => ({
+        resolution_days: this.getDisputeResolutionDays(dispute),
+        sla_days: this.getDisputeSlaDays(dispute.priority),
+      }))
+      .filter((sample) => sample.resolution_days !== null) as Array<{ resolution_days: number; sla_days: number }>;
+
+    const averageResolutionDays = resolutionSamples.length
+      ? resolutionSamples.reduce((sum, sample) => sum + sample.resolution_days, 0) / resolutionSamples.length
+      : 0;
+    const averageSlaDays = resolutionSamples.length
+      ? resolutionSamples.reduce((sum, sample) => sum + sample.sla_days, 0) / resolutionSamples.length
+      : 0;
+    const resolvedWithinSlaCount = resolutionSamples.filter((sample) => sample.resolution_days <= sample.sla_days).length;
 
     const activeEscalations = collectionCases.filter((collectionCase) => this.hasOutstandingBalance(collectionCase.invoice));
 
@@ -1005,6 +1067,14 @@ export class ArService {
         healthPenalty,
         evidencePendingCount,
         overdueEvidenceCount,
+        averageResolutionDays,
+        averageSlaDays,
+        resolvedWithinSlaRate: resolutionSamples.length ? resolvedWithinSlaCount / resolutionSamples.length : 0,
+        byProduct: Array.from(productHotspotsMap.values()).sort((a, b) => b.disputed_value - a.disputed_value).slice(0, 3),
+        topCustomers: Array.from(topCustomersMap.values()).sort((a, b) => {
+          if (b.dispute_count !== a.dispute_count) return b.dispute_count - a.dispute_count;
+          return b.disputed_value - a.disputed_value;
+        }).slice(0, 3),
       },
     };
   }

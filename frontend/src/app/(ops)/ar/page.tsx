@@ -49,6 +49,20 @@ interface ArDashboardData {
     healthPenalty?: number;
     evidencePendingCount?: number;
     overdueEvidenceCount?: number;
+    averageResolutionDays?: number;
+    averageSlaDays?: number;
+    resolvedWithinSlaRate?: number;
+    byProduct?: Array<{
+      product_code: string;
+      dispute_count: number;
+      disputed_value: number;
+    }>;
+    topCustomers?: Array<{
+      customer_id: string;
+      customer_name: string;
+      dispute_count: number;
+      disputed_value: number;
+    }>;
   };
   topEscalations?: Array<{
     id: string;
@@ -188,6 +202,85 @@ export default function ArDashboardPage() {
           <AgingBucket label="61-90 Days" value={dashboard?.aging?.['61-90']} total={dashboard?.totalAr || 1} color="bg-orange-500/20" />
           <AgingBucket label="90+ Days" value={dashboard?.aging?.['90plus']} total={dashboard?.totalAr || 1} color="bg-rose-500/20" />
           <AgingBucket label="Disputed" value={dashboard?.aging?.disputed} total={dashboard?.totalAr || 1} color="bg-sky-500/20" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-xl font-heading text-brand-navy">Dispute Product Hotspots</h3>
+              <p className="text-sm text-slate-500">Revenue at risk by product code across active disputes.</p>
+            </div>
+            <div className="rounded-2xl bg-orange-50 px-4 py-3 text-right">
+              <div className="text-[10px] font-black uppercase tracking-widest text-orange-600">Avg Resolution</div>
+              <div className="text-lg font-bold text-brand-navy">
+                {(dashboard?.disputesAtRisk?.averageResolutionDays || 0).toFixed(1)}d
+              </div>
+              <div className="text-[11px] text-slate-500">
+                vs SLA {(dashboard?.disputesAtRisk?.averageSlaDays || 0).toFixed(1)}d
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {dashboard?.disputesAtRisk?.byProduct?.length ? (
+              dashboard.disputesAtRisk.byProduct.map((product) => (
+                <div key={product.product_code} className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-brand-navy">{product.product_code}</div>
+                      <div className="text-xs text-slate-500">{product.dispute_count} active disputes</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-brand-navy">R {product.disputed_value.toLocaleString()}</div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400">At risk</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                No active dispute hotspots yet.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[32px] border border-slate-100 p-8 shadow-sm">
+          <div className="flex items-start justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-xl font-heading text-brand-navy">Top Dispute Customers</h3>
+              <p className="text-sm text-slate-500">Customers with the highest active dispute frequency right now.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
+              <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Resolved Within SLA</div>
+              <div className="text-lg font-bold text-brand-navy">
+                {Math.round((dashboard?.disputesAtRisk?.resolvedWithinSlaRate || 0) * 100)}%
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4">
+            {dashboard?.disputesAtRisk?.topCustomers?.length ? (
+              dashboard.disputesAtRisk.topCustomers.map((customer) => (
+                <div key={customer.customer_id} className="rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-brand-navy">{customer.customer_name}</div>
+                      <div className="text-xs text-slate-500">{customer.dispute_count} active disputes</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-bold text-brand-navy">R {customer.disputed_value.toLocaleString()}</div>
+                      <div className="text-[10px] uppercase tracking-widest text-slate-400">Disputed value</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-6 text-sm text-slate-500">
+                No customer dispute concentration yet.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
