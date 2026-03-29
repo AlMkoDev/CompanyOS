@@ -8,7 +8,9 @@ import {
   CreateDisputeActivityDto,
   CreateDisputeDto,
   CreateDisputeResolutionDto,
+  CreatePortalDisputeIntakeDto,
   CreateCustomerDto,
+  IntakeEvidenceItemDto,
   MarkResolutionPostedDto,
   RecordPaymentDto,
   SendReminderDto,
@@ -148,6 +150,57 @@ export class ArService {
     return ['Finance_Manager', primary.role];
   }
 
+  private getPortalEvidenceRequirements(disputeType: string) {
+    const normalized = disputeType.toUpperCase();
+    if (normalized === 'QUALITY') return ['PHOTO'];
+    if (normalized === 'QUANTITY') return ['POD'];
+    if (normalized === 'PRICING') return ['DOCUMENT'];
+    if (normalized === 'DELIVERY') return ['DELIVERY_PROOF'];
+    return [];
+  }
+
+  private getPortalRouting(disputeType: string, disputedAmount: number) {
+    const normalized = disputeType.toUpperCase();
+    const route =
+      normalized === 'PRICING'
+        ? 'Sales/Contracts'
+        : normalized === 'QUALITY' || normalized === 'DELIVERY'
+          ? 'Operations/Logistics'
+          : normalized === 'FRAUD' || normalized === 'UNAUTHORIZED'
+            ? 'Risk/Fraud Team'
+            : 'AR Specialist';
+
+    const priority = disputedAmount >= 500 ? 'CRITICAL' : normalized === 'QUALITY' || normalized === 'DELIVERY' ? 'HIGH' : 'MEDIUM';
+
+    return { route, priority };
+  }
+
+  private async generatePortalCaseNumber() {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const timestamp = new Date();
+      const year = timestamp.getFullYear();
+      const suffix = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
+      const candidate = `DSP-${year}-${suffix}`;
+      const existing = await this.prisma.disputeCase.findFirst({
+        where: { case_number: candidate },
+        select: { id: true },
+      });
+      if (!existing) return candidate;
+    }
+
+    throw new BadRequestException('Unable to generate a unique dispute case number');
+  }
+
+  private mapPortalEvidenceItems(evidenceItems?: IntakeEvidenceItemDto[]) {
+    return (evidenceItems || []).map((item) => ({
+      category: item.category,
+      file_name: item.file_name,
+      file_type: item.file_type,
+      file_url: item.file_url,
+      notes: [item.reference, item.notes, item.file_size_mb ? `${item.file_size_mb}MB` : undefined].filter(Boolean).join(' | ') || null,
+    }));
+  }
+
   private async applyCustomerDisputeControls(tx: any, companyId: string, customerId: string) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -240,6 +293,184 @@ export class ArService {
         has_open_disputes: customerDisputes.some((dispute) => this.isActiveDisputeStatus(dispute.status)),
       };
     });
+  }
+
+  async getPortalInvoiceContext(invoiceNo: string) {
+    const invoice = await this.prisma.aRInvoice.findFirst({
+      where: { invoice_no: invoiceNo },
+      include: {
+        customer: true,
+      },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found for dispute intake');
+    }
+
+    return {
+      invoice_id: invoice.id,
+      company_id: invoice.company_id,
+      invoice_no: invoice.invoice_no,
+      customer_name: invoice.customer?.name,
+      open_balance: Math.max(0, this.getOutstandingBalance(invoice)),
+      invoice_amount: Number(invoice.amount),
+      invoice_date: invoice.invoice_date,
+      due_date: invoice.due_date,
+      status: invoice.status,
+    };
+  }
+
+  async createPortalDisputeIntake(data: CreatePortalDisputeIntakeDto) {
+    const invoice = await this.prisma.aRInvoice.findFirst({
+      where: { invoice_no: data.invoice_no },
+      include: { customer: true },
+    });
+
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found. The case should be routed for manual review.');
+    }
+
+    const outstandingBalance = this.getOutstandingBalance(invoice);
+    if (outstandingBalance <= 0) {
+      throw new BadRequestException('This invoice is already settled and cannot be disputed.');
+    }
+
+    if (Number(data.disputed_amount) > outstandingBalance + 0.009) {
+      throw new BadRequestException(`Disputed amount exceeds outstanding balance of ${outstandingBalance.toFixed(2)}`);
+    }
+
+    const { route, priority } = this.getPortalRouting(data.dispute_type, Number(data.disputed_amount));
+    const raisedDate = new Date();
+    const caseNumber = await this.generatePortalCaseNumber();
+    const evidenceRequired = this.getPortalEvidenceRequirements(data.dispute_type);
+    const evidenceItems = this.mapPortalEvidenceItems(data.evidence_items);
+    const evidenceCategories = new Set(evidenceItems.map((item) => item.category.toUpperCase()));
+    const evidenceComplete = evidenceRequired.every((required) => evidenceCategories.has(required.toUpperCase()));
+    const status = evidenceRequired.length > 0 && !evidenceComplete ? 'EVIDENCE_PENDING' : 'UNDER_REVIEW';
+
+    return this.prisma.$transaction(async (tx) => {
+      const dispute = await tx.disputeCase.create({
+        data: {
+          company_id: invoice.company_id,
+          invoice_id: invoice.id,
+          customer_id: invoice.customer_id,
+          case_number: caseNumber,
+          intake_channel: 'portal',
+          submitter_name: data.customer_name,
+          submitter_email: data.submitter_email,
+          submitter_phone: data.submitter_phone,
+          status,
+          priority,
+          dispute_type: data.dispute_type,
+          reason_code: data.reason_code,
+          disputed_amount: data.disputed_amount,
+          due_date: this.getDisputeDueDate(priority, raisedDate),
+          evidence_due_date: this.getDisputeEvidenceDueDate(priority, raisedDate),
+          affects_revenue: true,
+          blocks_payment: true,
+          evidence_required: evidenceRequired,
+        },
+        include: {
+          invoice: { include: { customer: true } },
+          activities: { orderBy: { created_at: 'asc' } },
+          attachments: { orderBy: { created_at: 'asc' } },
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: invoice.company_id,
+          dispute_id: dispute.id,
+          activity_type: 'DISPUTE_SUBMITTED',
+          notes: `${data.brief_description} | Routed to ${route}. Preferred resolution: ${data.preferred_resolution || 'not specified'}.`,
+        },
+      });
+
+      await tx.disputeActivity.create({
+        data: {
+          company_id: invoice.company_id,
+          dispute_id: dispute.id,
+          activity_type: 'STATUS_CHANGED',
+          notes: `Portal intake validated against invoice ${invoice.invoice_no}. Status set to ${status}.`,
+        },
+      });
+
+      for (const item of evidenceItems) {
+        await tx.disputeAttachment.create({
+          data: {
+            company_id: invoice.company_id,
+            dispute_id: dispute.id,
+            file_name: item.file_name,
+            file_type: item.file_type,
+            category: item.category,
+            file_url: item.file_url,
+            notes: item.notes,
+          },
+        });
+      }
+
+      if (evidenceItems.length) {
+        await tx.disputeActivity.create({
+          data: {
+            company_id: invoice.company_id,
+            dispute_id: dispute.id,
+            activity_type: 'EVIDENCE_CAPTURED_AT_INTAKE',
+            notes: `${evidenceItems.length} evidence item(s) captured during submission.`,
+          },
+        });
+      }
+
+      await this.applyCustomerDisputeControls(tx, invoice.company_id, invoice.customer_id);
+
+      return {
+        case_number: caseNumber,
+        dispute_id: dispute.id,
+        status,
+        route_to: route,
+        evidence_complete: evidenceComplete,
+        evidence_required: dispute.evidence_required,
+        invoice_no: invoice.invoice_no,
+        customer_name: invoice.customer?.name,
+        initial_response_hours: this.disputeSlaTargets[priority]?.initialResponseHours ?? this.disputeSlaTargets.MEDIUM.initialResponseHours,
+      };
+    });
+  }
+
+  async getPortalDisputeStatus(caseNumber: string, invoiceNo: string) {
+    const dispute = await this.prisma.disputeCase.findFirst({
+      where: {
+        case_number: caseNumber,
+        invoice: {
+          invoice_no: invoiceNo,
+        },
+      },
+      include: {
+        invoice: { include: { customer: true } },
+        activities: { orderBy: { created_at: 'asc' } },
+        attachments: { orderBy: { created_at: 'asc' } },
+        resolutions: { orderBy: { created_at: 'desc' } },
+      },
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('Dispute case not found');
+    }
+
+    return {
+      case_number: dispute.case_number,
+      status: dispute.status,
+      priority: dispute.priority,
+      dispute_type: dispute.dispute_type,
+      disputed_amount: Number(dispute.disputed_amount),
+      submitted_at: dispute.raised_date,
+      due_date: dispute.due_date,
+      evidence_due_date: dispute.evidence_due_date,
+      customer_name: dispute.invoice?.customer?.name,
+      invoice_no: dispute.invoice?.invoice_no,
+      timeline: dispute.activities.filter((activity) => activity.activity_type !== 'INTERNAL_COMMENT'),
+      evidence_items: dispute.attachments,
+      latest_resolution: dispute.resolutions[0] || null,
+    };
   }
 
   // --- Sales Invoices ---

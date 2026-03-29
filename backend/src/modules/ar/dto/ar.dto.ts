@@ -1,10 +1,12 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsEmail,
   IsNumber,
   IsOptional,
   IsString,
+  ValidateNested,
   MaxLength,
   Min,
   MinLength,
@@ -234,4 +236,98 @@ export class CreateDisputeAttachmentDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+}
+
+export class IntakeEvidenceItemDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(60)
+  category: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  file_name: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  file_type: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  file_size_mb?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  file_url?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reference?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class CreatePortalDisputeIntakeDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  invoice_no: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  dispute_type: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  disputed_amount: number;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(160)
+  customer_name: string;
+
+  @IsEmail()
+  submitter_email: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  submitter_phone?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  brief_description: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  preferred_resolution?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  urgency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  reason_code?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntakeEvidenceItemDto)
+  evidence_items?: IntakeEvidenceItemDto[];
 }

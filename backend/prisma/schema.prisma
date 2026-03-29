@@ -882,6 +882,11 @@ model DisputeCase {
   company_id        String    @db.Uuid
   invoice_id        String    @db.Uuid
   customer_id       String    @db.Uuid
+  case_number       String?   @unique
+  intake_channel    String?   @default("internal")
+  submitter_name    String?
+  submitter_email   String?
+  submitter_phone   String?
   status            String    @default("OPEN")
   priority          String    @default("MEDIUM")
   dispute_type      String

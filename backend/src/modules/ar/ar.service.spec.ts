@@ -545,4 +545,106 @@ describe('ArService', () => {
     });
     expect(dashboard.disputesAtRisk?.resolvedWithinSlaRate).toBeGreaterThan(0);
   });
+
+  it('creates a portal dispute intake with case number and intake evidence', async () => {
+    prisma.aRInvoice.findFirst
+      .mockResolvedValueOnce({
+        id: 'invoice-1',
+        company_id: 'company-1',
+        customer_id: 'customer-1',
+        invoice_no: 'AR-1001',
+        amount: 500,
+        paid_amount: 100,
+        invoice_date: new Date('2026-03-01T00:00:00.000Z'),
+        due_date: new Date('2026-03-31T00:00:00.000Z'),
+        customer: { name: 'North Buyer' },
+      });
+    prisma.disputeCase.findFirst.mockResolvedValue(null);
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeCase: {
+          create: jest.fn().mockResolvedValue({
+            id: 'dispute-portal-1',
+            case_number: 'DSP-2026-00000111',
+            status: 'UNDER_REVIEW',
+            evidence_required: ['PHOTO'],
+            invoice: { customer: { name: 'North Buyer' } },
+            activities: [],
+            attachments: [],
+          }),
+          count: jest.fn().mockResolvedValue(1),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-1' }),
+        },
+        disputeAttachment: {
+          create: jest.fn().mockResolvedValue({ id: 'attachment-1' }),
+        },
+        customer: {
+          update: jest.fn(),
+        },
+      }),
+    );
+
+    const result = await service.createPortalDisputeIntake({
+      invoice_no: 'AR-1001',
+      dispute_type: 'QUALITY',
+      disputed_amount: 150,
+      customer_name: 'North Buyer',
+      submitter_email: 'buyer@example.com',
+      brief_description: 'Damaged batch received.',
+      evidence_items: [
+        {
+          category: 'PHOTO',
+          file_name: 'damage-photo.jpg',
+          file_type: 'image',
+        },
+      ],
+    });
+
+    expect(result.case_number).toContain('DSP-');
+    expect(result.status).toBe('UNDER_REVIEW');
+    expect(result.evidence_complete).toBe(true);
+  });
+
+  it('returns public dispute status by case number and invoice number', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'UNDER_REVIEW',
+      priority: 'HIGH',
+      dispute_type: 'QUALITY',
+      disputed_amount: 180,
+      raised_date: new Date('2026-03-29T10:00:00.000Z'),
+      due_date: new Date('2026-04-03T10:00:00.000Z'),
+      evidence_due_date: new Date('2026-03-31T10:00:00.000Z'),
+      invoice: {
+        invoice_no: 'AR-1001',
+        customer: { name: 'North Buyer' },
+      },
+      activities: [
+        {
+          id: 'activity-1',
+          activity_type: 'DISPUTE_SUBMITTED',
+          notes: 'Submitted via portal.',
+          created_at: new Date('2026-03-29T10:00:00.000Z'),
+        },
+      ],
+      attachments: [
+        {
+          id: 'attachment-1',
+          category: 'PHOTO',
+          file_name: 'damage-photo.jpg',
+        },
+      ],
+      resolutions: [],
+    });
+
+    const result = await service.getPortalDisputeStatus('DSP-2026-12345678', 'AR-1001');
+
+    expect(result.case_number).toBe('DSP-2026-12345678');
+    expect(result.timeline).toHaveLength(1);
+    expect(result.evidence_items).toHaveLength(1);
+  });
 });
