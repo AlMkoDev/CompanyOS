@@ -143,6 +143,10 @@ export default function ArDashboardPage() {
             <Users size={18} />
             Customer List
           </Link>
+          <Link href="/disputes" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
+            <AlertCircle size={18} />
+            Dispute Portal
+          </Link>
           <Link href="/ar/invoices" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
             <Plus size={18} />
             New Invoice
