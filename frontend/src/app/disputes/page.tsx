@@ -1,9 +1,11 @@
 "use client";
 
 import React from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AlertCircle, FileText, Plus, Search } from 'lucide-react';
-import { apiUrl } from '@/lib/api';
+import { apiFetch, apiUrl } from '@/lib/api';
+import { normalizeRoleName } from '@/lib/permissions';
+import { useAuthStore } from '@/store/authStore';
 
 type InvoiceContext = {
   invoice_id: string;
@@ -49,11 +51,26 @@ const emptyEvidence = (): EvidenceItem => ({
   notes: '',
 });
 
+const AR_WORKSPACE_ALLOWED_ROLES = new Set([
+  'accounts receivable specialist',
+  'accounting manager',
+  'finance manager',
+  'financial controller',
+  'finance director',
+  'chief financial officer (cfo)',
+]);
+
 export default function PublicDisputePortalPage() {
+  const router = useRouter();
+  const { setAuth } = useAuthStore();
   const [invoiceNo, setInvoiceNo] = React.useState('');
   const [invoiceContext, setInvoiceContext] = React.useState<InvoiceContext | null>(null);
   const [contextMessage, setContextMessage] = React.useState('');
   const [loadingContext, setLoadingContext] = React.useState(false);
+  const [workspaceUser, setWorkspaceUser] = React.useState<{ roles?: string[] } | null>(null);
+  const [checkingWorkspaceAccess, setCheckingWorkspaceAccess] = React.useState(true);
+  const [returningToWorkspace, setReturningToWorkspace] = React.useState(false);
+  const [workspaceMessage, setWorkspaceMessage] = React.useState('');
 
   const [form, setForm] = React.useState({
     dispute_type: 'QUALITY',
@@ -75,6 +92,115 @@ export default function PublicDisputePortalPage() {
   const [lookupResult, setLookupResult] = React.useState<LookupResult | null>(null);
   const [lookupMessage, setLookupMessage] = React.useState('');
   const [lookingUp, setLookingUp] = React.useState(false);
+
+  React.useEffect(() => {
+    const verifyWorkspaceAccess = async () => {
+      setCheckingWorkspaceAccess(true);
+      try {
+        const res = await apiFetch('/auth/me');
+        if (!res.ok) {
+          setWorkspaceUser(null);
+          return;
+        }
+
+        const data = (await res.json()) as {
+          user?: {
+            id: string;
+            email: string;
+            firstName: string;
+            lastName: string;
+            companyId: string;
+            roles: string[];
+            mfaEnabled?: boolean;
+            company?: Record<string, unknown>;
+          };
+        };
+
+        if (data.user) {
+          setAuth(data.user);
+          setWorkspaceUser(data.user);
+        } else {
+          setWorkspaceUser(null);
+        }
+      } catch {
+        setWorkspaceUser(null);
+      } finally {
+        setCheckingWorkspaceAccess(false);
+      }
+    };
+
+    verifyWorkspaceAccess();
+  }, [setAuth]);
+
+  const canReturnToArWorkspace = React.useMemo(() => {
+    if (!workspaceUser?.roles?.length) {
+      return false;
+    }
+
+    return workspaceUser.roles.some((role) => {
+      const normalized = normalizeRoleName(role);
+      if (!normalized) {
+        return false;
+      }
+
+      return AR_WORKSPACE_ALLOWED_ROLES.has(normalized.replace(/_/g, ' '));
+    });
+  }, [workspaceUser?.roles]);
+
+  const handleReturnToWorkspace = async () => {
+    setReturningToWorkspace(true);
+    setWorkspaceMessage('');
+
+    try {
+      const res = await apiFetch('/auth/me');
+      if (!res.ok) {
+        setWorkspaceUser(null);
+        setWorkspaceMessage('Your workspace session is no longer active. Please reopen the AR workspace from a signed-in session.');
+        return;
+      }
+
+      const data = (await res.json()) as {
+        user?: {
+          id: string;
+          email: string;
+          firstName: string;
+          lastName: string;
+          companyId: string;
+          roles: string[];
+          mfaEnabled?: boolean;
+          company?: Record<string, unknown>;
+        };
+      };
+
+      if (!data.user) {
+        setWorkspaceMessage('Unable to confirm your workspace session right now.');
+        return;
+      }
+
+      const isArUser = (data.user.roles || []).some((role) => {
+        const normalized = normalizeRoleName(role);
+        if (!normalized) {
+          return false;
+        }
+
+        return AR_WORKSPACE_ALLOWED_ROLES.has(normalized.replace(/_/g, ' '));
+      });
+
+      if (!isArUser) {
+        setWorkspaceMessage('This shortcut is only available to AR workspace users.');
+        setWorkspaceUser(data.user);
+        return;
+      }
+
+      setAuth(data.user);
+      setWorkspaceUser(data.user);
+      router.push('/ar');
+    } catch {
+      setWorkspaceMessage('Unable to reconnect to the AR workspace right now.');
+    } finally {
+      setReturningToWorkspace(false);
+    }
+  };
 
   const fetchInvoiceContext = async () => {
     if (!invoiceNo.trim()) {
@@ -187,11 +313,22 @@ export default function PublicDisputePortalPage() {
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
               Submit a structured dispute with evidence at first contact, receive a case ID instantly, and track progress without a login.
             </p>
+            {workspaceMessage ? <p className="mt-3 text-sm text-amber-700">{workspaceMessage}</p> : null}
           </div>
-          <Link href="/login" className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-brand-navy shadow-sm">
-            Back to Workspace
-          </Link>
+          {canReturnToArWorkspace ? (
+            <button
+              type="button"
+              onClick={handleReturnToWorkspace}
+              disabled={returningToWorkspace}
+              className="rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-brand-navy shadow-sm disabled:opacity-60"
+            >
+              {returningToWorkspace ? 'Returning...' : 'Back to Workspace'}
+            </button>
+          ) : null}
         </div>
+        {checkingWorkspaceAccess ? (
+          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Checking workspace access...</div>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="rounded-[32px] border border-slate-100 bg-white p-8 shadow-sm">
