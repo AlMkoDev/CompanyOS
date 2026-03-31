@@ -6,6 +6,21 @@ $backendPath = Join-Path $repoRoot 'backend'
 $frontendPath = Join-Path $repoRoot 'frontend'
 $migrationPath = Join-Path $backendPath 'prisma\migrations'
 
+function Invoke-Step {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Label,
+    [Parameter(Mandatory = $true)]
+    [scriptblock] $Action
+  )
+
+  Write-Host $Label -ForegroundColor Cyan
+  & $Action
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Label failed with exit code $LASTEXITCODE."
+  }
+}
+
 Write-Host 'Finance release verification: recent AP/AR/accounting migrations' -ForegroundColor Cyan
 Get-ChildItem -Path $migrationPath -Directory |
   Where-Object { $_.Name -match '20260328|20260329' } |
@@ -13,26 +28,23 @@ Get-ChildItem -Path $migrationPath -Directory |
   Select-Object -ExpandProperty Name
 
 Write-Host ''
-Write-Host 'Finance release verification: focused backend finance specs' -ForegroundColor Cyan
 Push-Location $backendPath
 try {
-  & 'C:\nvm4w\nodejs\npm.cmd' run test:finance-release
+  Invoke-Step 'Finance release verification: focused backend finance specs' { & 'C:\nvm4w\nodejs\npm.cmd' run test:finance-release }
 } finally {
   Pop-Location
 }
 
-Write-Host 'Finance release verification: backend production build' -ForegroundColor Cyan
 Push-Location $backendPath
 try {
-  & 'C:\nvm4w\nodejs\npm.cmd' run build
+  Invoke-Step 'Finance release verification: backend production build' { & 'C:\nvm4w\nodejs\npm.cmd' run build }
 } finally {
   Pop-Location
 }
 
-Write-Host 'Finance release verification: frontend production build' -ForegroundColor Cyan
 Push-Location $frontendPath
 try {
-  & 'C:\nvm4w\nodejs\npm.cmd' run build:release1
+  Invoke-Step 'Finance release verification: frontend production build' { & 'C:\nvm4w\nodejs\npm.cmd' run build:release1 }
 } finally {
   Pop-Location
 }
