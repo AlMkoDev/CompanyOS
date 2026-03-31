@@ -79,6 +79,8 @@ interface DisputeRecord {
   resolutions?: DisputeResolution[];
   attachments?: DisputeAttachment[];
   documents?: DisputeDocument[];
+  acceptance_status?: string | null;
+  accepted_at?: string | null;
 }
 
 const STATUS_OPTIONS = ['ALL', 'OPEN', 'UNDER_REVIEW', 'EVIDENCE_PENDING', 'ESCALATED', 'RESOLUTION_PROPOSED', 'RESOLVED', 'CLOSED'];
@@ -352,6 +354,12 @@ export default function ArDisputesPage() {
                     <div className="mt-3 text-xs text-slate-500">
                       {dispute.activities?.length || 0} timeline events · {dispute.attachments?.length || 0} evidence items
                     </div>
+                    {dispute.acceptance_status ? (
+                      <div className="mt-2 text-[10px] uppercase tracking-widest text-slate-400">
+                        Closure {dispute.acceptance_status.replaceAll('_', ' ')}
+                        {dispute.accepted_at ? ` · ${new Date(dispute.accepted_at).toLocaleDateString()}` : ''}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-5">
                     <div className="flex flex-col gap-2">
@@ -380,6 +388,11 @@ export default function ArDisputesPage() {
                           Latest resolution: {dispute.resolutions[0].status}
                         </div>
                       )}
+                      {dispute.documents?.some((document) => document.document_type === 'COMPLIANCE_DOSSIER') ? (
+                        <div className="text-[10px] uppercase tracking-widest text-emerald-600">
+                          Dossier ready
+                        </div>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

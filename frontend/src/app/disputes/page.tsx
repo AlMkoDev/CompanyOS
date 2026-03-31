@@ -108,10 +108,18 @@ export default function PublicDisputePortalPage() {
   const [acceptTerms, setAcceptTerms] = React.useState(false);
   const [surveyScore, setSurveyScore] = React.useState('5');
   const [reopenNotes, setReopenNotes] = React.useState('');
+  const [timelineQuery, setTimelineQuery] = React.useState('');
   const groupedTimeline = React.useMemo(() => {
     if (!lookupResult) return [];
 
-    return lookupResult.timeline.reduce<Array<{ key: string; label: string; created_at: string; items: LookupResult['timeline'] }>>((groups, item) => {
+    const normalizedQuery = timelineQuery.trim().toLowerCase();
+    const filteredTimeline = lookupResult.timeline.filter((item) => {
+      if (!normalizedQuery) return true;
+      const haystack = [item.activity_type, item.notes].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+
+    return filteredTimeline.reduce<Array<{ key: string; label: string; created_at: string; items: LookupResult['timeline'] }>>((groups, item) => {
       const dateKey = new Date(item.created_at).toLocaleDateString('en-ZA', {
         year: 'numeric',
         month: 'long',
@@ -131,7 +139,17 @@ export default function PublicDisputePortalPage() {
       });
       return groups;
     }, []);
-  }, [lookupResult]);
+  }, [lookupResult, timelineQuery]);
+
+  const filteredDocuments = React.useMemo(() => {
+    if (!lookupResult) return [];
+    const normalizedQuery = timelineQuery.trim().toLowerCase();
+    return lookupResult.documents.filter((document) => {
+      if (!normalizedQuery) return true;
+      const haystack = [document.document_type, document.title].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [lookupResult, timelineQuery]);
 
   const closureInteraction = React.useMemo(() => {
     if (!lookupResult) return null;
@@ -356,6 +374,7 @@ export default function PublicDisputePortalPage() {
       setClosureActionMessage('');
       setAcceptTerms(false);
       setReopenNotes('');
+      setTimelineQuery('');
       setSurveyScore(String((data as LookupResult).closure_survey_score || 5));
     } catch {
       setLookupMessage('Unable to look up the case right now.');
@@ -742,9 +761,21 @@ export default function PublicDisputePortalPage() {
                   </div>
                 </div>
 
+                <div className="mb-6 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <label className="mb-2 block text-[11px] font-black uppercase tracking-widest text-slate-400">
+                    Search history and documents
+                  </label>
+                  <input
+                    value={timelineQuery}
+                    onChange={(e) => setTimelineQuery(e.target.value)}
+                    placeholder="Search for refund, credit, evidence, closure..."
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-brand-gold"
+                  />
+                </div>
+
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold uppercase tracking-widest text-slate-400">Case timeline</h4>
-                  {groupedTimeline.map((group) => (
+                  {groupedTimeline.length ? groupedTimeline.map((group) => (
                     <div key={group.key} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                       <div className="mb-3 flex items-center justify-between gap-4">
                         <div className="text-sm font-semibold text-brand-navy">{group.label}</div>
@@ -764,14 +795,18 @@ export default function PublicDisputePortalPage() {
                         ))}
                       </div>
                     </div>
-                  ))}
+                  )) : (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                      No timeline items match this search yet.
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 space-y-3">
                   <h4 className="text-sm font-bold uppercase tracking-widest text-slate-400">Document hub</h4>
-                  {lookupResult.documents.length ? (
+                  {filteredDocuments.length ? (
                     <div className="space-y-3">
-                      {lookupResult.documents.map((document) => (
+                      {filteredDocuments.map((document) => (
                         <div key={document.id} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 px-4 py-3">
                           <div>
                             <div className="text-sm font-semibold text-brand-navy">{document.title}</div>
@@ -798,7 +833,9 @@ export default function PublicDisputePortalPage() {
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                      Final dispute documents will appear here once a resolution is confirmed and the case is closed.
+                      {timelineQuery.trim()
+                        ? 'No documents match this search yet.'
+                        : 'Final dispute documents will appear here once a resolution is confirmed and the case is closed.'}
                     </div>
                   )}
                 </div>
