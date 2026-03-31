@@ -17,6 +17,7 @@
     "test:release1": "jest --runInBand release1.smoke.spec.ts modules/auth/auth.service.spec.ts modules/company/company.service.spec.ts modules/departments/departments.service.spec.ts modules/tasks/tasks.service.spec.ts modules/hris/hris.service.spec.ts modules/onboarding/onboarding.service.spec.ts",
     "test:finance-release": "jest --runInBand modules/accounting/accounting.service.spec.ts modules/accounting/accounting.controller.integration.spec.ts modules/ap/ap.service.spec.ts modules/ar/ar.service.spec.ts",
     "seed:staging-finance": "ts-node prisma/seed_staging_finance.ts",
+    "cleanup:staging-finance": "ts-node prisma/cleanup_staging_finance.ts",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
