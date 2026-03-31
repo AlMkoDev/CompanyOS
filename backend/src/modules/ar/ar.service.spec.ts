@@ -748,6 +748,44 @@ describe('ArService', () => {
     expect(result.status).toBe('CLOSED');
   });
 
+  it('generates an internal compliance dossier document', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'CLOSED',
+      priority: 'HIGH',
+      disputed_amount: 200,
+      acceptance_status: 'ACCEPTED',
+      accepted_at: new Date('2026-03-29T12:00:00.000Z'),
+      closure_locked_until: new Date('2026-04-12T10:00:00.000Z'),
+      invoice: { invoice_no: 'AR-1001', customer: { name: 'North Buyer' } },
+      activities: [{ id: 'activity-1' }],
+      attachments: [{ id: 'attachment-1' }],
+      resolutions: [{ id: 'resolution-1' }],
+      documents: [],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeDocument: {
+          create: jest.fn().mockResolvedValue({
+            id: 'doc-1',
+            document_type: 'COMPLIANCE_DOSSIER',
+            title: 'Dispute Dossier - DSP-2026-12345678',
+          }),
+        },
+        disputeActivity: {
+          create: jest.fn().mockResolvedValue({ id: 'activity-2' }),
+        },
+      }),
+    );
+
+    const result = await service.generateDisputeDossier('company-1', 'dispute-1', 'user-1');
+
+    expect(result.document_type).toBe('COMPLIANCE_DOSSIER');
+  });
+
   it('generates closure documents when a dispute is closed after posting', async () => {
     prisma.disputeCase.findFirst.mockResolvedValue({
       id: 'dispute-1',

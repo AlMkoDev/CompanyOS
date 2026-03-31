@@ -1080,6 +1080,9 @@ export class ArService {
         attachments: {
           orderBy: { created_at: 'desc' },
         },
+        documents: {
+          orderBy: { created_at: 'desc' },
+        },
       },
       orderBy: [{ due_date: 'asc' }, { created_at: 'desc' }],
     });
@@ -1104,8 +1107,53 @@ export class ArService {
         attachments: {
           orderBy: { created_at: 'desc' },
         },
+        documents: {
+          orderBy: { created_at: 'desc' },
+        },
       },
       orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async generateDisputeDossier(companyId: string, disputeId: string, userId: string) {
+    const dispute = await this.getCompanyDispute(companyId, disputeId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const dossier = await this.createDisputeDocument(tx, {
+        companyId,
+        disputeId,
+        generatedBy: userId,
+        documentType: 'COMPLIANCE_DOSSIER',
+        title: `Dispute Dossier - ${dispute.case_number || dispute.id}`,
+        templateVersion: 'v1.0_audit',
+        customerVisible: false,
+        metadata: {
+          case_number: dispute.case_number,
+          customer_name: dispute.invoice?.customer?.name,
+          invoice_no: dispute.invoice?.invoice_no,
+          status: dispute.status,
+          priority: dispute.priority,
+          disputed_amount: Number(dispute.disputed_amount || 0),
+          resolution_count: dispute.resolutions?.length || 0,
+          evidence_count: dispute.attachments?.length || 0,
+          activity_count: dispute.activities?.length || 0,
+          generated_at: new Date().toISOString(),
+          acceptance_status: dispute.acceptance_status || null,
+          accepted_at: dispute.accepted_at?.toISOString?.() || null,
+          closure_locked_until: dispute.closure_locked_until?.toISOString?.() || null,
+        },
+      });
+
+      await this.createDisputeActivityRecord(tx, {
+        companyId,
+        disputeId,
+        activityType: 'DOSSIER_GENERATED',
+        notes: 'Compliance dossier generated for audit and legal export.',
+        actorUserId: userId,
+        internalOnly: true,
+      });
+
+      return dossier;
     });
   }
 

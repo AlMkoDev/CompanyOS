@@ -46,6 +46,14 @@ interface DisputeAttachment {
   created_at: string;
 }
 
+interface DisputeDocument {
+  id: string;
+  document_type: string;
+  title: string;
+  customer_visible?: boolean;
+  created_at: string;
+}
+
 interface DisputeRecord {
   id: string;
   case_number?: string | null;
@@ -70,6 +78,7 @@ interface DisputeRecord {
   activities?: DisputeActivity[];
   resolutions?: DisputeResolution[];
   attachments?: DisputeAttachment[];
+  documents?: DisputeDocument[];
 }
 
 const STATUS_OPTIONS = ['ALL', 'OPEN', 'UNDER_REVIEW', 'EVIDENCE_PENDING', 'ESCALATED', 'RESOLUTION_PROPOSED', 'RESOLVED', 'CLOSED'];
@@ -165,6 +174,26 @@ export default function ArDisputesPage() {
       task_priority: 'MEDIUM',
     });
     setMessage('');
+  };
+
+  const handleGenerateDossier = async (disputeId: string) => {
+    setMessage('');
+    try {
+      const res = await apiFetch(`/ar/disputes/${disputeId}/dossier`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setMessage(data?.message || 'Failed to generate compliance dossier.');
+        return;
+      }
+
+      setMessage('Compliance dossier generated.');
+      await refreshDisputes();
+    } catch {
+      setMessage('Connection error while generating compliance dossier.');
+    }
   };
 
   const refreshDisputes = async () => {
@@ -339,6 +368,13 @@ export default function ArDisputesPage() {
                       >
                         Collaboration Hub
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDossier(dispute.id)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-50"
+                      >
+                        Export Dossier
+                      </button>
                       {dispute.resolutions?.[0] && (
                         <div className="text-[10px] uppercase tracking-widest text-slate-400">
                           Latest resolution: {dispute.resolutions[0].status}
@@ -459,6 +495,38 @@ export default function ArDisputesPage() {
               </div>
 
               <div className="space-y-6">
+                <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+                  <div className="mb-4">
+                    <h3 className="font-heading text-xl text-brand-navy">Export Hub</h3>
+                    <p className="text-sm text-slate-500">Generate and review audit-ready dossier documents for legal and compliance use.</p>
+                  </div>
+                  <div className="space-y-3">
+                    {selectedDispute.documents?.filter((document) => !document.customer_visible).length ? (
+                      selectedDispute.documents
+                        ?.filter((document) => !document.customer_visible)
+                        .map((document) => (
+                          <div key={document.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                            <div className="text-sm font-semibold text-brand-navy">{document.title}</div>
+                            <div className="mt-1 text-[11px] uppercase tracking-widest text-slate-400">
+                              {document.document_type.replaceAll('_', ' ')} · {new Date(document.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))
+                    ) : (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                        No internal dossier exports yet for this dispute.
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateDossier(selectedDispute.id)}
+                      className="rounded-2xl border border-brand-gold/30 bg-brand-gold/10 px-5 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-brand-gold/20"
+                    >
+                      Generate Compliance Dossier
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
                   <div className="mb-4 flex items-center gap-3">
                     <MessageSquare className="text-brand-gold" size={18} />

@@ -110,6 +110,11 @@ export class ArController {
     return this.arService.updateDisputeStatus(req.user.companyId, id, req.user.userId, body);
   }
 
+  @Post('disputes/:id/dossier')
+  async generateDisputeDossier(@Req() req: any, @Param('id') id: string) {
+    return this.arService.generateDisputeDossier(req.user.companyId, id, req.user.userId);
+  }
+
   @Post('disputes/:id/resolutions')
   async createDisputeResolution(@Req() req: any, @Param('id') id: string, @Body() body: CreateDisputeResolutionDto) {
     return this.arService.createDisputeResolution(req.user.companyId, id, req.user.userId, body);
