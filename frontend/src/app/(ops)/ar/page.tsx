@@ -141,7 +141,7 @@ export default function ArDashboardPage() {
         <div className="flex gap-3">
           <Link href="/ar/customers" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
             <Users size={18} />
-            Customer List
+            Customer Directory
           </Link>
           <Link href="/ar/disputes" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
             <AlertCircle size={18} />
@@ -149,11 +149,11 @@ export default function ArDashboardPage() {
           </Link>
           <Link href="/disputes" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
             <AlertCircle size={18} />
-            Dispute Portal
+            Customer Dispute Portal
           </Link>
           <Link href="/ar/invoices" className="btn-primary bg-brand-navy text-white px-6 py-3 rounded-2xl font-bold text-sm hover:opacity-90 transition-all shadow-xl flex items-center gap-2">
             <Plus size={18} />
-            New Invoice
+            Issue Invoice
           </Link>
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function ArDashboardPage() {
           value={`R ${(dashboard?.totalAr || 0).toLocaleString()}`} 
           subtext="Outstanding Debt"
           icon={<TrendingUp className="text-emerald-600" />}
-          trend="Live"
+          trend="Current balance"
           isPositive
         />
         <StatCard 
@@ -173,7 +173,7 @@ export default function ArDashboardPage() {
           value={dashboard?.customerCount || 0} 
           subtext="Revenue Sources"
           icon={<Users className="text-brand-navy" />}
-          trend="Live"
+          trend="Directory"
         />
         <StatCard 
           label="Overdue (90 Days+)" 
@@ -188,7 +188,7 @@ export default function ArDashboardPage() {
           value={dashboard?.collectionCases ?? collectionCount ?? 0} 
           subtext="Active Recoveries"
           icon={<Clock className="text-brand-gold" />}
-          trend="Live"
+          trend="Open queue"
         />
         <StatCard
           label="Disputes At Risk"

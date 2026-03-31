@@ -216,7 +216,7 @@ export default function AccountingDashboardPage() {
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">AP</span>
           </div>
           <h3 className="text-xl font-heading text-brand-navy mb-2">Accounts Payable</h3>
-          <p className="text-sm text-slate-500">Manage vendors, invoices, approvals, and payment runs.</p>
+          <p className="text-sm text-slate-500">Manage vendors, vendor bills, approvals, and payment runs.</p>
         </Link>
 
         <Link href="/ar" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
@@ -225,7 +225,7 @@ export default function AccountingDashboardPage() {
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">AR</span>
           </div>
           <h3 className="text-xl font-heading text-brand-navy mb-2">Accounts Receivable</h3>
-          <p className="text-sm text-slate-500">Manage customers, collections, aging, and receipts.</p>
+          <p className="text-sm text-slate-500">Manage customers, sales invoices, collections, aging, and receipts.</p>
         </Link>
       </div>
 

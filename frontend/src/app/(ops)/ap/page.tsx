@@ -93,7 +93,7 @@ export default function ApDashboardPage() {
       <div className="flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-heading text-brand-navy">Accounts Payable</h1>
-          <p className="text-slate-500">Manage vendors, purchase orders, and payment approvals.</p>
+          <p className="text-slate-500">Manage vendors, requisitions, vendor bills, and payment approvals.</p>
         </div>
         <div className="flex gap-3">
           <Link href="/ap/requisitions" className="btn-secondary bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center gap-2">
@@ -126,7 +126,7 @@ export default function ApDashboardPage() {
           value={dashboard ? `R ${(dashboard.totalOutstanding || 0).toLocaleString()}` : "R 0"} 
           subtext="Unpaid Bills"
           icon={<CreditCard className="text-rose-600" />}
-          trend="Live"
+          trend="Current balance"
           isNeutral
         />
         <StatCard 
@@ -134,7 +134,7 @@ export default function ApDashboardPage() {
           value={dashboard?.vendorCount ?? 0} 
           subtext="Onboarded Partners"
           icon={<Building2 className="text-brand-navy" />}
-          trend="Live"
+          trend="Directory"
           isPositive
         />
         <StatCard 
@@ -150,7 +150,7 @@ export default function ApDashboardPage() {
           value={matchedRatio !== null ? `${matchedRatio}%` : 'Live'}
           subtext="3-Way Match Success"
           icon={<FileCheck className="text-emerald-600" />}
-          trend={matchedRatio !== null ? `${matchedInvoices.length}/${pendingInvoices.length}` : 'Live'}
+          trend={matchedRatio !== null ? `${matchedInvoices.length}/${pendingInvoices.length}` : 'Awaiting bills'}
           isPositive
         />
       </div>
@@ -208,7 +208,7 @@ export default function ApDashboardPage() {
                 ))}
                 {!dashboard?.pendingInvoices?.length && !loading && (
                    <tr>
-                      <td colSpan={5} className="py-20 text-center text-slate-400 italic">No bills in approval queue.</td>
+                      <td colSpan={5} className="py-20 text-center text-slate-400 italic">No vendor bills are waiting for approval.</td>
                    </tr>
                 )}
               </tbody>
@@ -216,7 +216,7 @@ export default function ApDashboardPage() {
           </div>
           <div className="p-6 bg-slate-50/50 border-t border-slate-50 text-center">
              <Link href="/ap/vendor-bills" className="text-xs font-bold text-brand-gold uppercase tracking-widest hover:underline">
-                Batch Review {dashboard?.pendingInvoices?.length ?? 0} Vendor Bills →
+                Open Vendor Bill Workspace →
              </Link>
           </div>
         </div>
