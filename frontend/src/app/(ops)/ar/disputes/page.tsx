@@ -442,29 +442,63 @@ export default function ArDisputesPage() {
       </div>
 
       {selectedDispute ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-brand-navy/60 px-4 py-10 backdrop-blur-sm">
-          <div className="w-full max-w-6xl overflow-hidden rounded-[36px] bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-100 bg-slate-50 p-8">
-              <div>
-                <h2 className="font-heading text-2xl text-brand-navy">Collaboration Hub</h2>
-                <p className="text-sm text-slate-500">
-                  {selectedDispute.case_number || selectedDispute.id} · {selectedDispute.invoice?.customer?.name || 'Unknown customer'} · Invoice {selectedDispute.invoice?.invoice_no || 'Unlinked'}
-                </p>
-              </div>
-              <button onClick={() => setSelectedDispute(null)} className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:bg-slate-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-brand-navy/60 p-4 backdrop-blur-sm md:p-6">
+          <div className="my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-7xl flex-col overflow-hidden rounded-[36px] border border-white/60 bg-[linear-gradient(180deg,#fefefe_0%,#f8fafc_100%)] shadow-[0_30px_120px_rgba(15,23,42,0.28)]">
+            <div className="border-b border-slate-200/70 bg-[radial-gradient(circle_at_top_left,rgba(212,163,25,0.14),transparent_38%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-6 md:px-8 md:py-7">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-brand-gold/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-brand-gold">
+                      Internal Workspace
+                    </span>
+                    <StatusBadge status={selectedDispute.status} />
+                  </div>
+                  <h2 className="font-heading text-3xl leading-tight text-brand-navy">Collaboration Hub</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-600 md:text-base">
+                    {selectedDispute.case_number || selectedDispute.id} · {selectedDispute.invoice?.customer?.name || 'Unknown customer'} · Invoice {selectedDispute.invoice?.invoice_no || 'Unlinked'}
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <HubMetric
+                      label="Disputed Value"
+                      value={`R ${Number(selectedDispute.disputed_amount).toLocaleString()}`}
+                    />
+                    <HubMetric
+                      label="Evidence Items"
+                      value={String(selectedDispute.attachments?.length || 0)}
+                    />
+                    <HubMetric
+                      label="Timeline Events"
+                      value={String(selectedDispute.activities?.length || 0)}
+                    />
+                    <HubMetric
+                      label="Closure State"
+                      value={selectedDispute.acceptance_status ? selectedDispute.acceptance_status.replaceAll('_', ' ') : 'No acceptance flow'}
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedDispute(null)}
+                  className="rounded-2xl border border-slate-200 bg-white/90 p-3 text-slate-700 shadow-sm transition-all hover:bg-white"
+                >
                 <X size={20} />
-              </button>
+                </button>
+              </div>
             </div>
 
-            <div className="grid gap-8 p-8 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="rounded-[32px] border border-slate-100 bg-white">
-                <div className="border-b border-slate-100 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-400">
+            <div className="grid min-h-0 flex-1 gap-6 overflow-hidden p-4 md:p-6 xl:grid-cols-[minmax(0,1.4fr)_380px]">
+              <div className="flex min-h-0 flex-col overflow-hidden rounded-[32px] border border-slate-200/80 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">
                   Unified Timeline
+                  </div>
+                  <div className="text-[11px] uppercase tracking-widest text-slate-400">
+                    Latest first
+                  </div>
                 </div>
-                <div className="max-h-[520px] space-y-4 overflow-y-auto p-6">
+                <div className="min-h-0 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 md:p-6">
                   {selectedDispute.activities?.length ? (
                     selectedDispute.activities.map((activity) => (
-                      <div key={activity.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
+                      <div key={activity.id} className="rounded-[28px] border border-slate-200/70 bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.05)]">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
                             <div className="flex flex-wrap items-center gap-2">
@@ -525,8 +559,8 @@ export default function ArDisputesPage() {
                 </div>
               </div>
 
-              <div className="space-y-6">
-                <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+              <div className="min-h-0 space-y-5 overflow-y-auto pr-1">
+                <div className="rounded-[32px] border border-slate-200/80 bg-white p-6 shadow-sm">
                   <div className="mb-4">
                     <h3 className="font-heading text-xl text-brand-navy">Export Hub</h3>
                     <p className="text-sm text-slate-500">Generate and review audit-ready dossier documents for legal and compliance use.</p>
@@ -550,14 +584,14 @@ export default function ArDisputesPage() {
                     <button
                       type="button"
                       onClick={() => handleGenerateDossier(selectedDispute.id)}
-                      className="rounded-2xl border border-brand-gold/30 bg-brand-gold/10 px-5 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-brand-gold/20"
+                      className="w-full rounded-2xl border border-brand-gold/30 bg-brand-gold/10 px-5 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-brand-gold/20"
                     >
                       Generate Compliance Dossier
                     </button>
                   </div>
                 </div>
 
-                <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+                <div className="rounded-[32px] border border-slate-200/80 bg-white p-6 shadow-sm">
                   <div className="mb-4 flex items-center gap-3">
                     <MessageSquare className="text-brand-gold" size={18} />
                     <div>
@@ -645,7 +679,7 @@ export default function ArDisputesPage() {
                     <button
                       type="submit"
                       disabled={savingComment || !activityForm.notes.trim()}
-                      className="rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="w-full rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-xl transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {savingComment ? 'Saving...' : 'Save Collaboration Update'}
                     </button>
@@ -656,6 +690,15 @@ export default function ArDisputesPage() {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function HubMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white/85 px-4 py-3 shadow-sm backdrop-blur">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-semibold capitalize text-brand-navy">{value}</div>
     </div>
   );
 }
