@@ -31,6 +31,173 @@ interface ReconciliationMatchRecord {
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
+  private normalizeCode(code: string) {
+    return code.trim().toUpperCase();
+  }
+
+  private extractBaseCode(code: string) {
+    return this.normalizeCode(code).split('-')[0];
+  }
+
+  private getDefaultNormalBalance(type: string) {
+    return ['asset', 'expense'].includes(type) ? 'DR' : 'CR';
+  }
+
+  private validateAccountCodeFormat(code: string) {
+    const normalizedCode = this.normalizeCode(code);
+    if (!/^\d{4}(?:-[A-Z0-9]{1,10})?$/.test(normalizedCode)) {
+      throw new BadRequestException('Account code must use 4 digits with an optional suffix such as 6111-OPS');
+    }
+
+    return normalizedCode;
+  }
+
+  private validateTypeRange(type: string, baseCode: string) {
+    const numericCode = Number(baseCode);
+
+    if (Number.isNaN(numericCode)) {
+      throw new BadRequestException('Account code must begin with a 4-digit numeric base');
+    }
+
+    if (numericCode >= 1000 && numericCode <= 1999 && type !== 'asset') {
+      throw new BadRequestException('Codes in the 1000 range must use the asset type');
+    }
+
+    if (numericCode >= 2000 && numericCode <= 2999 && type !== 'liability') {
+      throw new BadRequestException('Codes in the 2000 range must use the liability type');
+    }
+
+    if (numericCode >= 3000 && numericCode <= 3999 && type !== 'equity') {
+      throw new BadRequestException('Codes in the 3000 range must use the equity type');
+    }
+
+    if (numericCode >= 4000 && numericCode <= 4999 && type !== 'revenue') {
+      throw new BadRequestException('Codes in the 4000 range must use the revenue type');
+    }
+
+    if (numericCode >= 5000 && numericCode <= 8999 && type !== 'expense') {
+      throw new BadRequestException('Codes in the 5000-8999 range must use the expense type');
+    }
+  }
+
+  private validateReservedCodeRules(baseCode: string, isHeader?: boolean, isContra?: boolean) {
+    if (baseCode.endsWith('00') && !isHeader) {
+      throw new BadRequestException('Codes ending in 00 are reserved for header accounts');
+    }
+
+    if (baseCode.endsWith('90') && !isContra) {
+      throw new BadRequestException('Codes ending in 90 are reserved for contra accounts');
+    }
+  }
+
+  private async assertUniqueCode(companyId: string, code: string, ignoreAccountId?: string) {
+    const existing = await this.prisma.gLAccount.findFirst({
+      where: {
+        company_id: companyId,
+        code,
+        NOT: ignoreAccountId ? { id: ignoreAccountId } : undefined,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('An account with this code already exists in the chart');
+    }
+  }
+
+  private async getValidatedParent(companyId: string, parentId?: string | null) {
+    if (!parentId) {
+      return null;
+    }
+
+    const parent = await this.prisma.gLAccount.findFirst({
+      where: { id: parentId, company_id: companyId },
+    });
+
+    if (!parent) {
+      throw new NotFoundException('Parent account not found');
+    }
+
+    if (parent.is_active === false) {
+      throw new BadRequestException('Inactive accounts cannot be used as parents');
+    }
+
+    if (parent.is_header === false) {
+      throw new BadRequestException('Only header accounts can be assigned as parents');
+    }
+
+    return parent;
+  }
+
+  private async assertNoCircularParent(companyId: string, accountId: string, parentId?: string | null) {
+    if (!parentId) {
+      return;
+    }
+
+    let currentParentId: string | null | undefined = parentId;
+    let depth = 0;
+
+    while (currentParentId) {
+      if (currentParentId === accountId) {
+        throw new BadRequestException('Circular account hierarchy detected');
+      }
+
+      const parent = await this.prisma.gLAccount.findFirst({
+        where: { id: currentParentId, company_id: companyId },
+        select: { parent_id: true },
+      });
+
+      currentParentId = parent?.parent_id;
+      depth += 1;
+
+      if (depth > 10) {
+        throw new BadRequestException('Account hierarchy is too deep or invalid');
+      }
+    }
+  }
+
+  private buildHierarchyShape(parent: { level?: number | null; full_path?: string | null; code: string } | null, code: string) {
+    const level = parent ? (parent.level || 1) + 1 : 1;
+    if (level > 5) {
+      throw new BadRequestException('Account hierarchy may not exceed five levels');
+    }
+
+    const fullPath = parent?.full_path ? `${parent.full_path} > ${code}` : code;
+    return { level, fullPath };
+  }
+
+  private async assertAccountOwner(companyId: string, accountOwnerId?: string | null) {
+    if (!accountOwnerId) {
+      return null;
+    }
+
+    const owner = await this.prisma.employee.findFirst({
+      where: { id: accountOwnerId, company_id: companyId },
+      select: { id: true, first_name: true, last_name: true },
+    });
+
+    if (!owner) {
+      throw new BadRequestException('Selected account owner does not belong to this company');
+    }
+
+    return owner;
+  }
+
+  private async updateDescendantPaths(companyId: string, accountId: string, parentPath: string) {
+    const children = await this.prisma.gLAccount.findMany({
+      where: { company_id: companyId, parent_id: accountId },
+      select: { id: true, code: true },
+    });
+
+    for (const child of children) {
+      const fullPath = `${parentPath} > ${child.code}`;
+      await this.prisma.gLAccount.update({
+        where: { id: child.id },
+        data: { full_path: fullPath },
+      });
+      await this.updateDescendantPaths(companyId, child.id, fullPath);
+    }
+  }
+
   private getPeriodFromDate(date: Date) {
     return {
       year: date.getFullYear(),
@@ -76,15 +243,50 @@ export class AccountingService {
 
   // --- Chart of Accounts ---
 
-  async createAccount(companyId: string, data: CreateAccountDto) {
+  async createAccount(companyId: string, actorUserId: string | null, data: CreateAccountDto) {
+    const code = this.validateAccountCodeFormat(data.code);
+    const baseCode = this.extractBaseCode(code);
+    const type = data.type.trim().toLowerCase();
+    this.validateTypeRange(type, baseCode);
+    this.validateReservedCodeRules(baseCode, data.is_header, data.is_contra);
+    await this.assertUniqueCode(companyId, code);
+    const parent = await this.getValidatedParent(companyId, data.parent_id || null);
+    await this.assertAccountOwner(companyId, data.account_owner_id || null);
+
+    if (!parent && !data.is_header) {
+      throw new BadRequestException('Top-level accounts must be header accounts');
+    }
+
+    if (parent && parent.type !== type) {
+      throw new BadRequestException('Child accounts must stay within the same major type as their parent');
+    }
+
+    const { level, fullPath } = this.buildHierarchyShape(parent, code);
+
     return this.prisma.gLAccount.create({
       data: {
-        code: data.code,
+        code,
         name: data.name,
-        type: data.type,
-        parent_id: data.parent_id || null,
+        description: data.description || null,
+        type,
+        category: data.category || null,
+        subtype: data.subtype || null,
+        parent_id: parent?.id || null,
+        is_header: Boolean(data.is_header),
+        is_contra: Boolean(data.is_contra),
+        normal_balance: data.normal_balance || this.getDefaultNormalBalance(type),
+        sensitivity_tier: data.sensitivity_tier || 'T3',
+        fs_placement: data.fs_placement || null,
+        account_owner_id: data.account_owner_id || null,
+        budget_enabled: Boolean(data.budget_enabled),
+        tax_treatment: data.tax_treatment || null,
+        level,
+        full_path: fullPath,
         company_id: companyId,
+        created_by: actorUserId || null,
+        modified_by: actorUserId || null,
       },
+      include: { owner: { select: { id: true, first_name: true, last_name: true, email: true } } },
     });
   }
 
@@ -100,30 +302,82 @@ export class AccountingService {
     return this.prisma.gLAccount.findMany({
       where: { company_id: companyId },
       orderBy: { code: 'asc' },
+      include: {
+        owner: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+          },
+        },
+      },
     });
   }
 
-  async updateAccount(companyId: string, accountId: string, data: UpdateAccountDto) {
+  async updateAccount(companyId: string, actorUserId: string | null, accountId: string, data: UpdateAccountDto) {
     const current = await this.getCompanyAccount(companyId, accountId);
+    const nextCode = data.code ? this.validateAccountCodeFormat(data.code) : current.code;
+    const nextBaseCode = this.extractBaseCode(nextCode);
+    const nextType = (data.type ?? current.type).trim().toLowerCase();
+    const nextIsHeader = typeof data.is_header === 'boolean' ? data.is_header : current.is_header;
+    const nextIsContra = typeof data.is_contra === 'boolean' ? data.is_contra : current.is_contra;
+    const nextParentId = data.parent_id === '' ? null : data.parent_id ?? current.parent_id;
 
-    if (data.parent_id && data.parent_id === accountId) {
+    if (nextParentId === accountId) {
       throw new BadRequestException('An account cannot be its own parent');
     }
 
-    if (data.parent_id) {
-      await this.getCompanyAccount(companyId, data.parent_id);
+    this.validateTypeRange(nextType, nextBaseCode);
+    this.validateReservedCodeRules(nextBaseCode, nextIsHeader, nextIsContra);
+    await this.assertUniqueCode(companyId, nextCode, accountId);
+    const parent = await this.getValidatedParent(companyId, nextParentId);
+    await this.assertNoCircularParent(companyId, accountId, parent?.id || null);
+    await this.assertAccountOwner(companyId, data.account_owner_id ?? current.account_owner_id ?? null);
+
+    if (!parent && !nextIsHeader) {
+      throw new BadRequestException('Top-level accounts must be header accounts');
     }
 
-    return this.prisma.gLAccount.update({
+    if (parent && parent.type !== nextType) {
+      throw new BadRequestException('Child accounts must stay within the same major type as their parent');
+    }
+
+    const { level, fullPath } = this.buildHierarchyShape(parent, nextCode);
+
+    const updated = await this.prisma.gLAccount.update({
       where: { id: current.id },
       data: {
-        code: data.code ?? undefined,
+        code: nextCode,
         name: data.name ?? undefined,
-        type: data.type ?? undefined,
-        parent_id: data.parent_id === '' ? null : data.parent_id ?? undefined,
+        description: data.description ?? undefined,
+        type: nextType,
+        category: data.category ?? undefined,
+        subtype: data.subtype ?? undefined,
+        parent_id: nextParentId,
+        is_header: typeof data.is_header === 'boolean' ? data.is_header : undefined,
+        is_contra: typeof data.is_contra === 'boolean' ? data.is_contra : undefined,
         is_active: typeof data.is_active === 'boolean' ? data.is_active : undefined,
+        normal_balance: data.normal_balance ?? undefined,
+        sensitivity_tier: data.sensitivity_tier ?? undefined,
+        fs_placement: data.fs_placement ?? undefined,
+        account_owner_id:
+          data.account_owner_id === '' ? null : data.account_owner_id ?? undefined,
+        budget_enabled: typeof data.budget_enabled === 'boolean' ? data.budget_enabled : undefined,
+        tax_treatment: data.tax_treatment ?? undefined,
+        level,
+        full_path: fullPath,
+        modified_by: actorUserId || null,
+      },
+      include: {
+        owner: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
       },
     });
+
+    await this.updateDescendantPaths(companyId, updated.id, updated.full_path || updated.code);
+    return updated;
   }
 
   // --- Journal Entries ---
@@ -196,7 +450,7 @@ export class AccountingService {
     };
   }
 
-  async createJournalEntry(companyId: string, data: CreateJournalEntryDto) {
+  async createJournalEntry(companyId: string, actorUserId: string | null, data: CreateJournalEntryDto) {
     const { lines, ...entryData } = data;
     const entryDate = entryData.entry_date ? new Date(entryData.entry_date) : new Date();
     const period = await this.ensureAccountingPeriod(companyId, entryDate);
@@ -213,12 +467,41 @@ export class AccountingService {
       throw new BadRequestException('Journal entry must be balanced (Debits must equal Credits)');
     }
 
+    const accountIds = [...new Set(lines.map((line) => line.account_id))];
+    const accounts = await this.prisma.gLAccount.findMany({
+      where: {
+        company_id: companyId,
+        id: { in: accountIds },
+      },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        is_active: true,
+        is_header: true,
+      },
+    });
+
+    if (accounts.length !== accountIds.length) {
+      throw new BadRequestException('One or more journal accounts could not be found in this company chart');
+    }
+
+    const blockedAccount = accounts.find((account) => account.is_active === false || account.is_header);
+    if (blockedAccount) {
+      throw new BadRequestException(
+        blockedAccount.is_header
+          ? `Header account ${blockedAccount.code} cannot accept postings`
+          : `Inactive account ${blockedAccount.code} cannot accept postings`,
+      );
+    }
+
     return this.prisma.journalEntry.create({
       data: {
         ...entryData,
         entry_date: entryDate,
         company_id: companyId,
         period_id: period.id,
+        created_by: actorUserId || null,
         lines: {
           create: lines.map((line: any) => ({
             account_id: line.account_id,

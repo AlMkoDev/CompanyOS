@@ -23,6 +23,9 @@ describe('AccountingService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    employee: {
+      findFirst: jest.fn(),
+    },
     journalEntry: {
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -294,14 +297,19 @@ describe('AccountingService', () => {
 
   it('updates company accounts while preserving scope', async () => {
     prisma.gLAccount.findFirst
-      .mockResolvedValueOnce({ id: 'acct-1', company_id: 'company-1' })
-      .mockResolvedValueOnce({ id: 'parent-1', company_id: 'company-1' });
-    prisma.gLAccount.update.mockResolvedValue({ id: 'acct-1', name: 'Updated Cash' });
+      .mockResolvedValueOnce({ id: 'acct-1', company_id: 'company-1', code: '1111', type: 'asset', is_header: false, is_contra: false, parent_id: null, account_owner_id: null })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'parent-1', company_id: 'company-1', type: 'asset', is_active: true, is_header: true, level: 1, full_path: '1000' });
+    prisma.gLAccount.findMany.mockResolvedValue([]);
+    prisma.gLAccount.update.mockResolvedValue({ id: 'acct-1', name: 'Updated Cash', full_path: '1000 > 1110' });
 
-    const result = await service.updateAccount('company-1', 'acct-1', {
+    const result = await service.updateAccount('company-1', 'user-1', 'acct-1', {
       name: 'Updated Cash',
+      code: '1110',
+      type: 'asset',
       parent_id: 'parent-1',
       is_active: false,
+      is_header: false,
     });
 
     expect(prisma.gLAccount.update).toHaveBeenCalledWith(
@@ -309,11 +317,67 @@ describe('AccountingService', () => {
         where: { id: 'acct-1' },
         data: expect.objectContaining({
           name: 'Updated Cash',
+          code: '1110',
           parent_id: 'parent-1',
           is_active: false,
+          modified_by: 'user-1',
         }),
       }),
     );
-    expect(result).toEqual({ id: 'acct-1', name: 'Updated Cash' });
+    expect(result).toEqual({ id: 'acct-1', name: 'Updated Cash', full_path: '1000 > 1110' });
+  });
+
+  it('creates metadata-rich accounts with hierarchy defaults', async () => {
+    prisma.gLAccount.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 'parent-1', company_id: 'company-1', type: 'asset', is_active: true, is_header: true, level: 1, full_path: '1000' });
+    prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1', first_name: 'Nomsa', last_name: 'Dube' });
+    prisma.gLAccount.create.mockResolvedValue({ id: 'acct-1', code: '1113', normal_balance: 'DR' });
+
+    await service.createAccount('company-1', 'user-1', {
+      code: '1113',
+      name: 'Main Checking Account',
+      type: 'asset',
+      category: 'Current Assets',
+      subtype: 'Cash and Cash Equivalents',
+      parent_id: 'parent-1',
+      is_header: false,
+      sensitivity_tier: 'T1',
+      account_owner_id: 'emp-1',
+    });
+
+    expect(prisma.gLAccount.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          code: '1113',
+          category: 'Current Assets',
+          subtype: 'Cash and Cash Equivalents',
+          normal_balance: 'DR',
+          sensitivity_tier: 'T1',
+          account_owner_id: 'emp-1',
+          full_path: '1000 > 1113',
+          created_by: 'user-1',
+        }),
+      }),
+    );
+  });
+
+  it('blocks posting journal entries to header accounts', async () => {
+    prisma.accountingPeriod.upsert.mockResolvedValue({ id: 'period-1', status: 'open' });
+    prisma.gLAccount.findMany.mockResolvedValue([
+      { id: 'acct-1', code: '1100', name: 'Current Assets', is_active: true, is_header: true },
+      { id: 'acct-2', code: '2111', name: 'Accounts Payable', is_active: true, is_header: false },
+    ]);
+
+    await expect(
+      service.createJournalEntry('company-1', 'user-1', {
+        entry_date: '2026-04-01',
+        description: 'Invalid header posting',
+        lines: [
+          { account_id: 'acct-1', debit: 100, credit: 0 },
+          { account_id: 'acct-2', debit: 0, credit: 100 },
+        ],
+      }),
+    ).rejects.toThrow('Header account 1100 cannot accept postings');
   });
 });

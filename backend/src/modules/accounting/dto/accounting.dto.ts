@@ -31,8 +31,60 @@ export class CreateAccountDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  subtype?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(36)
   parent_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  normal_balance?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  sensitivity_tier?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  fs_placement?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  tax_treatment?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  account_owner_id?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  is_header?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  is_contra?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  budget_enabled?: boolean;
 }
 
 export class UpdateAccountDto {
@@ -56,8 +108,60 @@ export class UpdateAccountDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  subtype?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(36)
   parent_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  normal_balance?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  sensitivity_tier?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  fs_placement?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  tax_treatment?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  account_owner_id?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  is_header?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  is_contra?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  budget_enabled?: boolean;
 
   @IsOptional()
   @Type(() => Boolean)
