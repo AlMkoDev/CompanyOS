@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
@@ -89,6 +90,7 @@ export default function ArDisputesPage() {
   const { isAuthenticated } = useAuthStore();
   const [disputes, setDisputes] = React.useState<DisputeRecord[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [mounted, setMounted] = React.useState(false);
   const [query, setQuery] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('ALL');
   const [message, setMessage] = React.useState('');
@@ -128,6 +130,11 @@ export default function ArDisputesPage() {
   React.useEffect(() => {
     if (isAuthenticated) fetchDisputes();
   }, [fetchDisputes, isAuthenticated]);
+
+  React.useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   const filteredDisputes = React.useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -441,7 +448,7 @@ export default function ArDisputesPage() {
         </div>
       </div>
 
-      {selectedDispute ? (
+      {mounted && selectedDispute ? createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-brand-navy/70 p-3 backdrop-blur-md md:p-6">
           <div className="my-auto flex max-h-[calc(100vh-1.5rem)] w-full max-w-[min(96vw,1400px)] flex-col overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(180deg,#fefefe_0%,#f8fafc_100%)] shadow-[0_30px_120px_rgba(15,23,42,0.34)]">
             <div className="border-b border-slate-200/70 bg-[radial-gradient(circle_at_top_left,rgba(212,163,25,0.14),transparent_38%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-6 md:px-8 md:py-7">
@@ -688,7 +695,8 @@ export default function ArDisputesPage() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
