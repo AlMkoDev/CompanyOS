@@ -630,6 +630,10 @@ export class AccountingService {
       throw new BadRequestException('Only pending change requests can be reviewed');
     }
 
+    if (request.requested_by && actorUserId && request.requested_by === actorUserId) {
+      throw new BadRequestException('Requesters may not review their own account change requests');
+    }
+
     let implementedAt: Date | null = null;
     let nextStatus = data.decision;
     let updatedAccount = request.account;

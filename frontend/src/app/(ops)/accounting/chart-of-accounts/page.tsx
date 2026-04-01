@@ -47,6 +47,8 @@ interface GLAccount {
   is_active: boolean;
   level?: number | null;
   full_path?: string | null;
+  dormant_since?: string | null;
+  sunset_candidate?: boolean;
   owner?: AccountOwner | null;
 }
 
@@ -72,6 +74,7 @@ interface AccountChangeRequest {
   rationale?: string | null;
   reviewed_at?: string | null;
   created_at: string;
+  requested_by?: string | null;
   account?: {
     id: string;
     code: string;
@@ -123,6 +126,13 @@ interface AccountFormState {
   is_active: boolean;
 }
 
+interface ChangeRequestFormState {
+  account_id: string;
+  request_type: string;
+  title: string;
+  rationale: string;
+}
+
 const DEFAULT_FORM: AccountFormState = {
   code: "",
   name: "",
@@ -140,6 +150,13 @@ const DEFAULT_FORM: AccountFormState = {
   is_contra: false,
   budget_enabled: false,
   is_active: true,
+};
+
+const DEFAULT_CHANGE_REQUEST_FORM: ChangeRequestFormState = {
+  account_id: "",
+  request_type: "update",
+  title: "",
+  rationale: "",
 };
 
 const ACCOUNT_TYPES: { value: AccountType; label: string; range: string }[] = [
@@ -173,6 +190,15 @@ const FS_PLACEMENT_OPTIONS = [
   "Other Income",
   "Other Expense",
   "Tax",
+];
+
+const CHANGE_REQUEST_TYPES = [
+  { value: "update", label: "Metadata update" },
+  { value: "reclassify", label: "Reclassify account" },
+  { value: "deactivate", label: "Deactivate account" },
+  { value: "reactivate", label: "Reactivate account" },
+  { value: "sunset", label: "Mark sunset candidate" },
+  { value: "restore", label: "Remove sunset flag" },
 ];
 
 function emptyToUndefined(value: string) {
@@ -293,7 +319,7 @@ function Field({
 }
 
 export default function ChartOfAccountsPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const [employees, setEmployees] = React.useState<EmployeeOption[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -306,9 +332,12 @@ export default function ChartOfAccountsPage() {
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
   const [form, setForm] = React.useState<AccountFormState>(DEFAULT_FORM);
+  const [changeRequestForm, setChangeRequestForm] = React.useState<ChangeRequestFormState>(DEFAULT_CHANGE_REQUEST_FORM);
   const [editing, setEditing] = React.useState<GLAccount | null>(null);
   const [changeRequests, setChangeRequests] = React.useState<AccountChangeRequest[]>([]);
   const [auditEntries, setAuditEntries] = React.useState<AccountAuditEntry[]>([]);
+  const [requestSubmitting, setRequestSubmitting] = React.useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
 
   const loadAccounts = React.useCallback(async () => {
     const res = await apiFetch("/accounting/accounts");
@@ -436,6 +465,10 @@ export default function ChartOfAccountsPage() {
     setEditing(null);
   }, []);
 
+  const resetChangeRequestForm = React.useCallback(() => {
+    setChangeRequestForm(DEFAULT_CHANGE_REQUEST_FORM);
+  }, []);
+
   const handleFormChange = <K extends keyof AccountFormState>(key: K, value: AccountFormState[K]) => {
     setForm((current) => {
       if (key === "type") {
@@ -454,10 +487,27 @@ export default function ChartOfAccountsPage() {
   const startEdit = (account: GLAccount) => {
     setEditing(account);
     setForm(mapAccountToForm(account));
+    setChangeRequestForm((current) => ({
+      ...current,
+      account_id: account.id,
+      title: current.title || `Update ${account.code} · ${account.name}`,
+    }));
     setMessage(null);
     setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  const startChangeRequest = React.useCallback((account: GLAccount, requestType: string, title: string) => {
+    setChangeRequestForm({
+      account_id: account.id,
+      request_type: requestType,
+      title,
+      rationale: "",
+    });
+    setMessage(null);
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -486,6 +536,73 @@ export default function ChartOfAccountsPage() {
       setError(err instanceof Error ? err.message : "Failed to save account.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateChangeRequest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setRequestSubmitting(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const res = await apiFetch("/accounting/account-change-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: emptyToUndefined(changeRequestForm.account_id),
+          request_type: changeRequestForm.request_type,
+          title: changeRequestForm.title.trim(),
+          rationale: emptyToUndefined(changeRequestForm.rationale),
+          proposed_changes:
+            editing && changeRequestForm.account_id === editing.id
+              ? buildPayload(form)
+              : undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Failed to create account change request.");
+      }
+
+      await loadGovernance(editing?.id);
+      setMessage("Account change request submitted.");
+      resetChangeRequestForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create account change request.");
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
+
+  const handleReviewRequest = async (requestId: string, decision: "approved" | "rejected") => {
+    setReviewingRequestId(requestId);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const res = await apiFetch(`/accounting/account-change-requests/${requestId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          review_notes:
+            decision === "approved"
+              ? "Approved from the COA governance workspace."
+              : "Rejected from the COA governance workspace.",
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error((await res.text()) || "Failed to review account change request.");
+      }
+
+      await Promise.all([loadAccounts(), loadGovernance(editing?.id)]);
+      setMessage(decision === "approved" ? "Account change request approved." : "Account change request rejected.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to review account change request.");
+    } finally {
+      setReviewingRequestId(null);
     }
   };
 
@@ -691,6 +808,113 @@ export default function ChartOfAccountsPage() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Governed change path</div>
+                <h3 className="mt-2 text-2xl font-heading text-brand-navy">Raise account change request</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Route reclassifications, deactivations, reactivations, and sunset decisions through a visible review path.
+                </p>
+              </div>
+
+              <form onSubmit={handleCreateChangeRequest} className="mt-5 grid grid-cols-1 gap-4">
+                <Field label="Account">
+                  <div className="relative">
+                    <select
+                      value={changeRequestForm.account_id}
+                      onChange={(event) => setChangeRequestForm((current) => ({ ...current, account_id: event.target.value }))}
+                      className="w-full appearance-none rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-gold"
+                    >
+                      <option value="">Select account</option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.code} · {account.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  </div>
+                </Field>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field label="Request type">
+                    <div className="relative">
+                      <select
+                        value={changeRequestForm.request_type}
+                        onChange={(event) => setChangeRequestForm((current) => ({ ...current, request_type: event.target.value }))}
+                        className="w-full appearance-none rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-gold"
+                      >
+                        {CHANGE_REQUEST_TYPES.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    </div>
+                  </Field>
+                  <Field label="Title">
+                    <input
+                      value={changeRequestForm.title}
+                      onChange={(event) => setChangeRequestForm((current) => ({ ...current, title: event.target.value }))}
+                      className="rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-gold"
+                      placeholder="Deactivate dormant utilities account"
+                      required
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Rationale">
+                  <textarea
+                    value={changeRequestForm.rationale}
+                    onChange={(event) => setChangeRequestForm((current) => ({ ...current, rationale: event.target.value }))}
+                    className="min-h-[110px] rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-brand-gold"
+                    placeholder="Why this account should change, what controls are impacted, and what reviewers should verify."
+                  />
+                </Field>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="submit"
+                    disabled={requestSubmitting}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-5 py-3 font-semibold text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {requestSubmitting ? "Submitting…" : "Submit change request"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetChangeRequestForm}
+                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Control posture</div>
+                <h3 className="mt-2 text-2xl font-heading text-brand-navy">Sensitivity and lifecycle cues</h3>
+              </div>
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <MetricCard icon={<ShieldCheck size={18} />} label="T1 restricted" value={String(accounts.filter((account) => account.sensitivity_tier === "T1").length)} />
+                <MetricCard icon={<AlertCircle size={18} />} label="Dormant" value={String(accounts.filter((account) => account.dormant_since).length)} />
+                <MetricCard icon={<BookOpen size={18} />} label="Sunset candidates" value={String(accounts.filter((account) => account.sunset_candidate).length)} />
+                <MetricCard icon={<UserRound size={18} />} label="Pending review" value={String(changeRequests.filter((request) => request.status === "pending").length)} />
+              </div>
+              <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                <div className="font-semibold text-brand-navy">Segregation of duties</div>
+                <ul className="mt-3 space-y-2">
+                  <li>Requesters cannot approve their own account changes.</li>
+                  <li>Lifecycle actions should flow through requests for dormant, reactivation, and sunset decisions.</li>
+                  <li>Sensitive T1/T2 accounts should be reviewed before structural changes are implemented.</li>
+                </ul>
+              </div>
+            </section>
+          </div>
+
           <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
             <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
@@ -731,6 +955,29 @@ export default function ChartOfAccountsPage() {
                         Raised {formatDateTime(request.created_at)}
                         {request.reviewed_at ? ` · Reviewed ${formatDateTime(request.reviewed_at)}` : ""}
                       </div>
+                      {request.status === "pending" ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={reviewingRequestId === request.id || request.requested_by === user?.id}
+                            onClick={() => handleReviewRequest(request.id, "approved")}
+                            className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {reviewingRequestId === request.id ? "Working…" : "Approve"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reviewingRequestId === request.id || request.requested_by === user?.id}
+                            onClick={() => handleReviewRequest(request.id, "rejected")}
+                            className="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                          {request.requested_by === user?.id ? (
+                            <span className="self-center text-xs text-slate-400">Another reviewer must decide this request.</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -807,6 +1054,8 @@ export default function ChartOfAccountsPage() {
                             <MetaChip icon={<ShieldCheck size={14} />} label={`${account.sensitivity_tier || "T3"} sensitivity`} />
                             <MetaChip icon={<BookOpen size={14} />} label={`${account.normal_balance || getDefaultNormalBalance(account.type)} normal`} />
                             <MetaChip icon={<UserRound size={14} />} label={formatOwner(account.owner)} />
+                            {account.dormant_since ? <MetaChip icon={<AlertCircle size={14} />} label={`Dormant since ${formatDateTime(account.dormant_since).split(",")[0]}`} /> : null}
+                            {account.sunset_candidate ? <MetaChip icon={<AlertCircle size={14} />} label="Sunset candidate" /> : null}
                           </div>
                         </div>
 
@@ -822,9 +1071,41 @@ export default function ChartOfAccountsPage() {
                             <div className="mt-1 break-words">{account.full_path || account.code}</div>
                           </div>
                           <div className="mt-4 flex justify-end">
-                            <button type="button" onClick={() => startEdit(account)} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                              Edit account
-                            </button>
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button type="button" onClick={() => startEdit(account)} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                                Edit account
+                              </button>
+                              {account.is_active ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startChangeRequest(account, "deactivate", `Deactivate ${account.code} · ${account.name}`)}
+                                  className="rounded-2xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+                                >
+                                  Request deactivate
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => startChangeRequest(account, "reactivate", `Reactivate ${account.code} · ${account.name}`)}
+                                  className="rounded-2xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                                >
+                                  Request reactivate
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  startChangeRequest(
+                                    account,
+                                    account.sunset_candidate ? "restore" : "sunset",
+                                    `${account.sunset_candidate ? "Restore" : "Mark sunset"} ${account.code} · ${account.name}`,
+                                  )
+                                }
+                                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                {account.sunset_candidate ? "Request restore" : "Request sunset"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>

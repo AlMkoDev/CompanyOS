@@ -517,4 +517,36 @@ describe('AccountingService', () => {
     );
     expect(result).toEqual({ id: 'req-1', status: 'implemented' });
   });
+
+  it('blocks self-review on account change requests', async () => {
+    prisma.gLAccountChangeRequest.findFirst.mockResolvedValue({
+      id: 'req-2',
+      company_id: 'company-1',
+      request_type: 'sunset',
+      status: 'pending',
+      requested_by: 'user-1',
+      rationale: 'Dormant account',
+      account: {
+        id: 'acct-1',
+        company_id: 'company-1',
+        code: '6100',
+        name: 'Utilities',
+        type: 'expense',
+        is_header: false,
+        is_contra: false,
+        is_active: true,
+        budget_enabled: false,
+        sunset_candidate: false,
+        dormant_since: null,
+      },
+      requester: null,
+      reviewer: null,
+    });
+
+    await expect(
+      service.reviewAccountChangeRequest('company-1', 'user-1', 'req-2', {
+        decision: 'approved',
+      }),
+    ).rejects.toThrow('Requesters may not review their own account change requests');
+  });
 });
