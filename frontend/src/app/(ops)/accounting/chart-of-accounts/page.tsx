@@ -57,6 +57,53 @@ interface EmployeeOption {
   email: string;
 }
 
+interface GovernanceUser {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+interface AccountChangeRequest {
+  id: string;
+  request_type: string;
+  status: string;
+  title: string;
+  rationale?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  account?: {
+    id: string;
+    code: string;
+    name: string;
+    type: AccountType;
+    is_active: boolean;
+    sunset_candidate?: boolean;
+  } | null;
+  requester?: GovernanceUser | null;
+  reviewer?: GovernanceUser | null;
+}
+
+interface AccountAuditEntry {
+  id: string;
+  action: string;
+  reason?: string | null;
+  change_summary?: string | null;
+  created_at: string;
+  actor?: GovernanceUser | null;
+  account?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+  change_request?: {
+    id: string;
+    request_type: string;
+    status: string;
+    title: string;
+  } | null;
+}
+
 interface AccountFormState {
   code: string;
   name: string;
@@ -140,6 +187,24 @@ function formatOwner(owner?: AccountOwner | null) {
 
 function getDefaultNormalBalance(type: AccountType) {
   return ["asset", "expense"].includes(type) ? "DR" : "CR";
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Unscheduled";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-ZA", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatPerson(person?: GovernanceUser | null) {
+  if (!person) return "System";
+  return `${person.first_name} ${person.last_name}`;
 }
 
 function buildPayload(form: AccountFormState) {
@@ -234,12 +299,16 @@ export default function ChartOfAccountsPage() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [ownerLoading, setOwnerLoading] = React.useState(true);
+  const [requestsLoading, setRequestsLoading] = React.useState(true);
+  const [auditLoading, setAuditLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
   const [form, setForm] = React.useState<AccountFormState>(DEFAULT_FORM);
   const [editing, setEditing] = React.useState<GLAccount | null>(null);
+  const [changeRequests, setChangeRequests] = React.useState<AccountChangeRequest[]>([]);
+  const [auditEntries, setAuditEntries] = React.useState<AccountAuditEntry[]>([]);
 
   const loadAccounts = React.useCallback(async () => {
     const res = await apiFetch("/accounting/accounts");
@@ -269,6 +338,37 @@ export default function ChartOfAccountsPage() {
     }
   }, []);
 
+  const loadGovernance = React.useCallback(
+    async (accountId?: string) => {
+      setRequestsLoading(true);
+      setAuditLoading(true);
+      try {
+        const [requestsRes, auditRes] = await Promise.all([
+          apiFetch("/accounting/account-change-requests"),
+          apiFetch(accountId ? `/accounting/accounts/audit?accountId=${accountId}` : "/accounting/accounts/audit"),
+        ]);
+
+        if (requestsRes.ok) {
+          const requestData = (await requestsRes.json()) as AccountChangeRequest[];
+          setChangeRequests(Array.isArray(requestData) ? requestData : []);
+        } else {
+          setChangeRequests([]);
+        }
+
+        if (auditRes.ok) {
+          const auditData = (await auditRes.json()) as AccountAuditEntry[];
+          setAuditEntries(Array.isArray(auditData) ? auditData : []);
+        } else {
+          setAuditEntries([]);
+        }
+      } finally {
+        setRequestsLoading(false);
+        setAuditLoading(false);
+      }
+    },
+    [],
+  );
+
   React.useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -277,6 +377,7 @@ export default function ChartOfAccountsPage() {
       setError(null);
       try {
         await Promise.all([loadAccounts(), loadOwners()]);
+        await loadGovernance(editing?.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load chart of accounts.");
       } finally {
@@ -285,7 +386,12 @@ export default function ChartOfAccountsPage() {
     };
 
     run();
-  }, [isAuthenticated, loadAccounts, loadOwners]);
+  }, [isAuthenticated, loadAccounts, loadGovernance, loadOwners, editing?.id]);
+
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+    loadGovernance(editing?.id);
+  }, [editing?.id, isAuthenticated, loadGovernance]);
 
   const groupedAccounts = React.useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -583,6 +689,87 @@ export default function ChartOfAccountsPage() {
               <MetricCard icon={<ShieldCheck size={18} />} label="Sensitive tiers" value={String(accounts.filter((account) => ["T1", "T2"].includes(account.sensitivity_tier ?? "")).length)} />
               <MetricCard icon={<UserRound size={18} />} label="Owned accounts" value={String(accounts.filter((account) => account.account_owner_id).length)} />
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Governance queue</div>
+                  <h3 className="mt-2 text-2xl font-heading text-brand-navy">Account change requests</h3>
+                </div>
+                <StatusPill label={`${changeRequests.filter((request) => request.status === "pending").length} pending`} tone="amber" />
+              </div>
+              <div className="mt-5 space-y-3">
+                {requestsLoading ? (
+                  <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Loading governance queue…</div>
+                ) : changeRequests.length === 0 ? (
+                  <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">No account change requests have been raised yet.</div>
+                ) : (
+                  changeRequests.slice(0, 6).map((request) => (
+                    <div key={request.id} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill label={request.request_type} tone="navy" />
+                        <StatusPill
+                          label={request.status}
+                          tone={
+                            request.status === "implemented"
+                              ? "emerald"
+                              : request.status === "rejected"
+                                ? "rose"
+                                : request.status === "approved"
+                                  ? "amber"
+                                  : "slate"
+                          }
+                        />
+                      </div>
+                      <div className="mt-3 text-lg font-semibold text-brand-navy">{request.title}</div>
+                      <div className="mt-2 text-sm text-slate-500">
+                        {(request.account ? `${request.account.code} · ${request.account.name}` : "New account request")} · Raised by {formatPerson(request.requester)}
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">
+                        Raised {formatDateTime(request.created_at)}
+                        {request.reviewed_at ? ` · Reviewed ${formatDateTime(request.reviewed_at)}` : ""}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Immutable history</div>
+                  <h3 className="mt-2 text-2xl font-heading text-brand-navy">
+                    {editing ? `${editing.code} audit trail` : "Recent COA audit"}
+                  </h3>
+                </div>
+                <StatusPill label={editing ? "Selected account" : "All accounts"} tone="navy" />
+              </div>
+              <div className="mt-5 space-y-3">
+                {auditLoading ? (
+                  <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Loading audit history…</div>
+                ) : auditEntries.length === 0 ? (
+                  <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Select an account to inspect its lifecycle history, approvals, and governance changes.</div>
+                ) : (
+                  auditEntries.slice(0, 6).map((entry) => (
+                    <div key={entry.id} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill label={entry.action.replaceAll("_", " ")} tone="amber" />
+                        {entry.change_request ? <StatusPill label={entry.change_request.status} tone="navy" /> : null}
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-brand-navy">{entry.change_summary || "Governance event recorded"}</div>
+                      <div className="mt-2 text-sm text-slate-500">
+                        {(entry.account ? `${entry.account.code} · ${entry.account.name}` : "Account event")} · {formatPerson(entry.actor)}
+                      </div>
+                      {entry.reason ? <div className="mt-2 text-sm text-slate-500">{entry.reason}</div> : null}
+                      <div className="mt-2 text-xs text-slate-400">{formatDateTime(entry.created_at)}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
           </div>
 
           {loading ? (

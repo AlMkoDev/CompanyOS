@@ -127,6 +127,8 @@ model Company {
   apMatchExceptions    APMatchException[]
   apAuditTrails        APAuditTrail[]
   accountOwners        GLAccount[] @relation("GLAccountOwner")
+  glAccountChangeRequests GLAccountChangeRequest[]
+  glAccountAuditTrails GLAccountAuditTrail[]
 }
 
 model User {
@@ -166,6 +168,9 @@ model User {
   disputeResolutionsApproved DisputeResolution[] @relation("DisputeResolutionApprover")
   disputeAttachmentsUploaded DisputeAttachment[] @relation("DisputeAttachmentUploader")
   disputeDocumentsGenerated DisputeDocument[] @relation("DisputeDocumentGenerator")
+  glAccountChangeRequestsRaised GLAccountChangeRequest[] @relation("GLAccountChangeRequester")
+  glAccountChangeRequestsReviewed GLAccountChangeRequest[] @relation("GLAccountChangeReviewer")
+  glAccountAuditEntries GLAccountAuditTrail[] @relation("GLAccountAuditActor")
 }
 
 model Department {
@@ -506,8 +511,61 @@ model GLAccount {
   children      GLAccount[] @relation("GLAccountHierarchy")
   owner         Employee?   @relation("GLAccountOwner", fields: [account_owner_id], references: [id])
   journal_lines JournalLine[]
+  change_requests GLAccountChangeRequest[]
+  audit_entries GLAccountAuditTrail[]
 
   @@unique([company_id, code])
+}
+
+model GLAccountChangeRequest {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  account_id        String?  @db.Uuid
+  request_type      String
+  status            String   @default("pending")
+  title             String
+  rationale         String?
+  requested_by      String?  @db.Uuid
+  reviewed_by       String?  @db.Uuid
+  requested_payload Json?
+  current_snapshot  Json?
+  review_notes      String?
+  reviewed_at       DateTime?
+  implemented_at    DateTime?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  company Company @relation(fields: [company_id], references: [id])
+  account GLAccount? @relation(fields: [account_id], references: [id])
+  requester User? @relation("GLAccountChangeRequester", fields: [requested_by], references: [id])
+  reviewer User? @relation("GLAccountChangeReviewer", fields: [reviewed_by], references: [id])
+  audit_entries GLAccountAuditTrail[]
+
+  @@index([company_id, status])
+  @@index([company_id, request_type])
+  @@index([account_id])
+}
+
+model GLAccountAuditTrail {
+  id                 String   @id @default(uuid()) @db.Uuid
+  company_id         String   @db.Uuid
+  account_id         String   @db.Uuid
+  actor_user_id      String?  @db.Uuid
+  change_request_id  String?  @db.Uuid
+  action             String
+  reason             String?
+  change_summary     String?
+  before_snapshot    Json?
+  after_snapshot     Json?
+  created_at         DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+  account GLAccount @relation(fields: [account_id], references: [id])
+  actor User? @relation("GLAccountAuditActor", fields: [actor_user_id], references: [id])
+  change_request GLAccountChangeRequest? @relation(fields: [change_request_id], references: [id])
+
+  @@index([company_id, created_at])
+  @@index([account_id, created_at])
 }
 
 model JournalEntry {

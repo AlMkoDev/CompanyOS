@@ -14,9 +14,11 @@ import { JwtAuthGuard } from '../auth/jwt.strategy';
 import {
   ClosePeriodDto,
   CreateAccountDto,
+  CreateAccountChangeRequestDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
   ReconcileBankStatementLineDto,
+  ReviewAccountChangeRequestDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
 
@@ -42,6 +44,30 @@ export class AccountingController {
   @Get('accounts')
   async getAccounts(@Req() req: any) {
     return this.accountingService.getAccounts(req.user.companyId);
+  }
+
+  @Get('accounts/audit')
+  async getAccountAuditTrail(@Req() req: any, @Query('accountId') accountId?: string) {
+    return this.accountingService.getAccountAuditTrail(req.user.companyId, accountId);
+  }
+
+  @Get('account-change-requests')
+  async getAccountChangeRequests(@Req() req: any) {
+    return this.accountingService.getAccountChangeRequests(req.user.companyId);
+  }
+
+  @Post('account-change-requests')
+  async createAccountChangeRequest(@Req() req: any, @Body() data: CreateAccountChangeRequestDto) {
+    return this.accountingService.createAccountChangeRequest(req.user.companyId, req.user.userId, data);
+  }
+
+  @Patch('account-change-requests/:id/review')
+  async reviewAccountChangeRequest(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() data: ReviewAccountChangeRequestDto,
+  ) {
+    return this.accountingService.reviewAccountChangeRequest(req.user.companyId, req.user.userId, id, data);
   }
 
   @Post('journal-entries')

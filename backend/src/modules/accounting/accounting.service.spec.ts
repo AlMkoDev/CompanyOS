@@ -22,6 +22,17 @@ describe('AccountingService', () => {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
+    },
+    gLAccountAuditTrail: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+    },
+    gLAccountChangeRequest: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
     },
     employee: {
       findFirst: jest.fn(),
@@ -333,6 +344,7 @@ describe('AccountingService', () => {
       .mockResolvedValueOnce({ id: 'parent-1', company_id: 'company-1', type: 'asset', is_active: true, is_header: true, level: 1, full_path: '1000' });
     prisma.employee.findFirst.mockResolvedValue({ id: 'emp-1', first_name: 'Nomsa', last_name: 'Dube' });
     prisma.gLAccount.create.mockResolvedValue({ id: 'acct-1', code: '1113', normal_balance: 'DR' });
+    prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-1' });
 
     await service.createAccount('company-1', 'user-1', {
       code: '1113',
@@ -360,6 +372,14 @@ describe('AccountingService', () => {
         }),
       }),
     );
+    expect(prisma.gLAccountAuditTrail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          account_id: 'acct-1',
+          action: 'account_created',
+        }),
+      }),
+    );
   });
 
   it('blocks posting journal entries to header accounts', async () => {
@@ -379,5 +399,122 @@ describe('AccountingService', () => {
         ],
       }),
     ).rejects.toThrow('Header account 1100 cannot accept postings');
+  });
+
+  it('creates account change requests with current account snapshots', async () => {
+    prisma.gLAccount.findFirst.mockResolvedValue({
+      id: 'acct-1',
+      company_id: 'company-1',
+      code: '6100',
+      name: 'Utilities',
+      type: 'expense',
+      is_header: false,
+      is_contra: false,
+      is_active: true,
+      budget_enabled: false,
+      sunset_candidate: false,
+    });
+    prisma.gLAccountChangeRequest.create.mockResolvedValue({ id: 'req-1', title: 'Deactivate utilities' });
+    prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-2' });
+
+    const result = await service.createAccountChangeRequest('company-1', 'user-1', {
+      account_id: 'acct-1',
+      request_type: 'deactivate',
+      title: 'Deactivate utilities',
+      rationale: 'Dormant account after meter consolidation',
+      proposed_changes: { is_active: false },
+    });
+
+    expect(prisma.gLAccountChangeRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          account_id: 'acct-1',
+          request_type: 'deactivate',
+          requested_by: 'user-1',
+        }),
+      }),
+    );
+    expect(prisma.gLAccountAuditTrail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'change_request_created',
+          change_request_id: 'req-1',
+        }),
+      }),
+    );
+    expect(result).toEqual({ id: 'req-1', title: 'Deactivate utilities' });
+  });
+
+  it('implements approved deactivate requests and writes account audit', async () => {
+    prisma.gLAccountChangeRequest.findFirst.mockResolvedValue({
+      id: 'req-1',
+      company_id: 'company-1',
+      request_type: 'deactivate',
+      status: 'pending',
+      rationale: 'No longer used',
+      account: {
+        id: 'acct-1',
+        company_id: 'company-1',
+        code: '6100',
+        name: 'Utilities',
+        type: 'expense',
+        is_header: false,
+        is_contra: false,
+        is_active: true,
+        budget_enabled: false,
+        sunset_candidate: false,
+        dormant_since: null,
+      },
+      requester: null,
+      reviewer: null,
+    });
+    prisma.gLAccount.count.mockResolvedValue(0);
+    prisma.gLAccount.update.mockResolvedValue({
+      id: 'acct-1',
+      code: '6100',
+      name: 'Utilities',
+      type: 'expense',
+      is_header: false,
+      is_contra: false,
+      is_active: false,
+      budget_enabled: false,
+      sunset_candidate: false,
+      dormant_since: new Date('2026-04-01T08:00:00.000Z'),
+    });
+    prisma.gLAccountChangeRequest.update.mockResolvedValue({ id: 'req-1', status: 'implemented' });
+    prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-3' });
+
+    const result = await service.reviewAccountChangeRequest('company-1', 'user-2', 'req-1', {
+      decision: 'approved',
+      review_notes: 'Approved for sunset prep',
+    });
+
+    expect(prisma.gLAccount.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'acct-1' },
+        data: expect.objectContaining({
+          is_active: false,
+          modified_by: 'user-2',
+        }),
+      }),
+    );
+    expect(prisma.gLAccountChangeRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'req-1' },
+        data: expect.objectContaining({
+          status: 'implemented',
+          reviewed_by: 'user-2',
+        }),
+      }),
+    );
+    expect(prisma.gLAccountAuditTrail.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'change_request_implemented',
+          change_request_id: 'req-1',
+        }),
+      }),
+    );
+    expect(result).toEqual({ id: 'req-1', status: 'implemented' });
   });
 });

@@ -3,7 +3,9 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsIn,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -166,6 +168,42 @@ export class UpdateAccountDto {
   @IsOptional()
   @Type(() => Boolean)
   is_active?: boolean;
+}
+
+export class CreateAccountChangeRequestDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  account_id?: string;
+
+  @IsString()
+  @IsIn(['create', 'update', 'reclassify', 'deactivate', 'reactivate', 'sunset', 'restore'])
+  request_type: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(160)
+  title: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  rationale?: string;
+
+  @IsOptional()
+  @IsObject()
+  proposed_changes?: Record<string, unknown>;
+}
+
+export class ReviewAccountChangeRequestDto {
+  @IsString()
+  @IsIn(['approved', 'rejected'])
+  decision: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  review_notes?: string;
 }
 
 export class JournalEntryLineDto {

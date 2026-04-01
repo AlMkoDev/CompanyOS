@@ -2,8 +2,10 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../database/prisma.service';
 import {
   CreateAccountDto,
+  CreateAccountChangeRequestDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
+  ReviewAccountChangeRequestDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
 
@@ -182,6 +184,94 @@ export class AccountingService {
     return owner;
   }
 
+  private buildAccountSnapshot(account: any) {
+    if (!account) return null;
+
+    return {
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      category: account.category ?? null,
+      subtype: account.subtype ?? null,
+      parent_id: account.parent_id ?? null,
+      is_header: Boolean(account.is_header),
+      is_contra: Boolean(account.is_contra),
+      is_active: Boolean(account.is_active),
+      normal_balance: account.normal_balance ?? null,
+      sensitivity_tier: account.sensitivity_tier ?? null,
+      fs_placement: account.fs_placement ?? null,
+      account_owner_id: account.account_owner_id ?? null,
+      budget_enabled: Boolean(account.budget_enabled),
+      tax_treatment: account.tax_treatment ?? null,
+      level: account.level ?? null,
+      full_path: account.full_path ?? null,
+      dormant_since: account.dormant_since ?? null,
+      sunset_candidate: Boolean(account.sunset_candidate),
+      modified_by: account.modified_by ?? null,
+    };
+  }
+
+  private summarizeAccountChanges(beforeSnapshot: Record<string, any> | null, afterSnapshot: Record<string, any> | null) {
+    if (!beforeSnapshot && afterSnapshot) {
+      return `Account ${afterSnapshot.code} created`;
+    }
+
+    if (!beforeSnapshot || !afterSnapshot) {
+      return null;
+    }
+
+    const changedFields = Object.keys(afterSnapshot).filter(
+      (key) => JSON.stringify(beforeSnapshot[key]) !== JSON.stringify(afterSnapshot[key]),
+    );
+
+    if (!changedFields.length) {
+      return 'No material account fields changed';
+    }
+
+    return `Updated ${changedFields.slice(0, 5).join(', ')}`;
+  }
+
+  private async recordAccountAudit(params: {
+    companyId: string;
+    accountId: string;
+    actorUserId?: string | null;
+    action: string;
+    reason?: string | null;
+    changeSummary?: string | null;
+    beforeSnapshot?: Record<string, any> | null;
+    afterSnapshot?: Record<string, any> | null;
+    changeRequestId?: string | null;
+  }) {
+    return this.prisma.gLAccountAuditTrail.create({
+      data: {
+        company_id: params.companyId,
+        account_id: params.accountId,
+        actor_user_id: params.actorUserId || null,
+        change_request_id: params.changeRequestId || null,
+        action: params.action,
+        reason: params.reason || null,
+        change_summary: params.changeSummary || null,
+        before_snapshot: params.beforeSnapshot || undefined,
+        after_snapshot: params.afterSnapshot || undefined,
+      },
+    });
+  }
+
+  private async assertAccountCanDeactivate(companyId: string, accountId: string) {
+    const activeChildren = await this.prisma.gLAccount.count({
+      where: {
+        company_id: companyId,
+        parent_id: accountId,
+        is_active: true,
+      },
+    });
+
+    if (activeChildren > 0) {
+      throw new BadRequestException('Accounts with active child accounts cannot be deactivated');
+    }
+  }
+
   private async updateDescendantPaths(companyId: string, accountId: string, parentPath: string) {
     const children = await this.prisma.gLAccount.findMany({
       where: { company_id: companyId, parent_id: accountId },
@@ -263,7 +353,7 @@ export class AccountingService {
 
     const { level, fullPath } = this.buildHierarchyShape(parent, code);
 
-    return this.prisma.gLAccount.create({
+    const created = await this.prisma.gLAccount.create({
       data: {
         code,
         name: data.name,
@@ -288,6 +378,17 @@ export class AccountingService {
       },
       include: { owner: { select: { id: true, first_name: true, last_name: true, email: true } } },
     });
+
+    await this.recordAccountAudit({
+      companyId,
+      accountId: created.id,
+      actorUserId,
+      action: 'account_created',
+      changeSummary: this.summarizeAccountChanges(null, this.buildAccountSnapshot(created)),
+      afterSnapshot: this.buildAccountSnapshot(created),
+    });
+
+    return created;
   }
 
   private async getCompanyAccount(companyId: string, accountId: string) {
@@ -315,6 +416,102 @@ export class AccountingService {
     });
   }
 
+  async getAccountAuditTrail(companyId: string, accountId?: string) {
+    return this.prisma.gLAccountAuditTrail.findMany({
+      where: {
+        company_id: companyId,
+        account_id: accountId || undefined,
+      },
+      orderBy: { created_at: 'desc' },
+      take: accountId ? 25 : 100,
+      include: {
+        actor: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        account: {
+          select: { id: true, code: true, name: true },
+        },
+        change_request: {
+          select: { id: true, request_type: true, status: true, title: true },
+        },
+      },
+    });
+  }
+
+  async getAccountChangeRequests(companyId: string) {
+    return this.prisma.gLAccountChangeRequest.findMany({
+      where: { company_id: companyId },
+      orderBy: [{ status: 'asc' }, { created_at: 'desc' }],
+      include: {
+        account: {
+          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+        },
+        requester: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+      take: 50,
+    });
+  }
+
+  async createAccountChangeRequest(
+    companyId: string,
+    actorUserId: string | null,
+    data: CreateAccountChangeRequestDto,
+  ) {
+    let account = null;
+    if (data.account_id) {
+      account = await this.getCompanyAccount(companyId, data.account_id);
+    }
+
+    if (data.request_type !== 'create' && !account) {
+      throw new BadRequestException('An existing account must be selected for this request type');
+    }
+
+    const created = await this.prisma.gLAccountChangeRequest.create({
+      data: {
+        company_id: companyId,
+        account_id: account?.id || null,
+        request_type: data.request_type,
+        title: data.title,
+        rationale: data.rationale || null,
+        requested_payload: data.proposed_changes || undefined,
+        current_snapshot: this.buildAccountSnapshot(account),
+        requested_by: actorUserId || null,
+      },
+      include: {
+        account: {
+          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+        },
+        requester: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+    });
+
+    if (account) {
+      await this.recordAccountAudit({
+        companyId,
+        accountId: account.id,
+        actorUserId,
+        action: 'change_request_created',
+        reason: data.rationale || null,
+        changeSummary: `${data.request_type} request submitted`,
+        beforeSnapshot: this.buildAccountSnapshot(account),
+        afterSnapshot: this.buildAccountSnapshot(account),
+        changeRequestId: created.id,
+      });
+    }
+
+    return created;
+  }
+
   async updateAccount(companyId: string, actorUserId: string | null, accountId: string, data: UpdateAccountDto) {
     const current = await this.getCompanyAccount(companyId, accountId);
     const nextCode = data.code ? this.validateAccountCodeFormat(data.code) : current.code;
@@ -334,6 +531,10 @@ export class AccountingService {
     const parent = await this.getValidatedParent(companyId, nextParentId);
     await this.assertNoCircularParent(companyId, accountId, parent?.id || null);
     await this.assertAccountOwner(companyId, data.account_owner_id ?? current.account_owner_id ?? null);
+
+    if (current.is_active && data.is_active === false) {
+      await this.assertAccountCanDeactivate(companyId, accountId);
+    }
 
     if (!parent && !nextIsHeader) {
       throw new BadRequestException('Top-level accounts must be header accounts');
@@ -367,6 +568,16 @@ export class AccountingService {
         tax_treatment: data.tax_treatment ?? undefined,
         level,
         full_path: fullPath,
+        dormant_since:
+          typeof data.is_active === 'boolean'
+            ? data.is_active
+              ? null
+              : current.dormant_since ?? new Date()
+            : undefined,
+        sunset_candidate:
+          typeof data.is_active === 'boolean' && data.is_active
+            ? false
+            : undefined,
         modified_by: actorUserId || null,
       },
       include: {
@@ -377,7 +588,142 @@ export class AccountingService {
     });
 
     await this.updateDescendantPaths(companyId, updated.id, updated.full_path || updated.code);
+    await this.recordAccountAudit({
+      companyId,
+      accountId: updated.id,
+      actorUserId,
+      action: 'account_updated',
+      changeSummary: this.summarizeAccountChanges(
+        this.buildAccountSnapshot(current),
+        this.buildAccountSnapshot(updated),
+      ),
+      beforeSnapshot: this.buildAccountSnapshot(current),
+      afterSnapshot: this.buildAccountSnapshot(updated),
+    });
     return updated;
+  }
+
+  async reviewAccountChangeRequest(
+    companyId: string,
+    actorUserId: string | null,
+    requestId: string,
+    data: ReviewAccountChangeRequestDto,
+  ) {
+    const request = await this.prisma.gLAccountChangeRequest.findFirst({
+      where: { id: requestId, company_id: companyId },
+      include: {
+        account: true,
+        requester: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Account change request not found');
+    }
+
+    if (request.status !== 'pending') {
+      throw new BadRequestException('Only pending change requests can be reviewed');
+    }
+
+    let implementedAt: Date | null = null;
+    let nextStatus = data.decision;
+    let updatedAccount = request.account;
+
+    if (data.decision === 'approved' && request.account) {
+      if (request.request_type === 'deactivate') {
+        await this.assertAccountCanDeactivate(companyId, request.account.id);
+        updatedAccount = await this.prisma.gLAccount.update({
+          where: { id: request.account.id },
+          data: {
+            is_active: false,
+            dormant_since: request.account.dormant_since ?? new Date(),
+            modified_by: actorUserId || null,
+          },
+        });
+        nextStatus = 'implemented';
+        implementedAt = new Date();
+      } else if (request.request_type === 'reactivate') {
+        updatedAccount = await this.prisma.gLAccount.update({
+          where: { id: request.account.id },
+          data: {
+            is_active: true,
+            dormant_since: null,
+            sunset_candidate: false,
+            modified_by: actorUserId || null,
+          },
+        });
+        nextStatus = 'implemented';
+        implementedAt = new Date();
+      } else if (request.request_type === 'sunset') {
+        updatedAccount = await this.prisma.gLAccount.update({
+          where: { id: request.account.id },
+          data: {
+            sunset_candidate: true,
+            modified_by: actorUserId || null,
+          },
+        });
+        nextStatus = 'implemented';
+        implementedAt = new Date();
+      } else if (request.request_type === 'restore') {
+        updatedAccount = await this.prisma.gLAccount.update({
+          where: { id: request.account.id },
+          data: {
+            sunset_candidate: false,
+            modified_by: actorUserId || null,
+          },
+        });
+        nextStatus = 'implemented';
+        implementedAt = new Date();
+      }
+    }
+
+    const reviewed = await this.prisma.gLAccountChangeRequest.update({
+      where: { id: request.id },
+      data: {
+        status: nextStatus,
+        reviewed_by: actorUserId || null,
+        reviewed_at: new Date(),
+        review_notes: data.review_notes || null,
+        implemented_at: implementedAt,
+      },
+      include: {
+        account: {
+          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+        },
+        requester: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+    });
+
+    if (request.account) {
+      await this.recordAccountAudit({
+        companyId,
+        accountId: request.account.id,
+        actorUserId,
+        action:
+          nextStatus === 'implemented'
+            ? 'change_request_implemented'
+            : data.decision === 'approved'
+              ? 'change_request_approved'
+              : 'change_request_rejected',
+        reason: data.review_notes || request.rationale || null,
+        changeSummary: `${request.request_type} request ${nextStatus}`,
+        beforeSnapshot: this.buildAccountSnapshot(request.account),
+        afterSnapshot: this.buildAccountSnapshot(updatedAccount),
+        changeRequestId: request.id,
+      });
+    }
+
+    return reviewed;
   }
 
   // --- Journal Entries ---
