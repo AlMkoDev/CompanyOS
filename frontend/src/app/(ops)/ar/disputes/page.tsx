@@ -442,8 +442,8 @@ export default function ArDisputesPage() {
       </div>
 
       {selectedDispute ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-brand-navy/60 p-4 backdrop-blur-sm md:p-6">
-          <div className="my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-7xl flex-col overflow-hidden rounded-[36px] border border-white/60 bg-[linear-gradient(180deg,#fefefe_0%,#f8fafc_100%)] shadow-[0_30px_120px_rgba(15,23,42,0.28)]">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto bg-brand-navy/70 p-3 backdrop-blur-md md:p-6">
+          <div className="my-auto flex max-h-[calc(100vh-1.5rem)] w-full max-w-[min(96vw,1400px)] flex-col overflow-hidden rounded-[36px] border border-white/70 bg-[linear-gradient(180deg,#fefefe_0%,#f8fafc_100%)] shadow-[0_30px_120px_rgba(15,23,42,0.34)]">
             <div className="border-b border-slate-200/70 bg-[radial-gradient(circle_at_top_left,rgba(212,163,25,0.14),transparent_38%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-6 py-6 md:px-8 md:py-7">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
