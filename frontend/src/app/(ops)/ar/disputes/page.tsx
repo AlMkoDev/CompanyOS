@@ -31,6 +31,10 @@ interface DisputeActivity {
   created_at: string;
 }
 
+interface DisplayActivity extends DisputeActivity {
+  repeat_count?: number;
+}
+
 interface DisputeResolution {
   id: string;
   resolution_type: string;
@@ -222,6 +226,57 @@ export default function ArDisputesPage() {
       (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
     );
   };
+
+  const getDisplayActivities = (activities?: DisputeActivity[]): DisplayActivity[] => {
+    const ordered = [...(activities || [])].sort(
+      (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+    );
+
+    const collapsed: DisplayActivity[] = [];
+
+    for (const activity of ordered) {
+      const key = [
+        activity.activity_type,
+        activity.notes || '',
+        activity.internal_only ? 'internal' : 'shared',
+        activity.customer_visible ? 'customer' : 'hidden',
+        activity.template_key || '',
+        activity.notification_channel || '',
+        activity.task_title || '',
+      ].join('::');
+
+      const existing = collapsed.find((item) => {
+        const existingKey = [
+          item.activity_type,
+          item.notes || '',
+          item.internal_only ? 'internal' : 'shared',
+          item.customer_visible ? 'customer' : 'hidden',
+          item.template_key || '',
+          item.notification_channel || '',
+          item.task_title || '',
+        ].join('::');
+
+        return existingKey === key;
+      });
+
+      if (existing) {
+        existing.repeat_count = (existing.repeat_count || 1) + 1;
+        continue;
+      }
+
+      collapsed.push({
+        ...activity,
+        repeat_count: 1,
+      });
+    }
+
+    return collapsed;
+  };
+
+  const displayActivities = React.useMemo(
+    () => getDisplayActivities(selectedDispute?.activities),
+    [selectedDispute?.activities],
+  );
 
   const refreshDisputes = async () => {
     await fetchDisputes();
@@ -503,8 +558,8 @@ export default function ArDisputesPage() {
                   </div>
                 </div>
                 <div className="min-h-0 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 md:p-6">
-                  {selectedDispute.activities?.length ? (
-                    selectedDispute.activities.map((activity) => (
+                  {displayActivities.length ? (
+                    displayActivities.map((activity) => (
                       <div key={activity.id} className="rounded-[28px] border border-slate-200/70 bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.05)]">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
@@ -518,6 +573,11 @@ export default function ArDisputesPage() {
                               ) : null}
                               {activity.notification_channel ? (
                                 <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-sky-700">{activity.notification_channel}</span>
+                              ) : null}
+                              {(activity.repeat_count || 1) > 1 ? (
+                                <span className="rounded-full bg-brand-gold/10 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-brand-gold">
+                                  {activity.repeat_count} similar events
+                                </span>
                               ) : null}
                             </div>
                             <div className="mt-1 text-xs text-slate-400">
