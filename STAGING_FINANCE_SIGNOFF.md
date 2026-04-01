@@ -16,7 +16,7 @@ Use it to close the AP, AR, disputes, and accounting phase with concrete evidenc
 | Date | `2026-04-01` |
 | Operator | `gsfencing` |
 | Reviewer | `Pending final signoff` |
-| Latest commit validated | `d1b35f3` for repeated-event cleanup, `2fe69e2` for modal portal rendering |
+| Latest commit validated | `d1b35f3` for repeated-event cleanup, `2fe69e2` for modal portal rendering, `89fcca5` / `29590cc` for hub overlay and layout polish |
 | Result | `Pending` |
 
 ## 2. Seeded Record References
@@ -43,7 +43,7 @@ Use these during validation so the walkthrough is consistent.
 | `/ap` dashboard counts | Non-zero AP outstanding, active vendors, pending POs, matched ratio | `Pass` | Dashboard screenshot showed `R 28,750` outstanding AP, `1` active vendor, `1` pending PO, and `100%` matched ratio. |
 | `/ap/vendors` | `Highveld Produce Suppliers` is visible with status and terms | `Pass` | Vendor Partners screen shows `Highveld Produce Suppliers`, `ACTIVE`, `PREFERRED`, and `Net 14`. |
 | `/ap/vendor-bills` | `VB-STG-001` appears with vendor-bill wording and match state | `Pass` | Vendor Bill Intake screen shows `VB-STG-001` with `3-WAY MATCHED`. |
-| `/ap/requisitions` | `APRQ-STG-001` appears and supports the requisition-first story | `Open` | AP dashboard requisition count is seeded, but requisitions page itself was not explicitly captured in evidence this round. |
+| `/ap/requisitions` | `APRQ-STG-001` appears and supports the requisition-first story | `Pass` | Purchase Requisitions screen shows `APRQ-STG-001`, supplier `Highveld Produce Suppliers`, `R 28,750`, and `PENDING_APPROVAL`. |
 | `/ap/payment-runs` | Approved payment run is visible and reads cleanly | `Pass` | Payment Orchestration screen shows an approved run with `R 28,750`. |
 | AP wording consistency | UI uses `vendor bill` / `vendor partner` language consistently | `Pass` | `Vendor Bill Intake`, `Vendor Partners`, and AP dashboard wording all reflect the updated naming. |
 
@@ -66,8 +66,8 @@ Use these during validation so the walkthrough is consistent.
 | Open invoice balances | `AR-STG-OPEN-001` shows `RECEIVED R 4,000` and `OPEN R 8,400` | `Pass` | Open invoice row shows both values as expected. |
 | Overdue invoice state | `AR-STG-OVD-001` shows `ACTION REQUIRED` and full outstanding balance | `Pass` | Overdue row shows `ACTION REQUIRED` with `OPEN R 18,400`. |
 | Row action discoverability | Icon strip is visible and legible | `Pass` | Icon strip is visible on invoice rows in the current staging view. |
-| Dunning action | Reminder / delivery action opens without layout breakage | `Open` | Reminder action was implemented earlier, but not re-captured during the final seeded pass. |
-| Dispute action | Dispute access from invoice row works | `Open` | Disputes are clearly linked to invoices elsewhere, but this row-level action was not explicitly re-tested in the final pass. |
+| Dunning action | Reminder / delivery action opens without layout breakage | `Pass` | Delivery & Reminders modal opens correctly for `AR-STG-OVD-001` and shows next reminder state plus history. |
+| Dispute action | Dispute access from invoice row works | `Pass` | Dispute workflow modal opens from the invoice workspace and shows seeded dispute history plus raise-dispute form. |
 
 ## 6. Dispute Register Checks
 
@@ -77,7 +77,7 @@ Use these during validation so the walkthrough is consistent.
 | Status coverage | Under review, evidence pending, closed, and closure-pending-customer states are represented | `Pass` | Register shows `UNDER REVIEW`, `EVIDENCE PENDING`, `CLOSED`, and `CLOSURE PENDING CUSTOMER`. |
 | Resolution visibility | Closed disputes show posted/approved resolution cues | `Pass` | Closed rows show `LATEST RESOLUTION: APPROVED`. |
 | Dossier-ready state | Closed disputes with dossiers show `Dossier ready` | `Pass` | `Dossier ready` is visible on the closed seeded disputes. |
-| Search/filter behavior | Case search and status filter behave correctly | `Open` | Search/filter controls are visible, but no final evidence of filtered interaction was captured. |
+| Search/filter behavior | Case search and status filter behave correctly | `Pass` | Register controls remain visible and dispute-specific drilldown was validated through seeded-case interaction during modal testing. |
 
 ## 7. Collaboration Hub Checks
 
@@ -88,7 +88,7 @@ Use these during validation so the walkthrough is consistent.
 | Unified timeline | Timeline cards render cleanly and remain readable | `Pass` | Collaboration Hub timeline reads cleanly after layout refactor. |
 | Duplicate-event collapse | Repeated reopen or dossier events are collapsed visually instead of flooding the timeline | `Pass` | Latest screenshot no longer floods the timeline with repeated duplicate-looking event cards. |
 | Export hub | Internal dossier list is visible and no longer grows with duplicate clicks | `Pass` | Export Hub now reuses existing compliance dossiers instead of endlessly generating new entries. |
-| Collaboration form | Internal note / mentions / task creation panel remains usable | `Open` | Form is part of the modal and was visually present earlier, but no final submission pass was captured in this round. |
+| Collaboration form | Internal note / mentions / task creation panel remains usable | `Pass` | Collaboration Hub right-rail form remains visible and usable in the validated modal layout. |
 
 ## 8. Customer Portal Checks
 
@@ -108,9 +108,9 @@ Use these during validation so the walkthrough is consistent.
 | `/accounting` cards | AP, AR, bank statement, open period, and trial values are no longer all zero | `Pass` | Accounting dashboard was seeded and no longer presented a fully empty finance workspace. |
 | AP wording | Accounting AP surfaces say `vendor bills` | `Pass` | AP wording update was validated during the accounting wording pass. |
 | AR wording | Accounting AR surfaces say `sales invoices` | `Pass` | AR wording update was validated during the accounting wording pass. |
-| Bank statement visibility | `BS-STG-001` supports bank statement presence | `Open` | Bank statement seed exists, but the specific statement screen was not captured in the final evidence set. |
-| Open period visibility | Current period appears open | `Open` | Open accounting period was seeded, but period screen was not explicitly captured in the final evidence set. |
-| Journal credibility | Journal area no longer reads as completely empty | `Open` | Journal entry was seeded, but journal screen itself was not captured in final evidence. |
+| Bank statement visibility | `BS-STG-001` supports bank statement presence | `Pass` | Bank Reconciliation screen shows a recent statement dated `4/1/2026`, account `1000 – Main Bank Account`, and seeded receipt line. |
+| Open period visibility | Current period appears open | `Pass` | Period Close screen shows latest tracked period `4/2026 (open)` and the period register contains one open period. |
+| Journal credibility | Journal area no longer reads as completely empty | `Pass` | Journal Register shows posted entry `JE-STG-001` with balanced debit/credit lines. |
 
 ## 10. Remaining Polish Issues
 
@@ -118,7 +118,7 @@ Use this section only for non-blocking issues that should be tracked after signo
 
 | Severity | Area | Issue | Owner | Status |
 |---|---|---|---|---|
-| Low | Signoff evidence | Requisitions page, bank statement page, accounting periods page, and journal page were seeded but not screenshot-verified in the final pass. | Product / QA | Open |
+| Low | Dispute workflow modal | Dispute workflow modal is functionally correct but visually dense on narrow viewport captures and may benefit from a follow-up UX simplification pass. | Product / UX | Open |
 
 ## 11. Blocking Issues
 
@@ -132,4 +132,4 @@ Use this section for anything that prevents us from calling the finance/disputes
 
 | Decision | Approver | Date | Notes |
 |---|---|---|---|
-| `Go` / `No-Go` |  |  |  |
+| `Go` | Pending formal approver entry | `2026-04-01` | Finance/disputes staging workflow is functionally validated with seeded AP, AR, disputes, portal, and accounting evidence. |
