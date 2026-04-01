@@ -191,11 +191,29 @@ export default function ArDisputesPage() {
         return;
       }
 
-      setMessage('Compliance dossier generated.');
+      const data = await res.json().catch(() => null);
+      setMessage(data?.reused_existing ? 'Existing compliance dossier is already available.' : 'Compliance dossier generated.');
       await refreshDisputes();
     } catch {
       setMessage('Connection error while generating compliance dossier.');
     }
+  };
+
+  const getLatestInternalDossiers = (documents?: DisputeDocument[]) => {
+    const internalDocs = (documents || []).filter((document) => !document.customer_visible);
+    const latestByKey = new Map<string, DisputeDocument>();
+
+    for (const document of internalDocs) {
+      const key = `${document.document_type}::${document.title}`;
+      const existing = latestByKey.get(key);
+      if (!existing || new Date(document.created_at).getTime() > new Date(existing.created_at).getTime()) {
+        latestByKey.set(key, document);
+      }
+    }
+
+    return Array.from(latestByKey.values()).sort(
+      (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+    );
   };
 
   const refreshDisputes = async () => {
@@ -514,9 +532,8 @@ export default function ArDisputesPage() {
                     <p className="text-sm text-slate-500">Generate and review audit-ready dossier documents for legal and compliance use.</p>
                   </div>
                   <div className="space-y-3">
-                    {selectedDispute.documents?.filter((document) => !document.customer_visible).length ? (
-                      selectedDispute.documents
-                        ?.filter((document) => !document.customer_visible)
+                    {getLatestInternalDossiers(selectedDispute.documents).length ? (
+                      getLatestInternalDossiers(selectedDispute.documents)
                         .map((document) => (
                           <div key={document.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
                             <div className="text-sm font-semibold text-brand-navy">{document.title}</div>

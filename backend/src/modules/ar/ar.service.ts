@@ -1119,6 +1119,17 @@ export class ArService {
     const dispute = await this.getCompanyDispute(companyId, disputeId);
 
     return this.prisma.$transaction(async (tx) => {
+      const existingDossier = dispute.documents?.find(
+        (document) => document.document_type === 'COMPLIANCE_DOSSIER' && document.customer_visible === false,
+      );
+
+      if (existingDossier) {
+        return {
+          dossier: existingDossier,
+          reused_existing: true,
+        };
+      }
+
       const dossier = await this.createDisputeDocument(tx, {
         companyId,
         disputeId,
@@ -1153,7 +1164,10 @@ export class ArService {
         internalOnly: true,
       });
 
-      return dossier;
+      return {
+        dossier,
+        reused_existing: false,
+      };
     });
   }
 

@@ -783,7 +783,51 @@ describe('ArService', () => {
 
     const result = await service.generateDisputeDossier('company-1', 'dispute-1', 'user-1');
 
-    expect(result.document_type).toBe('COMPLIANCE_DOSSIER');
+    expect(result.reused_existing).toBe(false);
+    expect(result.dossier.document_type).toBe('COMPLIANCE_DOSSIER');
+  });
+
+  it('reuses an existing internal compliance dossier document', async () => {
+    prisma.disputeCase.findFirst.mockResolvedValue({
+      id: 'dispute-1',
+      company_id: 'company-1',
+      case_number: 'DSP-2026-12345678',
+      status: 'CLOSED',
+      priority: 'HIGH',
+      disputed_amount: 200,
+      acceptance_status: 'ACCEPTED',
+      accepted_at: new Date('2026-03-29T12:00:00.000Z'),
+      closure_locked_until: new Date('2026-04-12T10:00:00.000Z'),
+      invoice: { invoice_no: 'AR-1001', customer: { name: 'North Buyer' } },
+      activities: [{ id: 'activity-1' }],
+      attachments: [{ id: 'attachment-1' }],
+      resolutions: [{ id: 'resolution-1' }],
+      documents: [
+        {
+          id: 'doc-existing',
+          document_type: 'COMPLIANCE_DOSSIER',
+          title: 'Dispute Dossier - DSP-2026-12345678',
+          customer_visible: false,
+          created_at: new Date('2026-04-01T10:00:00.000Z'),
+        },
+      ],
+    });
+
+    prisma.$transaction.mockImplementation(async (callback: any) =>
+      callback({
+        disputeDocument: {
+          create: jest.fn(),
+        },
+        disputeActivity: {
+          create: jest.fn(),
+        },
+      }),
+    );
+
+    const result = await service.generateDisputeDossier('company-1', 'dispute-1', 'user-1');
+
+    expect(result.reused_existing).toBe(true);
+    expect(result.dossier.id).toBe('doc-existing');
   });
 
   it('generates closure documents when a dispute is closed after posting', async () => {
