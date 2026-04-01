@@ -126,7 +126,6 @@ model Company {
   apManualEntries      APManualEntry[]
   apMatchExceptions    APMatchException[]
   apAuditTrails        APAuditTrail[]
-  accountOwners        GLAccount[] @relation("GLAccountOwner")
   glAccountChangeRequests GLAccountChangeRequest[]
   glAccountAuditTrails GLAccountAuditTrail[]
 }
