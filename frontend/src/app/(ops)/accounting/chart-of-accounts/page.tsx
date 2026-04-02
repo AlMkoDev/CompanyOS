@@ -269,6 +269,41 @@ function getTierRestrictionMessage(tier: string | null | undefined) {
   return null;
 }
 
+function isProtectedTier(tier: string | null | undefined) {
+  return tier === "T1" || tier === "T2";
+}
+
+function getProtectedChangeFields(editing: GLAccount | null, form: AccountFormState) {
+  if (!editing || !isProtectedTier(editing.sensitivity_tier)) {
+    return [];
+  }
+
+  const changedFields: string[] = [];
+  if (editing.code !== form.code) changedFields.push("code");
+  if (editing.type !== form.type) changedFields.push("type");
+  if ((editing.parent_id ?? "") !== form.parent_id) changedFields.push("parent");
+  if ((editing.sensitivity_tier ?? "T3") !== form.sensitivity_tier) changedFields.push("sensitivity");
+  if ((editing.account_owner_id ?? "") !== form.account_owner_id) changedFields.push("owner");
+  if (Boolean(editing.is_header) !== form.is_header) changedFields.push("header");
+  if (Boolean(editing.is_contra) !== form.is_contra) changedFields.push("contra");
+  if (Boolean(editing.is_active) !== form.is_active) changedFields.push("active status");
+
+  return changedFields;
+}
+
+function getMandatoryRequestMessage(editing: GLAccount | null, form: AccountFormState) {
+  if (!editing && isProtectedTier(form.sensitivity_tier)) {
+    return "Protected T1/T2 accounts must enter the chart through a governed create request rather than direct creation.";
+  }
+
+  const protectedFields = getProtectedChangeFields(editing, form);
+  if (protectedFields.length > 0) {
+    return `This protected ${editing?.sensitivity_tier ?? "T2"} account has structural changes (${protectedFields.join(", ")}). Raise a governed request instead of saving directly.`;
+  }
+
+  return null;
+}
+
 function getRequestSensitivityTier(request: AccountChangeRequest) {
   const requestedTier = request.requested_payload && typeof request.requested_payload === "object"
     ? request.requested_payload["sensitivity_tier"]
@@ -559,6 +594,11 @@ export default function ChartOfAccountsPage() {
   const currentSensitivityTier = editing?.sensitivity_tier ?? form.sensitivity_tier ?? "T3";
   const canDirectlyMaintainCurrentTier = canDirectlyMaintainTier(currentSensitivityTier, normalizedRoles);
   const currentTierRestrictionMessage = getTierRestrictionMessage(currentSensitivityTier);
+  const mandatoryRequestMessage = React.useMemo(
+    () => getMandatoryRequestMessage(editing, form),
+    [editing, form],
+  );
+  const mustUseRequestWorkflow = Boolean(mandatoryRequestMessage);
   const elevatedPendingRequests = React.useMemo(
     () =>
       changeRequests.filter(
@@ -617,6 +657,27 @@ export default function ChartOfAccountsPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
+  const routeCurrentFormToChangeRequest = React.useCallback(() => {
+    const requestType = !editing
+      ? "create"
+      : getProtectedChangeFields(editing, form).some((field) => ["code", "type", "parent"].includes(field))
+        ? "reclassify"
+        : "update";
+    const title = !editing
+      ? `Create ${form.code || "new"} · ${form.name || "ledger account"}`
+      : `${requestType === "reclassify" ? "Reclassify" : "Update"} ${editing.code} · ${editing.name}`;
+
+    setChangeRequestForm({
+      account_id: editing?.id ?? "",
+      request_type: requestType,
+      title,
+      rationale: mandatoryRequestMessage ?? "",
+    });
+    setMessage("Governed request drafted from the account form.");
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [editing, form, mandatoryRequestMessage]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -624,6 +685,10 @@ export default function ChartOfAccountsPage() {
     setError(null);
 
     try {
+      if (mustUseRequestWorkflow) {
+        throw new Error(mandatoryRequestMessage || "This change must go through a governed request.");
+      }
+
       if (!canDirectlyMaintainCurrentTier) {
         throw new Error(currentTierRestrictionMessage || "Your role cannot directly maintain this account tier.");
       }
@@ -667,7 +732,8 @@ export default function ChartOfAccountsPage() {
           title: changeRequestForm.title.trim(),
           rationale: emptyToUndefined(changeRequestForm.rationale),
           proposed_changes:
-            editing && changeRequestForm.account_id === editing.id
+            ((!editing && changeRequestForm.request_type === "create") ||
+              (editing && changeRequestForm.account_id === editing.id))
               ? buildPayload(form)
               : undefined,
         }),
@@ -891,7 +957,21 @@ export default function ChartOfAccountsPage() {
               </div>
             ) : null}
 
-            <button type="submit" disabled={saving || !canDirectlyMaintainCurrentTier} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-5 py-3 font-semibold text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+            {mustUseRequestWorkflow ? (
+              <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                <div className="font-semibold text-rose-800">Governed workflow required</div>
+                <div className="mt-2">{mandatoryRequestMessage}</div>
+                <button
+                  type="button"
+                  onClick={routeCurrentFormToChangeRequest}
+                  className="mt-4 rounded-2xl border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  Draft governed request
+                </button>
+              </div>
+            ) : null}
+
+            <button type="submit" disabled={saving || !canDirectlyMaintainCurrentTier || mustUseRequestWorkflow} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-5 py-3 font-semibold text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
               {editing ? <Save size={16} /> : <Plus size={16} />}
               {saving ? "Saving…" : editing ? "Save account" : "Create account"}
             </button>

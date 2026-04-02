@@ -75,6 +75,57 @@ export class AccountingService {
     }
   }
 
+  private isProtectedSensitivityTier(sensitivityTier: string | null | undefined) {
+    return sensitivityTier === 'T1' || sensitivityTier === 'T2';
+  }
+
+  private assertCreateAllowedForWorkflow(data: CreateAccountDto) {
+    if (this.isProtectedSensitivityTier(data.sensitivity_tier || 'T3')) {
+      throw new BadRequestException(
+        'Protected T1/T2 accounts must be raised through a governed create request before they can enter the chart.',
+      );
+    }
+  }
+
+  private isProtectedStructuralChange(current: any, data: UpdateAccountDto) {
+    const fieldsToCompare: Array<keyof UpdateAccountDto> = [
+      'code',
+      'type',
+      'parent_id',
+      'sensitivity_tier',
+      'account_owner_id',
+      'is_header',
+      'is_contra',
+      'is_active',
+    ];
+
+    return fieldsToCompare.some((field) => {
+      if (!(field in data)) {
+        return false;
+      }
+
+      const incoming = data[field];
+      if (field === 'parent_id' || field === 'account_owner_id') {
+        const normalizedIncoming = incoming === '' ? null : incoming;
+        return normalizedIncoming !== (current[field] ?? null);
+      }
+
+      return incoming !== current[field];
+    });
+  }
+
+  private assertUpdateAllowedForWorkflow(current: any, data: UpdateAccountDto) {
+    if (!this.isProtectedSensitivityTier(current.sensitivity_tier ?? 'T3')) {
+      return;
+    }
+
+    if (this.isProtectedStructuralChange(current, data)) {
+      throw new BadRequestException(
+        'Protected T1/T2 account structural changes must be raised through a governed change request.',
+      );
+    }
+  }
+
   private getRequestSensitivityTier(request: {
     account?: { sensitivity_tier?: string | null } | null;
     requested_payload?: Record<string, any> | null;
@@ -420,6 +471,7 @@ export class AccountingService {
   // --- Chart of Accounts ---
 
   async createAccount(companyId: string, actorUserId: string | null, data: CreateAccountDto, actorRoles?: string[] | null) {
+    this.assertCreateAllowedForWorkflow(data);
     const code = this.validateAccountCodeFormat(data.code);
     const baseCode = this.extractBaseCode(code);
     const type = data.type.trim().toLowerCase();
@@ -617,6 +669,7 @@ export class AccountingService {
 
   async updateAccount(companyId: string, actorUserId: string | null, accountId: string, data: UpdateAccountDto, actorRoles?: string[] | null) {
     const current = await this.getCompanyAccount(companyId, accountId);
+    this.assertUpdateAllowedForWorkflow(current, data);
     const nextCode = data.code ? this.validateAccountCodeFormat(data.code) : current.code;
     const nextBaseCode = this.extractBaseCode(nextCode);
     const nextType = (data.type ?? current.type).trim().toLowerCase();

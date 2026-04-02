@@ -366,7 +366,7 @@ describe('AccountingService', () => {
         subtype: 'Cash and Cash Equivalents',
         parent_id: 'parent-1',
         is_header: false,
-        sensitivity_tier: 'T1',
+        sensitivity_tier: 'T3',
         account_owner_id: 'emp-1',
       },
       ['Super Admin'],
@@ -379,7 +379,7 @@ describe('AccountingService', () => {
           category: 'Current Assets',
           subtype: 'Cash and Cash Equivalents',
           normal_balance: 'DR',
-          sensitivity_tier: 'T1',
+          sensitivity_tier: 'T3',
           account_owner_id: 'emp-1',
           full_path: '1000 > 1113',
           created_by: 'user-1',
@@ -430,7 +430,7 @@ describe('AccountingService', () => {
         } as any,
         ['Contributor'],
       ),
-    ).rejects.toThrow('T2 accounts require finance leadership or system-administrator access for direct maintenance');
+    ).rejects.toThrow('Protected T1/T2 accounts must be raised through a governed create request');
   });
 
   it('blocks non-privileged users from directly editing T1 accounts', async () => {
@@ -459,6 +459,52 @@ describe('AccountingService', () => {
         ['finance_analyst'],
       ),
     ).rejects.toThrow('T1 accounts require system-administrator approval for direct maintenance');
+  });
+
+  it('blocks direct creation of T1 accounts even for privileged users', async () => {
+    await expect(
+      service.createAccount(
+        'company-1',
+        'user-1',
+        {
+          code: '1116',
+          name: 'Operating Treasury',
+          type: 'asset',
+          is_header: false,
+          parent_id: '',
+          sensitivity_tier: 'T1',
+        } as any,
+        ['System Administrator'],
+      ),
+    ).rejects.toThrow('Protected T1/T2 accounts must be raised through a governed create request');
+  });
+
+  it('blocks protected structural changes on T2 accounts even for privileged users', async () => {
+    prisma.gLAccount.findFirst.mockResolvedValue({
+      id: 'acct-4',
+      company_id: 'company-1',
+      code: '1211',
+      name: 'Treasury Buffer',
+      type: 'asset',
+      sensitivity_tier: 'T2',
+      is_header: false,
+      is_contra: false,
+      parent_id: 'parent-1',
+      account_owner_id: 'emp-1',
+      is_active: true,
+    });
+
+    await expect(
+      service.updateAccount(
+        'company-1',
+        'user-1',
+        'acct-4',
+        {
+          parent_id: 'parent-2',
+        },
+        ['finance_manager'],
+      ),
+    ).rejects.toThrow('Protected T1/T2 account structural changes must be raised through a governed change request');
   });
 
   it('creates account change requests with current account snapshots', async () => {
