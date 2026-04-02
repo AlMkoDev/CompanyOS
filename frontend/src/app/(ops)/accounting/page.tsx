@@ -49,6 +49,17 @@ interface BankStatementSummary {
   statement_date: string;
 }
 
+type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+
+interface GLAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  fs_placement?: string | null;
+  is_header?: boolean;
+}
+
 interface StatCardProps {
   label: string;
   value: string;
@@ -70,20 +81,46 @@ export default function AccountingDashboardPage() {
   const [ar, setAr] = React.useState<ArDashboardData | null>(null);
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [statements, setStatements] = React.useState<BankStatementSummary[]>([]);
+  const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const totalDebit = tb.reduce((sum, row) => sum + Number(row.debit || 0), 0);
   const totalCredit = tb.reduce((sum, row) => sum + Number(row.credit || 0), 0);
   const netDifference = Math.abs(totalDebit - totalCredit);
   const isBalanced = netDifference < 0.01;
 
+  const reportingReadiness = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const mappedCount = postingAccounts.filter((account) => hasValidFsPlacement(account)).length;
+    const unmappedCount = postingAccounts.filter((account) => !account.fs_placement).length;
+    const invalidCount = postingAccounts.filter((account) => account.fs_placement && !hasValidFsPlacement(account)).length;
+    const coveragePercent = postingAccounts.length ? Math.round((mappedCount / postingAccounts.length) * 100) : 0;
+    const blockers = unmappedCount + invalidCount;
+
+    return {
+      postingCount: postingAccounts.length,
+      mappedCount,
+      unmappedCount,
+      invalidCount,
+      coveragePercent,
+      blockers,
+      statusLabel:
+        blockers === 0
+          ? 'Ready'
+          : invalidCount > 0
+            ? `${blockers} blockers`
+            : `${blockers} gaps`,
+    };
+  }, [accounts]);
+
   React.useEffect(() => {
     const fetchAccountingData = async () => {
       try {
-        const [tbRes, apRes, arRes, periodsRes, statementsRes] = await Promise.all([
+        const [tbRes, apRes, arRes, periodsRes, statementsRes, accountsRes] = await Promise.all([
           apiFetch('/accounting/trial-balance'),
           apiFetch('/ap/dashboard'),
           apiFetch('/ar/dashboard'),
           apiFetch('/accounting/periods'),
           apiFetch('/accounting/bank-statements'),
+          apiFetch('/accounting/accounts'),
         ]);
 
         if (tbRes.ok) {
@@ -99,6 +136,10 @@ export default function AccountingDashboardPage() {
         if (statementsRes.ok) {
           const statementData = await statementsRes.json();
           setStatements(Array.isArray(statementData) ? statementData : []);
+        }
+        if (accountsRes.ok) {
+          const accountsData = await accountsRes.json();
+          setAccounts(Array.isArray(accountsData) ? accountsData : []);
         }
       } catch (err) {
         console.error('Failed to fetch accounting data:', err);
@@ -128,7 +169,7 @@ export default function AccountingDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-6">
         <StatCard 
           label="Ledger Accounts"
           value={`${tb.length}`}
@@ -171,9 +212,16 @@ export default function AccountingDashboardPage() {
           isPositive={isBalanced}
           icon={<PieChart className="text-brand-gold" />} 
         />
+        <StatCard 
+          label="Financial Reports"
+          value={`${reportingReadiness.coveragePercent}%`}
+          change={reportingReadiness.statusLabel}
+          isPositive={reportingReadiness.blockers === 0}
+          icon={<FileText className="text-brand-gold" />} 
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <Link href="/accounting/chart-of-accounts" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
           <div className="flex items-start justify-between mb-4">
             <div className="p-3 rounded-2xl bg-slate-50"><BookOpen className="text-brand-gold" /></div>
@@ -208,6 +256,28 @@ export default function AccountingDashboardPage() {
           </div>
           <h3 className="text-xl font-heading text-brand-navy mb-2">Period Close</h3>
           <p className="text-sm text-slate-500">Lock a month once journals and sub-ledgers are ready.</p>
+        </Link>
+
+        <Link href="/accounting/reports" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><FileText className="text-brand-gold" /></div>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-full ${
+              reportingReadiness.blockers === 0
+                ? 'bg-emerald-50 text-emerald-600'
+                : reportingReadiness.invalidCount > 0
+                  ? 'bg-rose-50 text-rose-600'
+                  : 'bg-amber-50 text-amber-600'
+            }`}>
+              {reportingReadiness.statusLabel}
+            </span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Financial Reports</h3>
+          <p className="text-sm text-slate-500">Review the P&amp;L, Balance Sheet, and Trial Balance with live COA mapping posture.</p>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            <DashboardMiniMetric label="Mapped" value={`${reportingReadiness.mappedCount}`} />
+            <DashboardMiniMetric label="Unmapped" value={`${reportingReadiness.unmappedCount}`} />
+            <DashboardMiniMetric label="Invalid" value={`${reportingReadiness.invalidCount}`} />
+          </div>
         </Link>
 
         <Link href="/ap" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
@@ -337,4 +407,26 @@ function ReportLink({ icon, label, href }: ReportLinkProps) {
       <ArrowUpRight size={14} className="ml-auto opacity-50" />
     </Link>
   );
+}
+
+function DashboardMiniMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 text-lg font-heading text-brand-navy">{value}</div>
+    </div>
+  );
+}
+
+const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
+  asset: ['Current Assets', 'Non-current Assets'],
+  liability: ['Current Liabilities', 'Non-current Liabilities'],
+  equity: ['Equity'],
+  revenue: ['Revenue', 'Other Income'],
+  expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+};
+
+function hasValidFsPlacement(account: GLAccount) {
+  if (!account.fs_placement) return false;
+  return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
 }
