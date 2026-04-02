@@ -304,6 +304,89 @@ function getMandatoryRequestMessage(editing: GLAccount | null, form: AccountForm
   return null;
 }
 
+function getDormancyAgeDays(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const diff = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+}
+
+function getPendingLifecycleRequest(accountId: string, changeRequests: AccountChangeRequest[]) {
+  return changeRequests.find(
+    (request) =>
+      request.status === "pending" &&
+      request.account?.id === accountId &&
+      ["deactivate", "reactivate", "sunset", "restore"].includes(request.request_type),
+  );
+}
+
+function getLifecycleState(account: GLAccount, changeRequests: AccountChangeRequest[]) {
+  const pendingRequest = getPendingLifecycleRequest(account.id, changeRequests);
+  const dormantDays = getDormancyAgeDays(account.dormant_since);
+
+  if (pendingRequest) {
+    return {
+      tone: "amber" as const,
+      label: `${pendingRequest.request_type} pending`,
+      recommendation: "Await governance review before changing lifecycle state.",
+      dormantDays,
+    };
+  }
+
+  if (!account.is_active && account.sunset_candidate) {
+    return {
+      tone: "rose" as const,
+      label: "sunset candidate",
+      recommendation: "Review for archive or restore decision.",
+      dormantDays,
+    };
+  }
+
+  if (!account.is_active) {
+    return {
+      tone: "amber" as const,
+      label: "inactive",
+      recommendation: "Assess whether this account should be reactivated or prepared for sunset.",
+      dormantDays,
+    };
+  }
+
+  if (account.sunset_candidate) {
+    return {
+      tone: "rose" as const,
+      label: "sunset review",
+      recommendation: "Confirm whether this active account should be retired from the chart.",
+      dormantDays,
+    };
+  }
+
+  if (dormantDays !== null && dormantDays >= 90) {
+    return {
+      tone: "rose" as const,
+      label: `${dormantDays}d dormant`,
+      recommendation: "Raise a sunset request or document why the account should stay active.",
+      dormantDays,
+    };
+  }
+
+  if (dormantDays !== null && dormantDays >= 30) {
+    return {
+      tone: "amber" as const,
+      label: `${dormantDays}d dormant`,
+      recommendation: "Review for deactivation if the account is no longer needed operationally.",
+      dormantDays,
+    };
+  }
+
+  return {
+    tone: "emerald" as const,
+    label: "active",
+    recommendation: "No lifecycle intervention needed right now.",
+    dormantDays,
+  };
+}
+
 function getRequestSensitivityTier(request: AccountChangeRequest) {
   const requestedTier = request.requested_payload && typeof request.requested_payload === "object"
     ? request.requested_payload["sensitivity_tier"]
@@ -607,6 +690,30 @@ export default function ChartOfAccountsPage() {
       ).length,
     [changeRequests],
   );
+  const lifecycleQueue = React.useMemo(() => {
+    return accounts
+      .map((account) => ({
+        account,
+        lifecycle: getLifecycleState(account, changeRequests),
+        pendingRequest: getPendingLifecycleRequest(account.id, changeRequests),
+      }))
+      .filter(({ account, lifecycle, pendingRequest }) => {
+        return Boolean(
+          pendingRequest ||
+            account.dormant_since ||
+            account.sunset_candidate ||
+            account.is_active === false ||
+            lifecycle.dormantDays !== null,
+        );
+      })
+      .sort((left, right) => {
+        const toneRank = { rose: 0, amber: 1, emerald: 2 } as const;
+        const toneDelta = toneRank[left.lifecycle.tone] - toneRank[right.lifecycle.tone];
+        if (toneDelta !== 0) return toneDelta;
+        return (right.lifecycle.dormantDays ?? 0) - (left.lifecycle.dormantDays ?? 0);
+      })
+      .slice(0, 6);
+  }, [accounts, changeRequests]);
 
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
@@ -1097,12 +1204,13 @@ export default function ChartOfAccountsPage() {
                 <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Control posture</div>
                 <h3 className="mt-2 text-2xl font-heading text-brand-navy">Sensitivity and lifecycle cues</h3>
               </div>
-              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <MetricCard icon={<ShieldCheck size={18} />} label="T1 restricted" value={String(accounts.filter((account) => account.sensitivity_tier === "T1").length)} />
                 <MetricCard icon={<AlertCircle size={18} />} label="Dormant" value={String(accounts.filter((account) => account.dormant_since).length)} />
                 <MetricCard icon={<BookOpen size={18} />} label="Sunset candidates" value={String(accounts.filter((account) => account.sunset_candidate).length)} />
                 <MetricCard icon={<UserRound size={18} />} label="Pending review" value={String(changeRequests.filter((request) => request.status === "pending").length)} />
                 <MetricCard icon={<ShieldCheck size={18} />} label="Elevated review" value={String(elevatedPendingRequests)} />
+                <MetricCard icon={<AlertCircle size={18} />} label="Lifecycle queue" value={String(lifecycleQueue.length)} />
               </div>
               <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 <div className="font-semibold text-brand-navy">Segregation of duties</div>
@@ -1223,6 +1331,84 @@ export default function ChartOfAccountsPage() {
             </section>
           </div>
 
+          <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Lifecycle queue</div>
+                <h3 className="mt-2 text-2xl font-heading text-brand-navy">Dormant and sunset reviews</h3>
+              </div>
+              <StatusPill label={`${lifecycleQueue.length} queued`} tone="amber" />
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              Surface dormant, inactive, and sunset-candidate accounts that need a governance decision instead of leaving lifecycle state buried in the chart.
+            </div>
+            <div className="mt-5 space-y-3">
+              {lifecycleQueue.length === 0 ? (
+                <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                  No dormant or sunset review actions are waiting right now.
+                </div>
+              ) : (
+                lifecycleQueue.map(({ account, lifecycle, pendingRequest }) => (
+                  <div key={account.id} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusPill label={lifecycle.label} tone={lifecycle.tone} />
+                          <StatusPill label={`${account.code} · ${account.name}`} tone="navy" />
+                          {pendingRequest ? <StatusPill label="Request waiting" tone="amber" /> : null}
+                        </div>
+                        <div className="mt-3 text-sm text-slate-600">{lifecycle.recommendation}</div>
+                        <div className="mt-2 text-xs text-slate-400">
+                          {account.dormant_since
+                            ? `Dormant since ${formatDateTime(account.dormant_since).split(",")[0]}`
+                            : account.is_active
+                              ? "Active in chart"
+                              : "Currently inactive"}
+                          {account.sunset_candidate ? " · Marked for sunset review" : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {!pendingRequest && account.is_active ? (
+                          <button
+                            type="button"
+                            onClick={() => startChangeRequest(account, "deactivate", `Deactivate ${account.code} · ${account.name}`)}
+                            className="rounded-2xl border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50"
+                          >
+                            Draft deactivate
+                          </button>
+                        ) : null}
+                        {!pendingRequest ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startChangeRequest(
+                                account,
+                                account.sunset_candidate ? "restore" : "sunset",
+                                `${account.sunset_candidate ? "Restore" : "Mark sunset"} ${account.code} · ${account.name}`,
+                              )
+                            }
+                            className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                          >
+                            {account.sunset_candidate ? "Draft restore" : "Draft sunset"}
+                          </button>
+                        ) : null}
+                        {!pendingRequest && !account.is_active ? (
+                          <button
+                            type="button"
+                            onClick={() => startChangeRequest(account, "reactivate", `Reactivate ${account.code} · ${account.name}`)}
+                            className="rounded-2xl border border-emerald-200 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                          >
+                            Draft reactivate
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
           {loading ? (
             <div className="rounded-[32px] border border-slate-100 bg-white px-6 py-10 text-center text-slate-500 shadow-sm">Loading chart of accounts…</div>
           ) : groupedAccounts.length === 0 ? (
@@ -1260,12 +1446,19 @@ export default function ChartOfAccountsPage() {
                             <MetaChip icon={<UserRound size={14} />} label={formatOwner(account.owner)} />
                             {account.dormant_since ? <MetaChip icon={<AlertCircle size={14} />} label={`Dormant since ${formatDateTime(account.dormant_since).split(",")[0]}`} /> : null}
                             {account.sunset_candidate ? <MetaChip icon={<AlertCircle size={14} />} label="Sunset candidate" /> : null}
+                            {getLifecycleState(account, changeRequests).dormantDays !== null ? (
+                              <MetaChip icon={<AlertCircle size={14} />} label={`${getLifecycleState(account, changeRequests).dormantDays} days dormant`} />
+                            ) : null}
                           </div>
                           {!canDirectlyMaintainTier(account.sensitivity_tier, normalizedRoles) && getTierRestrictionMessage(account.sensitivity_tier) ? (
                             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
                               {getTierRestrictionMessage(account.sensitivity_tier)}
                             </div>
                           ) : null}
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                            <div className="font-semibold text-brand-navy">Lifecycle posture</div>
+                            <div className="mt-2">{getLifecycleState(account, changeRequests).recommendation}</div>
+                          </div>
                         </div>
 
                         <div className="min-w-[280px] rounded-[24px] border border-slate-100 bg-white px-4 py-4">
