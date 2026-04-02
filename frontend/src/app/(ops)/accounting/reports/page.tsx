@@ -28,6 +28,15 @@ interface GLAccount {
   type: AccountType;
   fs_placement?: string | null;
   is_header?: boolean;
+  sensitivity_tier?: string | null;
+  account_owner_id?: string | null;
+}
+
+interface AccountingPeriod {
+  id: string;
+  year: number;
+  month: number;
+  status: string;
 }
 
 interface ProfitAndLossReport {
@@ -126,6 +135,7 @@ function ReportsContent() {
   const [toDate, setToDate] = React.useState(() => normalizeDate(searchParams.get('toDate')) || defaultToDate);
   const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | BalanceSheetRow[] | null>(null);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
+  const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [loading, setLoading] = React.useState(false);
   const companyName = user?.company?.name || 'Current Company';
 
@@ -155,6 +165,48 @@ function ReportsContent() {
     };
   }, [accounts]);
 
+  const certificationPosture = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const missingOwnerCount = postingAccounts.filter((account) => !account.account_owner_id).length;
+    const restrictedNoOwnerCount = postingAccounts.filter(
+      (account) => (account.sensitivity_tier === 'T1' || account.sensitivity_tier === 'T2') && !account.account_owner_id,
+    ).length;
+    const dailyCadenceCount = postingAccounts.filter((account) => getRecommendedCadence(account) === 'Daily').length;
+    const materialBlockers = reportingReadiness.invalidCount + reportingReadiness.unmappedCount + restrictedNoOwnerCount;
+    const canCertify = materialBlockers === 0;
+    const messages: string[] = [];
+
+    if (reportingReadiness.invalidCount > 0) {
+      messages.push(`${reportingReadiness.invalidCount} posting accounts have invalid statement placement.`);
+    }
+    if (reportingReadiness.unmappedCount > 0) {
+      messages.push(`${reportingReadiness.unmappedCount} posting accounts are still unmapped.`);
+    }
+    if (restrictedNoOwnerCount > 0) {
+      messages.push(`${restrictedNoOwnerCount} restricted accounts still have no owner assigned.`);
+    }
+    if (missingOwnerCount > 0 && restrictedNoOwnerCount === 0) {
+      messages.push(`${missingOwnerCount} posting accounts still need owner accountability.`);
+    }
+    if (dailyCadenceCount > 0) {
+      messages.push(`${dailyCadenceCount} accounts sit on daily cadence and should be reviewed during report signoff.`);
+    }
+
+    return {
+      missingOwnerCount,
+      restrictedNoOwnerCount,
+      dailyCadenceCount,
+      canCertify,
+      materialBlockers,
+      messages,
+    };
+  }, [accounts, reportingReadiness]);
+
+  const activePeriod = React.useMemo(
+    () => [...periods].filter((period) => period.status !== 'closed').sort((a, b) => (b.year - a.year) || (b.month - a.month))[0] ?? null,
+    [periods],
+  );
+
   const fetchReport = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -170,15 +222,20 @@ function ReportsContent() {
         path = `/accounting/trial-balance?${params.toString()}`;
       }
 
-      const [reportRes, accountsRes] = await Promise.all([
+      const [reportRes, accountsRes, periodsRes] = await Promise.all([
         apiFetch(path),
         apiFetch('/accounting/accounts'),
+        apiFetch('/accounting/periods'),
       ]);
 
       if (reportRes.ok) setData(await reportRes.json());
       if (accountsRes.ok) {
         const accountsData = await accountsRes.json();
         setAccounts(Array.isArray(accountsData) ? accountsData : []);
+      }
+      if (periodsRes.ok) {
+        const periodData = await periodsRes.json();
+        setPeriods(Array.isArray(periodData) ? periodData : []);
       }
     } catch (err) {
       console.error('Failed to fetch report:', err);
@@ -318,6 +375,80 @@ function ReportsContent() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Report signoff</div>
+            <h2 className="mt-2 text-2xl font-heading text-brand-navy">Certification posture</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              This cue separates viewable reports from certifiable reports by combining COA mapping quality, owner accountability, and reconciliation discipline.
+            </p>
+          </div>
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            certificationPosture.canCertify
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
+          }`}>
+            {certificationPosture.canCertify ? 'Certifiable reporting set' : 'Cannot certify reporting'}
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <ReadinessMetric label="Mapped %" value={String(reportingReadiness.coveragePercent)} />
+          <ReadinessMetric label="Material blockers" value={String(certificationPosture.materialBlockers)} />
+          <ReadinessMetric label="No owner" value={String(certificationPosture.missingOwnerCount)} />
+          <ReadinessMetric label="Restricted no owner" value={String(certificationPosture.restrictedNoOwnerCount)} />
+          <ReadinessMetric label="Daily cadence" value={String(certificationPosture.dailyCadenceCount)} />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className={`rounded-[24px] border px-4 py-4 ${
+            certificationPosture.canCertify ? 'border-emerald-100 bg-emerald-50' : 'border-rose-100 bg-rose-50'
+          }`}>
+            <div className={`text-sm font-semibold ${certificationPosture.canCertify ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {certificationPosture.canCertify ? 'Reporting can be certified' : 'Certification blockers need action'}
+            </div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              {certificationPosture.messages.length === 0 ? (
+                <div className="text-emerald-700">
+                  COA placement, ownership, and cadence posture are currently strong enough to support reporting signoff.
+                </div>
+              ) : (
+                certificationPosture.messages.map((item, index) => (
+                  <div key={index} className="rounded-2xl bg-white/80 px-3 py-3">
+                    {item}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="text-sm font-semibold text-brand-navy">Close-to-report handoff</div>
+            <div className="mt-3 space-y-3 text-sm text-slate-600">
+              <div className="rounded-2xl bg-white px-3 py-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Active period</div>
+                <div className="mt-1 font-medium text-brand-navy">
+                  {activePeriod ? `${activePeriod.month}/${activePeriod.year} (${activePeriod.status})` : 'No tracked open period'}
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white px-3 py-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Certification workflow</div>
+                <div className="mt-1">
+                  Review <Link href="/accounting/close" className="text-brand-gold hover:underline">Period Close</Link> before treating this report pack as formally signoff-ready.
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white px-3 py-3">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">COA remediation</div>
+                <div className="mt-1">
+                  Fix structural blockers in <Link href="/accounting/chart-of-accounts" className="text-brand-gold hover:underline">Chart of Accounts</Link> when mapping or ownership gaps remain material.
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -617,4 +748,12 @@ function formatDisplayDate(value: string) {
     month: 'short',
     year: 'numeric',
   });
+}
+
+function getRecommendedCadence(account: GLAccount) {
+  if (account.sensitivity_tier === 'T1') return 'Daily';
+  if (account.type === 'asset' && account.fs_placement === 'Current Assets') return 'Weekly';
+  if (account.type === 'liability' && account.fs_placement === 'Current Liabilities') return 'Weekly';
+  if (account.type === 'revenue' || account.type === 'expense') return 'Monthly';
+  return 'Quarterly';
 }
