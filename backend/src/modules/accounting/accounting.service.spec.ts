@@ -544,7 +544,7 @@ describe('AccountingService', () => {
     prisma.gLAccountChangeRequest.update.mockResolvedValue({ id: 'req-1', status: 'implemented' });
     prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-3' });
 
-    const result = await service.reviewAccountChangeRequest('company-1', 'user-2', 'req-1', {
+    const result = await service.reviewAccountChangeRequest('company-1', 'user-2', ['finance_manager'], 'req-1', {
       decision: 'approved',
       review_notes: 'Approved for sunset prep',
     });
@@ -592,6 +592,7 @@ describe('AccountingService', () => {
         code: '6100',
         name: 'Utilities',
         type: 'expense',
+        sensitivity_tier: 'T3',
         is_header: false,
         is_contra: false,
         is_active: true,
@@ -604,9 +605,102 @@ describe('AccountingService', () => {
     });
 
     await expect(
-      service.reviewAccountChangeRequest('company-1', 'user-1', 'req-2', {
+      service.reviewAccountChangeRequest('company-1', 'user-1', ['finance_manager'], 'req-2', {
         decision: 'approved',
       }),
     ).rejects.toThrow('Requesters may not review their own account change requests');
+  });
+
+  it('blocks non-privileged reviewers from approving T2 account requests', async () => {
+    prisma.gLAccountChangeRequest.findFirst.mockResolvedValue({
+      id: 'req-3',
+      company_id: 'company-1',
+      request_type: 'update',
+      status: 'pending',
+      requested_by: 'user-7',
+      requested_payload: { sensitivity_tier: 'T2' },
+      rationale: 'Adjust reporting placement',
+      current_snapshot: { sensitivity_tier: 'T2' },
+      account: {
+        id: 'acct-2',
+        company_id: 'company-1',
+        code: '1210',
+        name: 'Treasury Clearing',
+        type: 'asset',
+        sensitivity_tier: 'T2',
+        is_header: false,
+        is_contra: false,
+        is_active: true,
+        budget_enabled: false,
+        sunset_candidate: false,
+        dormant_since: null,
+      },
+      requester: null,
+      reviewer: null,
+    });
+
+    await expect(
+      service.reviewAccountChangeRequest(
+        'company-1',
+        'user-2',
+        ['finance_analyst'],
+        'req-3',
+        { decision: 'approved' },
+      ),
+    ).rejects.toThrow('T2 account change requests must be reviewed by finance leadership or a system administrator');
+  });
+
+  it('allows system administrators to approve T1 account requests', async () => {
+    prisma.gLAccountChangeRequest.findFirst.mockResolvedValue({
+      id: 'req-4',
+      company_id: 'company-1',
+      request_type: 'sunset',
+      status: 'pending',
+      requested_by: 'user-7',
+      requested_payload: { sensitivity_tier: 'T1' },
+      rationale: 'Treasury consolidation',
+      current_snapshot: { sensitivity_tier: 'T1' },
+      account: {
+        id: 'acct-3',
+        company_id: 'company-1',
+        code: '1101',
+        name: 'Operating Cash',
+        type: 'asset',
+        sensitivity_tier: 'T1',
+        is_header: false,
+        is_contra: false,
+        is_active: true,
+        budget_enabled: false,
+        sunset_candidate: false,
+        dormant_since: null,
+      },
+      requester: null,
+      reviewer: null,
+    });
+    prisma.gLAccount.update.mockResolvedValue({
+      id: 'acct-3',
+      code: '1101',
+      name: 'Operating Cash',
+      type: 'asset',
+      sensitivity_tier: 'T1',
+      is_header: false,
+      is_contra: false,
+      is_active: true,
+      budget_enabled: false,
+      sunset_candidate: true,
+      dormant_since: null,
+    });
+    prisma.gLAccountChangeRequest.update.mockResolvedValue({ id: 'req-4', status: 'implemented' });
+    prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-4' });
+
+    const result = await service.reviewAccountChangeRequest(
+      'company-1',
+      'user-99',
+      ['System Administrator'],
+      'req-4',
+      { decision: 'approved', review_notes: 'Approved by security admin.' },
+    );
+
+    expect(result).toEqual({ id: 'req-4', status: 'implemented' });
   });
 });

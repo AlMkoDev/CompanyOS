@@ -76,6 +76,8 @@ interface AccountChangeRequest {
   reviewed_at?: string | null;
   created_at: string;
   requested_by?: string | null;
+  requested_payload?: Record<string, unknown> | null;
+  current_snapshot?: Record<string, unknown> | null;
   account?: {
     id: string;
     code: string;
@@ -83,6 +85,7 @@ interface AccountChangeRequest {
     type: AccountType;
     is_active: boolean;
     sunset_candidate?: boolean;
+    sensitivity_tier?: string | null;
   } | null;
   requester?: GovernanceUser | null;
   reviewer?: GovernanceUser | null;
@@ -262,6 +265,65 @@ function getTierRestrictionMessage(tier: string | null | undefined) {
   }
   if (tier === "T2") {
     return "T2 accounts require finance leadership or system-administrator access for direct edits. Use a change request if needed.";
+  }
+  return null;
+}
+
+function getRequestSensitivityTier(request: AccountChangeRequest) {
+  const requestedTier = request.requested_payload && typeof request.requested_payload === "object"
+    ? request.requested_payload["sensitivity_tier"]
+    : null;
+  if (typeof requestedTier === "string" && requestedTier.trim()) {
+    return requestedTier.trim().toUpperCase();
+  }
+
+  if (request.account?.sensitivity_tier) {
+    return request.account.sensitivity_tier;
+  }
+
+  const snapshotTier = request.current_snapshot && typeof request.current_snapshot === "object"
+    ? request.current_snapshot["sensitivity_tier"]
+    : null;
+  if (typeof snapshotTier === "string" && snapshotTier.trim()) {
+    return snapshotTier.trim().toUpperCase();
+  }
+
+  return "T3";
+}
+
+function canReviewRequest(request: AccountChangeRequest, normalizedRoles: string[], currentUserId?: string | null) {
+  if (request.requested_by && currentUserId && request.requested_by === currentUserId) {
+    return false;
+  }
+
+  const tier = getRequestSensitivityTier(request);
+  if (tier === "T1") {
+    return normalizedRoles.some((role) => T1_DIRECT_EDIT_ROLES.has(role));
+  }
+  if (tier === "T2") {
+    return normalizedRoles.some((role) => T2_DIRECT_EDIT_ROLES.has(role));
+  }
+  return true;
+}
+
+function getRequestReviewerLabel(request: AccountChangeRequest) {
+  const tier = getRequestSensitivityTier(request);
+  if (tier === "T1") return "System-admin review";
+  if (tier === "T2") return "Finance leadership review";
+  return "Standard review";
+}
+
+function getRequestRestrictionMessage(request: AccountChangeRequest, currentUserId?: string | null) {
+  if (request.requested_by && currentUserId && request.requested_by === currentUserId) {
+    return "Another reviewer must decide this request.";
+  }
+
+  const tier = getRequestSensitivityTier(request);
+  if (tier === "T1") {
+    return "Only system administrators can review T1 account requests.";
+  }
+  if (tier === "T2") {
+    return "Only finance leadership or system administrators can review T2 account requests.";
   }
   return null;
 }
@@ -497,6 +559,14 @@ export default function ChartOfAccountsPage() {
   const currentSensitivityTier = editing?.sensitivity_tier ?? form.sensitivity_tier ?? "T3";
   const canDirectlyMaintainCurrentTier = canDirectlyMaintainTier(currentSensitivityTier, normalizedRoles);
   const currentTierRestrictionMessage = getTierRestrictionMessage(currentSensitivityTier);
+  const elevatedPendingRequests = React.useMemo(
+    () =>
+      changeRequests.filter(
+        (request) =>
+          request.status === "pending" && ["T1", "T2"].includes(getRequestSensitivityTier(request)),
+      ).length,
+    [changeRequests],
+  );
 
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
@@ -952,13 +1022,14 @@ export default function ChartOfAccountsPage() {
                 <MetricCard icon={<AlertCircle size={18} />} label="Dormant" value={String(accounts.filter((account) => account.dormant_since).length)} />
                 <MetricCard icon={<BookOpen size={18} />} label="Sunset candidates" value={String(accounts.filter((account) => account.sunset_candidate).length)} />
                 <MetricCard icon={<UserRound size={18} />} label="Pending review" value={String(changeRequests.filter((request) => request.status === "pending").length)} />
+                <MetricCard icon={<ShieldCheck size={18} />} label="Elevated review" value={String(elevatedPendingRequests)} />
               </div>
               <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                 <div className="font-semibold text-brand-navy">Segregation of duties</div>
                 <ul className="mt-3 space-y-2">
                   <li>Requesters cannot approve their own account changes.</li>
                   <li>Lifecycle actions should flow through requests for dormant, reactivation, and sunset decisions.</li>
-                  <li>Sensitive T1/T2 accounts should be reviewed before structural changes are implemented.</li>
+                  <li>T1 requests require system-administrator review, while T2 requests route to finance leadership or system administrators.</li>
                 </ul>
               </div>
             </section>
@@ -984,6 +1055,10 @@ export default function ChartOfAccountsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusPill label={request.request_type} tone="navy" />
                         <StatusPill
+                          label={getRequestReviewerLabel(request)}
+                          tone={getRequestSensitivityTier(request) === "T1" ? "rose" : getRequestSensitivityTier(request) === "T2" ? "amber" : "slate"}
+                        />
+                        <StatusPill
                           label={request.status}
                           tone={
                             request.status === "implemented"
@@ -1008,7 +1083,7 @@ export default function ChartOfAccountsPage() {
                         <div className="mt-4 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            disabled={reviewingRequestId === request.id || request.requested_by === user?.id}
+                            disabled={reviewingRequestId === request.id || !canReviewRequest(request, normalizedRoles, user?.id)}
                             onClick={() => handleReviewRequest(request.id, "approved")}
                             className="rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                           >
@@ -1016,14 +1091,14 @@ export default function ChartOfAccountsPage() {
                           </button>
                           <button
                             type="button"
-                            disabled={reviewingRequestId === request.id || request.requested_by === user?.id}
+                            disabled={reviewingRequestId === request.id || !canReviewRequest(request, normalizedRoles, user?.id)}
                             onClick={() => handleReviewRequest(request.id, "rejected")}
                             className="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Reject
                           </button>
-                          {request.requested_by === user?.id ? (
-                            <span className="self-center text-xs text-slate-400">Another reviewer must decide this request.</span>
+                          {!canReviewRequest(request, normalizedRoles, user?.id) && getRequestRestrictionMessage(request, user?.id) ? (
+                            <span className="self-center text-xs text-slate-400">{getRequestRestrictionMessage(request, user?.id)}</span>
                           ) : null}
                         </div>
                       ) : null}

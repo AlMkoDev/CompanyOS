@@ -67,7 +67,13 @@ export class AccountingController {
     @Param('id') id: string,
     @Body() data: ReviewAccountChangeRequestDto,
   ) {
-    return this.accountingService.reviewAccountChangeRequest(req.user.companyId, req.user.userId, id, data);
+    return this.accountingService.reviewAccountChangeRequest(
+      req.user.companyId,
+      req.user.userId,
+      req.user.roles,
+      id,
+      data,
+    );
   }
 
   @Post('journal-entries')

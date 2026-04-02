@@ -75,6 +75,54 @@ export class AccountingService {
     }
   }
 
+  private getRequestSensitivityTier(request: {
+    account?: { sensitivity_tier?: string | null } | null;
+    requested_payload?: Record<string, any> | null;
+    current_snapshot?: Record<string, any> | null;
+  }) {
+    const requestedTier = request.requested_payload?.sensitivity_tier;
+    if (typeof requestedTier === 'string' && requestedTier.trim()) {
+      return requestedTier.trim().toUpperCase();
+    }
+
+    const accountTier = request.account?.sensitivity_tier;
+    if (typeof accountTier === 'string' && accountTier.trim()) {
+      return accountTier.trim().toUpperCase();
+    }
+
+    const snapshotTier = request.current_snapshot?.sensitivity_tier;
+    if (typeof snapshotTier === 'string' && snapshotTier.trim()) {
+      return snapshotTier.trim().toUpperCase();
+    }
+
+    return 'T3';
+  }
+
+  private assertCanReviewChangeRequest(
+    request: {
+      request_type: string;
+      account?: { sensitivity_tier?: string | null } | null;
+      requested_payload?: Record<string, any> | null;
+      current_snapshot?: Record<string, any> | null;
+    },
+    actorRoles?: string[] | null,
+  ) {
+    const sensitivityTier = this.getRequestSensitivityTier(request);
+    const roles = this.getNormalizedRoles(actorRoles);
+
+    if (sensitivityTier === 'T1' && !roles.some((role) => this.t1DirectEditRoles.has(role))) {
+      throw new ForbiddenException(
+        'T1 account change requests must be reviewed by a system administrator.',
+      );
+    }
+
+    if (sensitivityTier === 'T2' && !roles.some((role) => this.t2DirectEditRoles.has(role))) {
+      throw new ForbiddenException(
+        'T2 account change requests must be reviewed by finance leadership or a system administrator.',
+      );
+    }
+  }
+
   private extractBaseCode(code: string) {
     return this.normalizeCode(code).split('-')[0];
   }
@@ -483,7 +531,15 @@ export class AccountingService {
       orderBy: [{ status: 'asc' }, { created_at: 'desc' }],
       include: {
         account: {
-          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_active: true,
+            sunset_candidate: true,
+            sensitivity_tier: true,
+          },
         },
         requester: {
           select: { id: true, first_name: true, last_name: true, email: true },
@@ -523,7 +579,15 @@ export class AccountingService {
       },
       include: {
         account: {
-          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_active: true,
+            sunset_candidate: true,
+            sensitivity_tier: true,
+          },
         },
         requester: {
           select: { id: true, first_name: true, last_name: true, email: true },
@@ -647,13 +711,14 @@ export class AccountingService {
   async reviewAccountChangeRequest(
     companyId: string,
     actorUserId: string | null,
+    actorRoles: string[] | null | undefined,
     requestId: string,
     data: ReviewAccountChangeRequestDto,
   ) {
     const request = await this.prisma.gLAccountChangeRequest.findFirst({
       where: { id: requestId, company_id: companyId },
       include: {
-        account: true,
+      account: true,
         requester: {
           select: { id: true, first_name: true, last_name: true, email: true },
         },
@@ -674,6 +739,8 @@ export class AccountingService {
     if (request.requested_by && actorUserId && request.requested_by === actorUserId) {
       throw new BadRequestException('Requesters may not review their own account change requests');
     }
+
+    this.assertCanReviewChangeRequest(request, actorRoles);
 
     let implementedAt: Date | null = null;
     let nextStatus = data.decision;
@@ -738,7 +805,15 @@ export class AccountingService {
       },
       include: {
         account: {
-          select: { id: true, code: true, name: true, type: true, is_active: true, sunset_candidate: true },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_active: true,
+            sunset_candidate: true,
+            sensitivity_tier: true,
+          },
         },
         requester: {
           select: { id: true, first_name: true, last_name: true, email: true },
