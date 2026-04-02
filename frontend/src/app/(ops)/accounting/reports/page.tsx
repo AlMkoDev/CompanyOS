@@ -58,6 +58,7 @@ interface ReportHeaderProps {
 
 interface PnLViewProps {
   data: ProfitAndLossReport;
+  accounts: GLAccount[];
 }
 
 interface TrialBalanceViewProps {
@@ -72,12 +73,14 @@ interface BalanceSheetRow {
 
 interface BalanceSheetViewProps {
   data: BalanceSheetRow[];
+  accounts: GLAccount[];
 }
 
 interface FinancialRowProps {
   label: string;
   value?: number;
   indent?: boolean;
+  note?: string;
 }
 
 const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
@@ -91,6 +94,12 @@ const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
 function hasValidFsPlacement(account: GLAccount) {
   if (!account.fs_placement) return false;
   return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
+}
+
+function getPlacementAccountCount(accounts: GLAccount[], placements: string[]) {
+  return accounts.filter(
+    (account) => !account.is_header && !!account.fs_placement && placements.includes(account.fs_placement),
+  ).length;
 }
 
 function ReportsContent() {
@@ -316,9 +325,9 @@ function ReportsContent() {
               companyName={companyName}
             />
             
-            {reportType === 'pnl' && data && !Array.isArray(data) && <PnLView data={data} />}
+            {reportType === 'pnl' && data && !Array.isArray(data) && <PnLView data={data} accounts={accounts} />}
             {reportType === 'tb' && Array.isArray(data) && <TrialBalanceView data={data as unknown as TrialBalanceRow[]} />}
-            {reportType === 'bs' && Array.isArray(data) && <BalanceSheetView data={data as unknown as BalanceSheetRow[]} />}
+            {reportType === 'bs' && Array.isArray(data) && <BalanceSheetView data={data as unknown as BalanceSheetRow[]} accounts={accounts} />}
             
             {!data && <div className="text-center py-20 text-slate-400 italic">No data available for the selected period.</div>}
           </div>
@@ -368,12 +377,15 @@ function ReportHeader({ title, periodLabel, companyName }: ReportHeaderProps) {
   );
 }
 
-function PnLView({ data }: PnLViewProps) {
+function PnLView({ data, accounts }: PnLViewProps) {
+  const revenueMappedCount = getPlacementAccountCount(accounts, ['Revenue', 'Other Income']);
+  const expenseMappedCount = getPlacementAccountCount(accounts, ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax']);
+
   return (
     <div className="max-w-3xl mx-auto space-y-12">
       <div>
          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Revenue</h3>
-         <FinancialRow label="Sales Revenue" value={data.totalRevenue} />
+         <FinancialRow label="Sales Revenue" value={data.totalRevenue} note={`${revenueMappedCount} COA revenue accounts mapped into statement structure`} />
          <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
             <span>Total Revenue</span>
             <span>R {data.totalRevenue?.toLocaleString()}</span>
@@ -382,7 +394,7 @@ function PnLView({ data }: PnLViewProps) {
 
       <div>
          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Operating Expenses</h3>
-         <FinancialRow label="Operational Costs" value={data.totalExpense} indent />
+         <FinancialRow label="Operational Costs" value={data.totalExpense} indent note={`${expenseMappedCount} COA expense accounts mapped into statement structure`} />
          <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
             <span>Total Expenses</span>
             <span>(R {data.totalExpense?.toLocaleString()})</span>
@@ -445,7 +457,7 @@ function TrialBalanceView({ data }: TrialBalanceViewProps) {
   );
 }
 
-function BalanceSheetView({ data }: BalanceSheetViewProps) {
+function BalanceSheetView({ data, accounts }: BalanceSheetViewProps) {
   const grouped = data.reduce<Record<string, BalanceSheetRow[]>>((acc, row) => {
     const key = row.type || 'other';
     acc[key] = acc[key] || [];
@@ -453,11 +465,11 @@ function BalanceSheetView({ data }: BalanceSheetViewProps) {
     return acc;
   }, {});
 
-  const typeLabel = (type: string) => {
-    if (type === 'asset') return 'Assets';
-    if (type === 'liability') return 'Liabilities';
-    if (type === 'equity') return 'Equity';
-    return 'Other';
+  const typeConfig = (type: string) => {
+    if (type === 'asset') return { label: 'Assets', placements: ['Current Assets', 'Non-current Assets'] };
+    if (type === 'liability') return { label: 'Liabilities', placements: ['Current Liabilities', 'Non-current Liabilities'] };
+    if (type === 'equity') return { label: 'Equity', placements: ['Equity'] };
+    return { label: 'Other', placements: [] as string[] };
   };
 
   return (
@@ -465,8 +477,13 @@ function BalanceSheetView({ data }: BalanceSheetViewProps) {
       {Object.entries(grouped).map(([type, rows]) => (
         <div key={type}>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">{typeLabel(type)}</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">{typeConfig(type).label}</h3>
             <span className="text-[10px] uppercase font-bold text-slate-400">{rows.length} accounts</span>
+          </div>
+          <div className="mb-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            {typeConfig(type).placements.length > 0
+              ? `${getPlacementAccountCount(accounts, typeConfig(type).placements)} COA accounts are mapped into ${typeConfig(type).placements.join(' / ')}.`
+              : 'No direct COA placement guidance is currently defined for this bucket.'}
           </div>
           <div className="bg-slate-50/70 rounded-3xl border border-slate-100 overflow-hidden">
             <table className="w-full text-left">
@@ -494,10 +511,13 @@ function BalanceSheetView({ data }: BalanceSheetViewProps) {
   );
 }
 
-function FinancialRow({ label, value, indent = false }: FinancialRowProps) {
+function FinancialRow({ label, value, indent = false, note }: FinancialRowProps) {
   return (
-    <div className={`flex justify-between py-3 ${indent ? 'pl-8' : ''} text-slate-600 font-medium`}>
-      <span>{label}</span>
+    <div className={`flex justify-between gap-4 py-3 ${indent ? 'pl-8' : ''} text-slate-600 font-medium`}>
+      <div>
+        <span>{label}</span>
+        {note ? <div className="mt-1 text-xs font-normal text-slate-400">{note}</div> : null}
+      </div>
       <span className="font-mono">R {value?.toLocaleString() || '0'}</span>
     </div>
   );
