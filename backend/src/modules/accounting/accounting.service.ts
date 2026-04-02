@@ -43,6 +43,15 @@ export class AccountingService {
     'chief_financial_officer',
     'cfo',
   ]);
+  private readonly reportCertificationRoles = new Set([
+    'super_admin',
+    'system_admin',
+    'system_administrator',
+    'finance_manager',
+    'controller',
+    'chief_financial_officer',
+    'cfo',
+  ]);
 
   private normalizeCode(code: string) {
     return code.trim().toUpperCase();
@@ -487,6 +496,123 @@ export class AccountingService {
   private async getCompanyAccountingPeriod(companyId: string, year: number, month: number) {
     return this.prisma.accountingPeriod.findFirst({
       where: { company_id: companyId, year, month },
+    });
+  }
+
+  private getRecommendedCadenceForAccount(account: {
+    sensitivity_tier?: string | null;
+    type: string;
+    fs_placement?: string | null;
+  }) {
+    if (account.sensitivity_tier === 'T1') return 'Daily';
+    if (account.type === 'asset' && account.fs_placement === 'Current Assets') return 'Weekly';
+    if (account.type === 'liability' && account.fs_placement === 'Current Liabilities') return 'Weekly';
+    if (account.type === 'revenue' || account.type === 'expense') return 'Monthly';
+    return 'Quarterly';
+  }
+
+  private async getReportingCertificationPosture(companyId: string) {
+    const accounts = await this.prisma.gLAccount.findMany({
+      where: { company_id: companyId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+        is_header: true,
+        fs_placement: true,
+        sensitivity_tier: true,
+        account_owner_id: true,
+      },
+    });
+
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const mappedAccounts = postingAccounts.filter((account) => this.isValidFsPlacementForType(account.type, account.fs_placement));
+    const unmappedAccounts = postingAccounts.filter((account) => !account.fs_placement);
+    const invalidAccounts = postingAccounts.filter(
+      (account) => account.fs_placement && !this.isValidFsPlacementForType(account.type, account.fs_placement),
+    );
+    const missingOwnerAccounts = postingAccounts.filter((account) => !account.account_owner_id);
+    const restrictedNoOwnerAccounts = postingAccounts.filter(
+      (account) => (account.sensitivity_tier === 'T1' || account.sensitivity_tier === 'T2') && !account.account_owner_id,
+    );
+    const dailyCadenceAccounts = postingAccounts.filter(
+      (account) => this.getRecommendedCadenceForAccount(account) === 'Daily',
+    );
+
+    const coveragePercent = postingAccounts.length ? Math.round((mappedAccounts.length / postingAccounts.length) * 100) : 0;
+    const messages: string[] = [];
+
+    if (invalidAccounts.length > 0) {
+      messages.push(`${invalidAccounts.length} posting accounts have invalid statement placement.`);
+    }
+    if (unmappedAccounts.length > 0) {
+      messages.push(`${unmappedAccounts.length} posting accounts are still unmapped.`);
+    }
+    if (restrictedNoOwnerAccounts.length > 0) {
+      messages.push(`${restrictedNoOwnerAccounts.length} restricted accounts still have no owner assigned.`);
+    }
+    if (missingOwnerAccounts.length > 0 && restrictedNoOwnerAccounts.length === 0) {
+      messages.push(`${missingOwnerAccounts.length} posting accounts still need owner accountability.`);
+    }
+    if (dailyCadenceAccounts.length > 0) {
+      messages.push(`${dailyCadenceAccounts.length} accounts sit on daily cadence and should be reviewed during report signoff.`);
+    }
+
+    const materialBlockers = invalidAccounts.length + unmappedAccounts.length + restrictedNoOwnerAccounts.length;
+
+    return {
+      postingCount: postingAccounts.length,
+      mappedCount: mappedAccounts.length,
+      unmappedCount: unmappedAccounts.length,
+      invalidCount: invalidAccounts.length,
+      missingOwnerCount: missingOwnerAccounts.length,
+      restrictedNoOwnerCount: restrictedNoOwnerAccounts.length,
+      dailyCadenceCount: dailyCadenceAccounts.length,
+      coveragePercent,
+      materialBlockers,
+      canCertify: materialBlockers === 0,
+      messages,
+    };
+  }
+
+  private isValidFsPlacementForType(type: string, fsPlacement?: string | null) {
+    if (!fsPlacement) return false;
+    const placement = fsPlacement.trim();
+    const allowedByType: Record<string, string[]> = {
+      asset: ['Current Assets', 'Non-current Assets'],
+      liability: ['Current Liabilities', 'Non-current Liabilities'],
+      equity: ['Equity'],
+      revenue: ['Revenue', 'Other Income'],
+      expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+    };
+    return (allowedByType[type] ?? []).includes(placement);
+  }
+
+  private assertCanCertifyReports(actorRoles?: string[] | null) {
+    const roles = this.getNormalizedRoles(actorRoles);
+    if (!roles.some((role) => this.reportCertificationRoles.has(role))) {
+      throw new ForbiddenException('Only finance leadership or system administrators can certify reporting.');
+    }
+  }
+
+  private async recordReportCertificationAudit(params: {
+    companyId: string;
+    certificationId: string;
+    actorUserId?: string | null;
+    action: string;
+    notes?: string | null;
+    postureSnapshot?: Record<string, any> | null;
+  }) {
+    return this.prisma.reportCertificationAudit.create({
+      data: {
+        company_id: params.companyId,
+        certification_id: params.certificationId,
+        actor_user_id: params.actorUserId || null,
+        action: params.action,
+        notes: params.notes || null,
+        posture_snapshot: params.postureSnapshot || undefined,
+      },
     });
   }
 
@@ -1210,6 +1336,166 @@ export class AccountingService {
     });
 
     return Object.values(balances);
+  }
+
+  async getReportCertification(companyId: string, year: number, month: number, reportType: string) {
+    const period = await this.getCompanyAccountingPeriod(companyId, year, month);
+    const posture = await this.getReportingCertificationPosture(companyId);
+
+    const certification = period
+      ? await this.prisma.reportCertification.findFirst({
+          where: {
+            company_id: companyId,
+            period_id: period.id,
+            report_type: reportType,
+          },
+          include: {
+            certifier: {
+              select: { id: true, first_name: true, last_name: true, email: true },
+            },
+            audits: {
+              orderBy: { created_at: 'desc' },
+              take: 10,
+              include: {
+                actor: {
+                  select: { id: true, first_name: true, last_name: true, email: true },
+                },
+              },
+            },
+          },
+        })
+      : null;
+
+    return {
+      period: period || { year, month, status: 'open' },
+      report_type: reportType,
+      posture,
+      certification,
+    };
+  }
+
+  async certifyReport(
+    companyId: string,
+    userId: string,
+    actorRoles: string[] | null | undefined,
+    year: number,
+    month: number,
+    reportType: string,
+    notes?: string,
+  ) {
+    this.assertCanCertifyReports(actorRoles);
+    const posture = await this.getReportingCertificationPosture(companyId);
+    if (!posture.canCertify) {
+      throw new BadRequestException('Reporting cannot be certified while material COA blockers remain.');
+    }
+
+    const period = await this.ensureAccountingPeriod(companyId, new Date(year, month - 1, 1));
+
+    const certification = await this.prisma.reportCertification.upsert({
+      where: {
+        company_id_period_id_report_type: {
+          company_id: companyId,
+          period_id: period.id,
+          report_type: reportType,
+        },
+      },
+      update: {
+        status: 'certified',
+        certified_by: userId,
+        certified_at: new Date(),
+        revoked_at: null,
+        notes: notes || null,
+        coverage_percent: posture.coveragePercent,
+        blocker_count: posture.materialBlockers,
+        owner_gap_count: posture.missingOwnerCount,
+        restricted_gap_count: posture.restrictedNoOwnerCount,
+        posture_snapshot: posture,
+      },
+      create: {
+        company_id: companyId,
+        period_id: period.id,
+        report_type: reportType,
+        status: 'certified',
+        certified_by: userId,
+        certified_at: new Date(),
+        notes: notes || null,
+        coverage_percent: posture.coveragePercent,
+        blocker_count: posture.materialBlockers,
+        owner_gap_count: posture.missingOwnerCount,
+        restricted_gap_count: posture.restrictedNoOwnerCount,
+        posture_snapshot: posture,
+      },
+      include: {
+        certifier: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+    });
+
+    await this.recordReportCertificationAudit({
+      companyId,
+      certificationId: certification.id,
+      actorUserId: userId,
+      action: 'certified',
+      notes: notes || null,
+      postureSnapshot: posture,
+    });
+
+    return this.getReportCertification(companyId, year, month, reportType);
+  }
+
+  async revokeReportCertification(
+    companyId: string,
+    userId: string,
+    actorRoles: string[] | null | undefined,
+    year: number,
+    month: number,
+    reportType: string,
+    notes?: string,
+  ) {
+    this.assertCanCertifyReports(actorRoles);
+    const period = await this.getCompanyAccountingPeriod(companyId, year, month);
+    if (!period) {
+      throw new NotFoundException('No accounting period exists for this report certification.');
+    }
+
+    const certification = await this.prisma.reportCertification.findFirst({
+      where: {
+        company_id: companyId,
+        period_id: period.id,
+        report_type: reportType,
+      },
+    });
+
+    if (!certification) {
+      throw new NotFoundException('No report certification exists for this period and report type.');
+    }
+
+    const posture = await this.getReportingCertificationPosture(companyId);
+    const revoked = await this.prisma.reportCertification.update({
+      where: { id: certification.id },
+      data: {
+        status: 'revoked',
+        revoked_at: new Date(),
+        notes: notes || certification.notes || null,
+        coverage_percent: posture.coveragePercent,
+        blocker_count: posture.materialBlockers,
+        owner_gap_count: posture.missingOwnerCount,
+        restricted_gap_count: posture.restrictedNoOwnerCount,
+        posture_snapshot: posture,
+      },
+    });
+
+    await this.recordReportCertificationAudit({
+      companyId,
+      certificationId: revoked.id,
+      actorUserId: userId,
+      action: 'revoked',
+      notes: notes || null,
+      postureSnapshot: posture,
+    });
+
+    return this.getReportCertification(companyId, year, month, reportType);
   }
 
   async getPeriods(companyId: string) {

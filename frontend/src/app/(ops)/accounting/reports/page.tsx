@@ -39,6 +39,58 @@ interface AccountingPeriod {
   status: string;
 }
 
+interface CertificationAuditEntry {
+  id: string;
+  action: string;
+  notes?: string | null;
+  created_at: string;
+  actor?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
+}
+
+interface ReportCertificationRecord {
+  id: string;
+  status: string;
+  report_type: string;
+  certified_at?: string | null;
+  revoked_at?: string | null;
+  notes?: string | null;
+  certifier?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
+  audits?: CertificationAuditEntry[];
+}
+
+interface ReportCertificationResponse {
+  period: {
+    year: number;
+    month: number;
+    status: string;
+  };
+  report_type: string;
+  posture: {
+    postingCount: number;
+    mappedCount: number;
+    unmappedCount: number;
+    invalidCount: number;
+    missingOwnerCount: number;
+    restrictedNoOwnerCount: number;
+    dailyCadenceCount: number;
+    coveragePercent: number;
+    materialBlockers: number;
+    canCertify: boolean;
+    messages: string[];
+  };
+  certification: ReportCertificationRecord | null;
+}
+
 interface ProfitAndLossReport {
   totalRevenue?: number;
   totalExpense?: number;
@@ -136,8 +188,19 @@ function ReportsContent() {
   const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | BalanceSheetRow[] | null>(null);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
+  const [certificationState, setCertificationState] = React.useState<ReportCertificationResponse | null>(null);
+  const [certificationMessage, setCertificationMessage] = React.useState('');
+  const [certificationBusy, setCertificationBusy] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const companyName = user?.company?.name || 'Current Company';
+
+  const certificationPeriod = React.useMemo(() => {
+    const parsed = new Date(`${toDate}T00:00:00`);
+    return {
+      year: Number.isNaN(parsed.getTime()) ? currentYear : parsed.getFullYear(),
+      month: Number.isNaN(parsed.getTime()) ? 1 : parsed.getMonth() + 1,
+    };
+  }, [currentYear, toDate]);
 
   const periodLabel = React.useMemo(() => {
     if (reportType === 'pnl') {
@@ -222,10 +285,17 @@ function ReportsContent() {
         path = `/accounting/trial-balance?${params.toString()}`;
       }
 
-      const [reportRes, accountsRes, periodsRes] = await Promise.all([
+      const certificationParams = new URLSearchParams({
+        year: String(certificationPeriod.year),
+        month: String(certificationPeriod.month),
+        reportType: reportType,
+      });
+
+      const [reportRes, accountsRes, periodsRes, certificationRes] = await Promise.all([
         apiFetch(path),
         apiFetch('/accounting/accounts'),
         apiFetch('/accounting/periods'),
+        apiFetch(`/accounting/reports/certification?${certificationParams.toString()}`),
       ]);
 
       if (reportRes.ok) setData(await reportRes.json());
@@ -237,16 +307,56 @@ function ReportsContent() {
         const periodData = await periodsRes.json();
         setPeriods(Array.isArray(periodData) ? periodData : []);
       }
+      if (certificationRes.ok) {
+        setCertificationState(await certificationRes.json());
+      } else {
+        setCertificationState(null);
+      }
     } catch (err) {
       console.error('Failed to fetch report:', err);
     } finally {
       setLoading(false);
     }
-  }, [fromDate, reportType, toDate]);
+  }, [certificationPeriod.month, certificationPeriod.year, fromDate, reportType, toDate]);
 
   React.useEffect(() => {
     if (isAuthenticated) fetchReport();
   }, [fetchReport, isAuthenticated]);
+
+  const handleCertificationAction = React.useCallback(async (action: 'certify' | 'revoke') => {
+    setCertificationBusy(true);
+    setCertificationMessage('');
+    try {
+      const path = action === 'certify' ? '/accounting/reports/certification' : '/accounting/reports/certification/revoke';
+      const res = await apiFetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: certificationPeriod.year,
+          month: certificationPeriod.month,
+          report_type: reportType,
+          notes:
+            action === 'certify'
+              ? `Certified from ${reportType.toUpperCase()} reporting workspace.`
+              : `Revoked from ${reportType.toUpperCase()} reporting workspace.`,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setCertificationMessage(error?.message || 'Could not update report certification.');
+        return;
+      }
+
+      const updated = await res.json();
+      setCertificationState(updated);
+      setCertificationMessage(action === 'certify' ? 'Report pack certified successfully.' : 'Report certification revoked.');
+    } catch (error) {
+      setCertificationMessage('Connection error while updating report certification.');
+    } finally {
+      setCertificationBusy(false);
+    }
+  }, [certificationPeriod.month, certificationPeriod.year, reportType]);
 
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
@@ -449,6 +559,109 @@ function ReportsContent() {
                   Fix structural blockers in <Link href="/accounting/chart-of-accounts" className="text-brand-gold hover:underline">Chart of Accounts</Link> when mapping or ownership gaps remain material.
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Report signoff</div>
+            <h2 className="mt-2 text-2xl font-heading text-brand-navy">Certification workflow</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              Use this control to formally certify or revoke the report pack for the selected period. Certification is only available when COA structure is strong enough to support reporting trust.
+            </p>
+          </div>
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            certificationState?.certification?.status === 'certified'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200 bg-slate-50 text-slate-600'
+          }`}>
+            {certificationState?.certification?.status === 'certified' ? 'Certified' : 'Not certified'}
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-brand-navy">Current signoff state</div>
+                <div className="mt-1 text-sm text-slate-500">
+                  Period {certificationPeriod.month}/{certificationPeriod.year} · {reportType.toUpperCase()} report pack
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleCertificationAction('certify')}
+                  disabled={certificationBusy || !certificationState?.posture?.canCertify}
+                  className="rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  {certificationBusy ? 'Working...' : 'Certify report pack'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCertificationAction('revoke')}
+                  disabled={certificationBusy || certificationState?.certification?.status !== 'certified'}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 disabled:opacity-60"
+                >
+                  Revoke certification
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+              <ReadinessMetric label="Mapped %" value={String(certificationState?.posture.coveragePercent ?? reportingReadiness.coveragePercent)} />
+              <ReadinessMetric label="Blockers" value={String(certificationState?.posture.materialBlockers ?? 0)} />
+              <ReadinessMetric label="No owner" value={String(certificationState?.posture.missingOwnerCount ?? 0)} />
+              <ReadinessMetric label="Daily cadence" value={String(certificationState?.posture.dailyCadenceCount ?? 0)} />
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+              {certificationState?.certification?.status === 'certified' ? (
+                <div>
+                  Certified by{' '}
+                  <span className="font-semibold text-brand-navy">
+                    {certificationState.certification.certifier
+                      ? `${certificationState.certification.certifier.first_name} ${certificationState.certification.certifier.last_name}`
+                      : 'Unknown reviewer'}
+                  </span>
+                  {certificationState.certification.certified_at
+                    ? ` on ${new Date(certificationState.certification.certified_at).toLocaleString('en-ZA')}`
+                    : ''}
+                  .
+                </div>
+              ) : (
+                <div>
+                  This report pack is still viewable, but it is not formally certified yet.
+                </div>
+              )}
+              {certificationMessage ? <div className="mt-3 text-brand-gold">{certificationMessage}</div> : null}
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="text-sm font-semibold text-brand-navy">Certification history</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              {certificationState?.certification?.audits?.length ? (
+                certificationState.certification.audits.map((audit) => (
+                  <div key={audit.id} className="rounded-2xl bg-white px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-brand-navy uppercase">{audit.action}</span>
+                      <span className="text-xs text-slate-400">{new Date(audit.created_at).toLocaleString('en-ZA')}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {audit.actor ? `${audit.actor.first_name} ${audit.actor.last_name}` : 'System workflow'}
+                    </div>
+                    {audit.notes ? <div className="mt-2 text-sm text-slate-600">{audit.notes}</div> : null}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl bg-white px-3 py-3 text-slate-500">
+                  No certification history yet for this report pack.
+                </div>
+              )}
             </div>
           </div>
         </div>

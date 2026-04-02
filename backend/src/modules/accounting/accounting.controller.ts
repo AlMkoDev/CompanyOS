@@ -18,6 +18,7 @@ import {
   CreateJournalEntryDto,
   ImportBankStatementDto,
   ReconcileBankStatementLineDto,
+  ReportCertificationDto,
   ReviewAccountChangeRequestDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
@@ -143,6 +144,53 @@ export class AccountingController {
     return this.accountingService.getBalanceSheet(
       req.user.companyId,
       toDate ? new Date(toDate) : new Date(),
+    );
+  }
+
+  @Get('reports/certification')
+  async getReportCertification(
+    @Req() req: any,
+    @Query('year') year: string,
+    @Query('month') month: string,
+    @Query('reportType') reportType: string,
+  ) {
+    return this.accountingService.getReportCertification(
+      req.user.companyId,
+      Number(year),
+      Number(month),
+      reportType,
+    );
+  }
+
+  @Post('reports/certification')
+  async certifyReport(
+    @Req() req: any,
+    @Body() body: ReportCertificationDto,
+  ) {
+    return this.accountingService.certifyReport(
+      req.user.companyId,
+      req.user.userId,
+      req.user.roles,
+      body.year,
+      body.month,
+      body.report_type,
+      body.notes,
+    );
+  }
+
+  @Post('reports/certification/revoke')
+  async revokeReportCertification(
+    @Req() req: any,
+    @Body() body: ReportCertificationDto,
+  ) {
+    return this.accountingService.revokeReportCertification(
+      req.user.companyId,
+      req.user.userId,
+      req.user.roles,
+      body.year,
+      body.month,
+      body.report_type,
+      body.notes,
     );
   }
 

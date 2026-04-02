@@ -265,6 +265,29 @@ export class ClosePeriodDto {
   month: number;
 }
 
+export class ReportCertificationDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(2000)
+  @Max(2100)
+  year: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(12)
+  month: number;
+
+  @IsString()
+  @IsIn(['pnl', 'bs', 'tb'])
+  report_type: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
 export class BankStatementLineDto {
   @IsDateString()
   date: string;

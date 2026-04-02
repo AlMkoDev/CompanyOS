@@ -34,6 +34,14 @@ describe('AccountingService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    reportCertification: {
+      findFirst: jest.fn(),
+      upsert: jest.fn(),
+      update: jest.fn(),
+    },
+    reportCertificationAudit: {
+      create: jest.fn(),
+    },
     employee: {
       findFirst: jest.fn(),
     },
@@ -769,5 +777,112 @@ describe('AccountingService', () => {
     );
 
     expect(result).toEqual({ id: 'req-4', status: 'implemented' });
+  });
+
+  it('blocks report certification when material COA blockers remain', async () => {
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: null,
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+    ]);
+
+    await expect(
+      service.certifyReport('company-1', 'user-1', ['finance_manager'], 2026, 4, 'pnl', 'Month-end pack'),
+    ).rejects.toThrow('Reporting cannot be certified while material COA blockers remain.');
+  });
+
+  it('creates a report certification and audit entry when posture is clean', async () => {
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: 'Revenue',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+      {
+        id: 'acct-2',
+        code: '6100',
+        name: 'Operating Costs',
+        type: 'expense',
+        is_header: false,
+        fs_placement: 'Operating Expenses',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-2',
+      },
+    ]);
+    prisma.accountingPeriod.upsert.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+    prisma.reportCertification.upsert.mockResolvedValue({
+      id: 'cert-1',
+      company_id: 'company-1',
+      period_id: 'period-1',
+      report_type: 'pnl',
+      status: 'certified',
+      certified_by: 'user-9',
+      certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+    });
+    prisma.reportCertificationAudit.create.mockResolvedValue({ id: 'audit-cert-1' });
+    prisma.accountingPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+    prisma.reportCertification.findFirst.mockResolvedValue({
+      id: 'cert-1',
+      company_id: 'company-1',
+      period_id: 'period-1',
+      report_type: 'pnl',
+      status: 'certified',
+      certified_by: 'user-9',
+      certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+      audits: [],
+    });
+
+    const result = await service.certifyReport('company-1', 'user-9', ['finance_manager'], 2026, 4, 'pnl', 'Month-end pack');
+
+    expect(prisma.reportCertification.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          report_type: 'pnl',
+          status: 'certified',
+          coverage_percent: 100,
+          blocker_count: 0,
+        }),
+      }),
+    );
+    expect(prisma.reportCertificationAudit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          certification_id: 'cert-1',
+          action: 'certified',
+        }),
+      }),
+    );
+    expect(result.certification?.status).toBe('certified');
+    expect(result.posture.canCertify).toBe(true);
+  });
+
+  it('blocks non-finance users from certifying reports', async () => {
+    await expect(
+      service.certifyReport('company-1', 'user-3', ['finance_analyst'], 2026, 4, 'bs'),
+    ).rejects.toThrow('Only finance leadership or system administrators can certify reporting.');
   });
 });

@@ -128,6 +128,8 @@ model Company {
   apAuditTrails        APAuditTrail[]
   glAccountChangeRequests GLAccountChangeRequest[]
   glAccountAuditTrails GLAccountAuditTrail[]
+  reportCertifications ReportCertification[]
+  reportCertificationAudits ReportCertificationAudit[]
 }
 
 model User {
@@ -170,6 +172,8 @@ model User {
   glAccountChangeRequestsRaised GLAccountChangeRequest[] @relation("GLAccountChangeRequester")
   glAccountChangeRequestsReviewed GLAccountChangeRequest[] @relation("GLAccountChangeReviewer")
   glAccountAuditEntries GLAccountAuditTrail[] @relation("GLAccountAuditActor")
+  reportCertificationsCertified ReportCertification[] @relation("ReportCertificationCertifier")
+  reportCertificationAudits ReportCertificationAudit[] @relation("ReportCertificationAuditActor")
 }
 
 model Department {
@@ -609,8 +613,54 @@ model AccountingPeriod {
 
   company         Company        @relation(fields: [company_id], references: [id])
   journal_entries JournalEntry[]
+  report_certifications ReportCertification[]
 
   @@unique([company_id, year, month])
+}
+
+model ReportCertification {
+  id                   String   @id @default(uuid()) @db.Uuid
+  company_id           String   @db.Uuid
+  period_id            String   @db.Uuid
+  report_type          String
+  status               String   @default("draft")
+  certified_by         String?  @db.Uuid
+  certified_at         DateTime?
+  revoked_at           DateTime?
+  notes                String?
+  coverage_percent     Int      @default(0)
+  blocker_count        Int      @default(0)
+  owner_gap_count      Int      @default(0)
+  restricted_gap_count Int      @default(0)
+  posture_snapshot     Json?
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  company   Company          @relation(fields: [company_id], references: [id])
+  period    AccountingPeriod @relation(fields: [period_id], references: [id])
+  certifier User?            @relation("ReportCertificationCertifier", fields: [certified_by], references: [id])
+  audits    ReportCertificationAudit[]
+
+  @@unique([company_id, period_id, report_type])
+  @@index([company_id, report_type, status])
+}
+
+model ReportCertificationAudit {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  certification_id  String   @db.Uuid
+  actor_user_id     String?  @db.Uuid
+  action            String
+  notes             String?
+  posture_snapshot  Json?
+  created_at        DateTime @default(now())
+
+  company       Company             @relation(fields: [company_id], references: [id])
+  certification ReportCertification @relation(fields: [certification_id], references: [id])
+  actor         User?               @relation("ReportCertificationAuditActor", fields: [actor_user_id], references: [id])
+
+  @@index([company_id, created_at])
+  @@index([certification_id, created_at])
 }
 
 model BankStatement {
