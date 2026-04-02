@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CreateAccountDto,
@@ -33,8 +33,46 @@ interface ReconciliationMatchRecord {
 export class AccountingService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly t1DirectEditRoles = new Set(['super_admin', 'system_admin', 'system_administrator']);
+  private readonly t2DirectEditRoles = new Set([
+    'super_admin',
+    'system_admin',
+    'system_administrator',
+    'finance_manager',
+    'controller',
+    'chief_financial_officer',
+    'cfo',
+  ]);
+
   private normalizeCode(code: string) {
     return code.trim().toUpperCase();
+  }
+
+  private normalizeRoleName(role?: string | null) {
+    if (!role) return null;
+    return role.trim().toLowerCase().replace(/\s+/g, '_');
+  }
+
+  private getNormalizedRoles(roles?: string[] | null) {
+    return Array.from(
+      new Set((roles || []).map((role) => this.normalizeRoleName(role)).filter((role): role is string => Boolean(role))),
+    );
+  }
+
+  private assertDirectSensitiveAccountAccess(sensitivityTier: string | null | undefined, actorRoles?: string[] | null) {
+    if (!sensitivityTier) {
+      return;
+    }
+
+    const roles = this.getNormalizedRoles(actorRoles);
+
+    if (sensitivityTier === 'T1' && !roles.some((role) => this.t1DirectEditRoles.has(role))) {
+      throw new ForbiddenException('T1 accounts require system-administrator approval for direct maintenance. Raise a governed change request instead.');
+    }
+
+    if (sensitivityTier === 'T2' && !roles.some((role) => this.t2DirectEditRoles.has(role))) {
+      throw new ForbiddenException('T2 accounts require finance leadership or system-administrator access for direct maintenance. Raise a governed change request instead.');
+    }
   }
 
   private extractBaseCode(code: string) {
@@ -333,12 +371,13 @@ export class AccountingService {
 
   // --- Chart of Accounts ---
 
-  async createAccount(companyId: string, actorUserId: string | null, data: CreateAccountDto) {
+  async createAccount(companyId: string, actorUserId: string | null, data: CreateAccountDto, actorRoles?: string[] | null) {
     const code = this.validateAccountCodeFormat(data.code);
     const baseCode = this.extractBaseCode(code);
     const type = data.type.trim().toLowerCase();
     this.validateTypeRange(type, baseCode);
     this.validateReservedCodeRules(baseCode, data.is_header, data.is_contra);
+    this.assertDirectSensitiveAccountAccess(data.sensitivity_tier || 'T3', actorRoles);
     await this.assertUniqueCode(companyId, code);
     const parent = await this.getValidatedParent(companyId, data.parent_id || null);
     await this.assertAccountOwner(companyId, data.account_owner_id || null);
@@ -512,7 +551,7 @@ export class AccountingService {
     return created;
   }
 
-  async updateAccount(companyId: string, actorUserId: string | null, accountId: string, data: UpdateAccountDto) {
+  async updateAccount(companyId: string, actorUserId: string | null, accountId: string, data: UpdateAccountDto, actorRoles?: string[] | null) {
     const current = await this.getCompanyAccount(companyId, accountId);
     const nextCode = data.code ? this.validateAccountCodeFormat(data.code) : current.code;
     const nextBaseCode = this.extractBaseCode(nextCode);
@@ -520,6 +559,7 @@ export class AccountingService {
     const nextIsHeader = typeof data.is_header === 'boolean' ? data.is_header : current.is_header;
     const nextIsContra = typeof data.is_contra === 'boolean' ? data.is_contra : current.is_contra;
     const nextParentId = data.parent_id === '' ? null : data.parent_id ?? current.parent_id;
+    const nextSensitivityTier = data.sensitivity_tier ?? current.sensitivity_tier ?? 'T3';
 
     if (nextParentId === accountId) {
       throw new BadRequestException('An account cannot be its own parent');
@@ -527,6 +567,7 @@ export class AccountingService {
 
     this.validateTypeRange(nextType, nextBaseCode);
     this.validateReservedCodeRules(nextBaseCode, nextIsHeader, nextIsContra);
+    this.assertDirectSensitiveAccountAccess(nextSensitivityTier, actorRoles);
     await this.assertUniqueCode(companyId, nextCode, accountId);
     const parent = await this.getValidatedParent(companyId, nextParentId);
     await this.assertNoCircularParent(companyId, accountId, parent?.id || null);

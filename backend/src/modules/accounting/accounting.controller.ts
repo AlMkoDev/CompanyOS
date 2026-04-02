@@ -29,7 +29,7 @@ export class AccountingController {
 
   @Post('accounts')
   async createAccount(@Req() req: any, @Body() data: CreateAccountDto) {
-    return this.accountingService.createAccount(req.user.companyId, req.user.userId, data);
+    return this.accountingService.createAccount(req.user.companyId, req.user.userId, data, req.user.roles);
   }
 
   @Patch('accounts/:id')
@@ -38,7 +38,7 @@ export class AccountingController {
     @Param('id') id: string,
     @Body() data: UpdateAccountDto,
   ) {
-    return this.accountingService.updateAccount(req.user.companyId, req.user.userId, id, data);
+    return this.accountingService.updateAccount(req.user.companyId, req.user.userId, id, data, req.user.roles);
   }
 
   @Get('accounts')

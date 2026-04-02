@@ -54,6 +54,15 @@ describe('AccountingService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    Object.values(prisma).forEach((group: any) => {
+      if (group && typeof group === 'object') {
+        Object.values(group).forEach((fn: any) => {
+          if (fn?.mockReset) {
+            fn.mockReset();
+          }
+        });
+      }
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -346,17 +355,22 @@ describe('AccountingService', () => {
     prisma.gLAccount.create.mockResolvedValue({ id: 'acct-1', code: '1113', normal_balance: 'DR' });
     prisma.gLAccountAuditTrail.create.mockResolvedValue({ id: 'audit-1' });
 
-    await service.createAccount('company-1', 'user-1', {
-      code: '1113',
-      name: 'Main Checking Account',
-      type: 'asset',
-      category: 'Current Assets',
-      subtype: 'Cash and Cash Equivalents',
-      parent_id: 'parent-1',
-      is_header: false,
-      sensitivity_tier: 'T1',
-      account_owner_id: 'emp-1',
-    });
+    await service.createAccount(
+      'company-1',
+      'user-1',
+      {
+        code: '1113',
+        name: 'Main Checking Account',
+        type: 'asset',
+        category: 'Current Assets',
+        subtype: 'Cash and Cash Equivalents',
+        parent_id: 'parent-1',
+        is_header: false,
+        sensitivity_tier: 'T1',
+        account_owner_id: 'emp-1',
+      },
+      ['Super Admin'],
+    );
 
     expect(prisma.gLAccount.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -399,6 +413,52 @@ describe('AccountingService', () => {
         ],
       }),
     ).rejects.toThrow('Header account 1100 cannot accept postings');
+  });
+
+  it('blocks non-privileged users from directly creating T2 accounts', async () => {
+    await expect(
+      service.createAccount(
+        'company-1',
+        'user-1',
+        {
+          code: '1114',
+          name: 'Restricted Treasury Clearing',
+          type: 'asset',
+          is_header: false,
+          parent_id: '',
+          sensitivity_tier: 'T2',
+        } as any,
+        ['Contributor'],
+      ),
+    ).rejects.toThrow('T2 accounts require finance leadership or system-administrator access for direct maintenance');
+  });
+
+  it('blocks non-privileged users from directly editing T1 accounts', async () => {
+    prisma.gLAccount.findFirst.mockResolvedValue({
+      id: 'acct-1',
+      company_id: 'company-1',
+      code: '1115',
+      name: 'Treasury Sweep',
+      type: 'asset',
+      is_header: false,
+      is_contra: false,
+      parent_id: 'parent-1',
+      account_owner_id: null,
+      sensitivity_tier: 'T1',
+      is_active: true,
+    });
+
+    await expect(
+      service.updateAccount(
+        'company-1',
+        'user-1',
+        'acct-1',
+        {
+          name: 'Treasury Sweep Updated',
+        },
+        ['finance_analyst'],
+      ),
+    ).rejects.toThrow('T1 accounts require system-administrator approval for direct maintenance');
   });
 
   it('creates account change requests with current account snapshots', async () => {

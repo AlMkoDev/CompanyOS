@@ -16,6 +16,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { getNormalizedRoles } from "@/lib/permissions";
 import { useAuthStore } from "@/store/authStore";
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
@@ -233,6 +234,38 @@ function formatPerson(person?: GovernanceUser | null) {
   return `${person.first_name} ${person.last_name}`;
 }
 
+const T1_DIRECT_EDIT_ROLES = new Set(["super_admin", "system_admin", "system_administrator"]);
+const T2_DIRECT_EDIT_ROLES = new Set([
+  "super_admin",
+  "system_admin",
+  "system_administrator",
+  "finance_manager",
+  "controller",
+  "chief_financial_officer",
+  "cfo",
+]);
+
+function canDirectlyMaintainTier(tier: string | null | undefined, normalizedRoles: string[]) {
+  if (!tier || tier === "T3") return true;
+  if (tier === "T1") {
+    return normalizedRoles.some((role) => T1_DIRECT_EDIT_ROLES.has(role));
+  }
+  if (tier === "T2") {
+    return normalizedRoles.some((role) => T2_DIRECT_EDIT_ROLES.has(role));
+  }
+  return true;
+}
+
+function getTierRestrictionMessage(tier: string | null | undefined) {
+  if (tier === "T1") {
+    return "T1 accounts require system-administrator approval for direct edits. Use a change request if your role is not elevated.";
+  }
+  if (tier === "T2") {
+    return "T2 accounts require finance leadership or system-administrator access for direct edits. Use a change request if needed.";
+  }
+  return null;
+}
+
 function buildPayload(form: AccountFormState) {
   return {
     code: form.code.trim(),
@@ -320,6 +353,7 @@ function Field({
 
 export default function ChartOfAccountsPage() {
   const { isAuthenticated, user } = useAuthStore();
+  const normalizedRoles = React.useMemo(() => getNormalizedRoles(user), [user]);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const [employees, setEmployees] = React.useState<EmployeeOption[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -460,6 +494,10 @@ export default function ChartOfAccountsPage() {
     );
   }, [accounts, editing?.id, form.type]);
 
+  const currentSensitivityTier = editing?.sensitivity_tier ?? form.sensitivity_tier ?? "T3";
+  const canDirectlyMaintainCurrentTier = canDirectlyMaintainTier(currentSensitivityTier, normalizedRoles);
+  const currentTierRestrictionMessage = getTierRestrictionMessage(currentSensitivityTier);
+
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
     setEditing(null);
@@ -516,6 +554,10 @@ export default function ChartOfAccountsPage() {
     setError(null);
 
     try {
+      if (!canDirectlyMaintainCurrentTier) {
+        throw new Error(currentTierRestrictionMessage || "Your role cannot directly maintain this account tier.");
+      }
+
       const res = await apiFetch(
         editing ? `/accounting/accounts/${editing.id}` : "/accounting/accounts",
         {
@@ -772,7 +814,14 @@ export default function ChartOfAccountsPage() {
               </ul>
             </div>
 
-            <button type="submit" disabled={saving} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-5 py-3 font-semibold text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+            {!canDirectlyMaintainCurrentTier && currentTierRestrictionMessage ? (
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                <div className="font-semibold text-brand-navy">Restricted sensitivity tier</div>
+                <div className="mt-2">{currentTierRestrictionMessage}</div>
+              </div>
+            ) : null}
+
+            <button type="submit" disabled={saving || !canDirectlyMaintainCurrentTier} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-navy px-5 py-3 font-semibold text-white shadow-lg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
               {editing ? <Save size={16} /> : <Plus size={16} />}
               {saving ? "Saving…" : editing ? "Save account" : "Create account"}
             </button>
@@ -1057,6 +1106,11 @@ export default function ChartOfAccountsPage() {
                             {account.dormant_since ? <MetaChip icon={<AlertCircle size={14} />} label={`Dormant since ${formatDateTime(account.dormant_since).split(",")[0]}`} /> : null}
                             {account.sunset_candidate ? <MetaChip icon={<AlertCircle size={14} />} label="Sunset candidate" /> : null}
                           </div>
+                          {!canDirectlyMaintainTier(account.sensitivity_tier, normalizedRoles) && getTierRestrictionMessage(account.sensitivity_tier) ? (
+                            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                              {getTierRestrictionMessage(account.sensitivity_tier)}
+                            </div>
+                          ) : null}
                         </div>
 
                         <div className="min-w-[280px] rounded-[24px] border border-slate-100 bg-white px-4 py-4">
@@ -1072,7 +1126,12 @@ export default function ChartOfAccountsPage() {
                           </div>
                           <div className="mt-4 flex justify-end">
                             <div className="flex flex-wrap justify-end gap-2">
-                              <button type="button" onClick={() => startEdit(account)} className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                              <button
+                                type="button"
+                                disabled={!canDirectlyMaintainTier(account.sensitivity_tier, normalizedRoles)}
+                                onClick={() => startEdit(account)}
+                                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
                                 Edit account
                               </button>
                               {account.is_active ? (
