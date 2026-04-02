@@ -317,6 +317,23 @@ function hasValidFsPlacement(account: GLAccount) {
   return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
 }
 
+function getRecommendedReconciliationCadence(account: GLAccount) {
+  if (account.sensitivity_tier === "T1") return "Daily";
+  if (account.fs_placement === "Current Assets" && /bank|cash|treasury/i.test(`${account.name} ${account.code}`)) {
+    return "Daily";
+  }
+  if (account.fs_placement === "Current Assets" || account.fs_placement === "Current Liabilities") {
+    return "Weekly";
+  }
+  if (account.type === "revenue" || account.type === "expense") {
+    return "Monthly";
+  }
+  if (account.fs_placement === "Non-current Assets" || account.fs_placement === "Non-current Liabilities" || account.type === "equity") {
+    return "Quarterly";
+  }
+  return "Monthly";
+}
+
 function getDormancyAgeDays(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -741,6 +758,30 @@ export default function ChartOfAccountsPage() {
       coveragePercent: postingAccounts.length ? Math.round((mapped.length / postingAccounts.length) * 100) : 0,
       invalidAccounts: invalid.slice(0, 5),
       unmappedAccounts: unmapped.slice(0, 5),
+    };
+  }, [accounts]);
+  const ownerAccountability = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const unassigned = postingAccounts.filter((account) => !account.account_owner_id);
+    const restrictedWithoutOwner = postingAccounts.filter(
+      (account) => ["T1", "T2"].includes(account.sensitivity_tier ?? "") && !account.account_owner_id,
+    );
+
+    const cadenceBuckets = postingAccounts.reduce<Record<string, number>>((acc, account) => {
+      const cadence = getRecommendedReconciliationCadence(account);
+      acc[cadence] = (acc[cadence] || 0) + 1;
+      return acc;
+    }, {});
+
+    return {
+      postingCount: postingAccounts.length,
+      ownerCoveragePercent: postingAccounts.length
+        ? Math.round(((postingAccounts.length - unassigned.length) / postingAccounts.length) * 100)
+        : 0,
+      unassignedCount: unassigned.length,
+      restrictedWithoutOwnerCount: restrictedWithoutOwner.length,
+      unassignedAccounts: unassigned.slice(0, 5),
+      cadenceBuckets,
     };
   }, [accounts]);
 
@@ -1494,6 +1535,66 @@ export default function ChartOfAccountsPage() {
             </div>
           </section>
 
+          <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Owner accountability</div>
+                <h3 className="mt-2 text-2xl font-heading text-brand-navy">Reconciliation ownership posture</h3>
+              </div>
+              <StatusPill
+                label={`${ownerAccountability.ownerCoveragePercent}% owned`}
+                tone={ownerAccountability.restrictedWithoutOwnerCount > 0 ? "rose" : ownerAccountability.ownerCoveragePercent >= 90 ? "emerald" : "amber"}
+              />
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              Track whether posting accounts have clear owners and how often they should be reconciled to support close discipline and operational accountability.
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard icon={<UserRound size={18} />} label="Owned posting" value={String(ownerAccountability.postingCount - ownerAccountability.unassignedCount)} />
+              <MetricCard icon={<AlertCircle size={18} />} label="Unassigned" value={String(ownerAccountability.unassignedCount)} />
+              <MetricCard icon={<ShieldCheck size={18} />} label="Restricted no owner" value={String(ownerAccountability.restrictedWithoutOwnerCount)} />
+              <MetricCard icon={<BookOpen size={18} />} label="Daily cadence" value={String(ownerAccountability.cadenceBuckets["Daily"] || 0)} />
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-brand-navy">Accounts missing owners</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  {ownerAccountability.unassignedAccounts.length === 0 ? (
+                    <div className="text-slate-500">All posting accounts currently have an owner assigned.</div>
+                  ) : (
+                    ownerAccountability.unassignedAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3">
+                        <span className="font-medium text-brand-navy">{account.code} · {account.name}</span>
+                        <span className="text-xs uppercase tracking-[0.16em] text-amber-600">{account.sensitivity_tier || "T3"}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-brand-navy">Recommended reconciliation cadence</div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-600">
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Daily</div>
+                    <div className="mt-1 text-lg font-semibold text-brand-navy">{ownerAccountability.cadenceBuckets["Daily"] || 0}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Weekly</div>
+                    <div className="mt-1 text-lg font-semibold text-brand-navy">{ownerAccountability.cadenceBuckets["Weekly"] || 0}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Monthly</div>
+                    <div className="mt-1 text-lg font-semibold text-brand-navy">{ownerAccountability.cadenceBuckets["Monthly"] || 0}</div>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Quarterly</div>
+                    <div className="mt-1 text-lg font-semibold text-brand-navy">{ownerAccountability.cadenceBuckets["Quarterly"] || 0}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {loading ? (
             <div className="rounded-[32px] border border-slate-100 bg-white px-6 py-10 text-center text-slate-500 shadow-sm">Loading chart of accounts…</div>
           ) : groupedAccounts.length === 0 ? (
@@ -1566,6 +1667,10 @@ export default function ChartOfAccountsPage() {
                           <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
                             <div className="font-semibold text-slate-700">Hierarchy path</div>
                             <div className="mt-1 break-words">{account.full_path || account.code}</div>
+                          </div>
+                          <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                            <div className="font-semibold text-slate-700">Reconciliation cadence</div>
+                            <div className="mt-1 break-words">{getRecommendedReconciliationCadence(account)}</div>
                           </div>
                           <div className="mt-4 flex justify-end">
                             <div className="flex flex-wrap justify-end gap-2">
