@@ -19,6 +19,17 @@ import { Suspense } from 'react';
 
 type ReportType = 'pnl' | 'bs' | 'tb';
 
+type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+
+interface GLAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  fs_placement?: string | null;
+  is_header?: boolean;
+}
+
 interface ProfitAndLossReport {
   totalRevenue?: number;
   totalExpense?: number;
@@ -69,6 +80,19 @@ interface FinancialRowProps {
   indent?: boolean;
 }
 
+const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
+  asset: ['Current Assets', 'Non-current Assets'],
+  liability: ['Current Liabilities', 'Non-current Liabilities'],
+  equity: ['Equity'],
+  revenue: ['Revenue', 'Other Income'],
+  expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+};
+
+function hasValidFsPlacement(account: GLAccount) {
+  if (!account.fs_placement) return false;
+  return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
+}
+
 function ReportsContent() {
   const searchParams = useSearchParams();
   const initialType = (searchParams.get('type') as ReportType | null) || 'pnl';
@@ -81,6 +105,7 @@ function ReportsContent() {
   const [fromDate, setFromDate] = React.useState(() => normalizeDate(searchParams.get('fromDate')) || defaultFromDate);
   const [toDate, setToDate] = React.useState(() => normalizeDate(searchParams.get('toDate')) || defaultToDate);
   const [data, setData] = React.useState<ProfitAndLossReport | TrialBalanceRow[] | BalanceSheetRow[] | null>(null);
+  const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const [loading, setLoading] = React.useState(false);
   const companyName = user?.company?.name || 'Current Company';
 
@@ -91,6 +116,24 @@ function ReportsContent() {
 
     return `As of ${formatDisplayDate(toDate)}`;
   }, [fromDate, reportType, toDate]);
+
+  const reportingReadiness = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const mapped = postingAccounts.filter((account) => hasValidFsPlacement(account));
+    const unmapped = postingAccounts.filter((account) => !account.fs_placement);
+    const invalid = postingAccounts.filter((account) => account.fs_placement && !hasValidFsPlacement(account));
+
+    return {
+      postingCount: postingAccounts.length,
+      mappedCount: mapped.length,
+      unmappedCount: unmapped.length,
+      invalidCount: invalid.length,
+      coveragePercent: postingAccounts.length ? Math.round((mapped.length / postingAccounts.length) * 100) : 0,
+      blockers: invalid.length + unmapped.length,
+      invalidAccounts: invalid.slice(0, 3),
+      unmappedAccounts: unmapped.slice(0, 3),
+    };
+  }, [accounts]);
 
   const fetchReport = React.useCallback(async () => {
     setLoading(true);
@@ -107,8 +150,16 @@ function ReportsContent() {
         path = `/accounting/trial-balance?${params.toString()}`;
       }
 
-      const res = await apiFetch(path);
-      if (res.ok) setData(await res.json());
+      const [reportRes, accountsRes] = await Promise.all([
+        apiFetch(path),
+        apiFetch('/accounting/accounts'),
+      ]);
+
+      if (reportRes.ok) setData(await reportRes.json());
+      if (accountsRes.ok) {
+        const accountsData = await accountsRes.json();
+        setAccounts(Array.isArray(accountsData) ? accountsData : []);
+      }
     } catch (err) {
       console.error('Failed to fetch report:', err);
     } finally {
@@ -187,6 +238,69 @@ function ReportsContent() {
           icon={<Columns size={16} />} 
           label="Trial Balance" 
         />
+      </div>
+
+      <div className="rounded-[32px] border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">COA readiness</div>
+            <h2 className="mt-2 text-2xl font-heading text-brand-navy">Reporting readiness blockers</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              These cues come from the chart of accounts itself, so finance can tell whether statement output is structurally trustworthy before treating the report as final.
+            </p>
+          </div>
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            reportingReadiness.invalidCount > 0
+              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : reportingReadiness.unmappedCount > 0
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          }`}>
+            {reportingReadiness.coveragePercent}% mapped · {reportingReadiness.blockers} blockers
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <ReadinessMetric label="Posting accounts" value={String(reportingReadiness.postingCount)} />
+          <ReadinessMetric label="Mapped" value={String(reportingReadiness.mappedCount)} />
+          <ReadinessMetric label="Unmapped" value={String(reportingReadiness.unmappedCount)} />
+          <ReadinessMetric label="Invalid mapping" value={String(reportingReadiness.invalidCount)} />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="text-sm font-semibold text-brand-navy">Unmapped posting accounts</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              {reportingReadiness.unmappedAccounts.length === 0 ? (
+                <div className="text-slate-500">No unmapped posting accounts are blocking report structure right now.</div>
+              ) : (
+                reportingReadiness.unmappedAccounts.map((account) => (
+                  <div key={account.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3">
+                    <span className="font-medium text-brand-navy">{account.code} · {account.name}</span>
+                    <span className="text-xs uppercase tracking-[0.16em] text-amber-600">{account.type}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="text-sm font-semibold text-brand-navy">Invalid statement placements</div>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              {reportingReadiness.invalidAccounts.length === 0 ? (
+                <div className="text-slate-500">No invalid account placements are currently weakening report structure.</div>
+              ) : (
+                reportingReadiness.invalidAccounts.map((account) => (
+                  <div key={account.id} className="rounded-2xl bg-white px-3 py-3">
+                    <div className="font-medium text-brand-navy">{account.code} · {account.name}</div>
+                    <div className="mt-1 text-xs text-rose-600">
+                      {account.fs_placement} does not align with {account.type} accounts.
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[32px] border border-slate-100 shadow-2xl p-10 min-h-[600px]">
@@ -385,6 +499,15 @@ function FinancialRow({ label, value, indent = false }: FinancialRowProps) {
     <div className={`flex justify-between py-3 ${indent ? 'pl-8' : ''} text-slate-600 font-medium`}>
       <span>{label}</span>
       <span className="font-mono">R {value?.toLocaleString() || '0'}</span>
+    </div>
+  );
+}
+
+function ReadinessMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
     </div>
   );
 }
