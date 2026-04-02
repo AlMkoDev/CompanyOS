@@ -83,6 +83,13 @@ interface FinancialRowProps {
   note?: string;
 }
 
+interface PlacementSummaryCardProps {
+  title: string;
+  subtitle: string;
+  count: number;
+  tone?: 'slate' | 'gold' | 'emerald';
+}
+
 const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
   asset: ['Current Assets', 'Non-current Assets'],
   liability: ['Current Liabilities', 'Non-current Liabilities'],
@@ -100,6 +107,10 @@ function getPlacementAccountCount(accounts: GLAccount[], placements: string[]) {
   return accounts.filter(
     (account) => !account.is_header && !!account.fs_placement && placements.includes(account.fs_placement),
   ).length;
+}
+
+function getPlacementSummary(accounts: GLAccount[], placement: string) {
+  return accounts.filter((account) => !account.is_header && account.fs_placement === placement).length;
 }
 
 function ReportsContent() {
@@ -380,11 +391,32 @@ function ReportHeader({ title, periodLabel, companyName }: ReportHeaderProps) {
 function PnLView({ data, accounts }: PnLViewProps) {
   const revenueMappedCount = getPlacementAccountCount(accounts, ['Revenue', 'Other Income']);
   const expenseMappedCount = getPlacementAccountCount(accounts, ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax']);
+  const revenueStructure = [
+    { title: 'Revenue', subtitle: 'Core trading income', count: getPlacementSummary(accounts, 'Revenue') },
+    { title: 'Other Income', subtitle: 'Non-core gains', count: getPlacementSummary(accounts, 'Other Income') },
+  ];
+  const expenseStructure = [
+    { title: 'Cost of Sales', subtitle: 'Direct trading cost', count: getPlacementSummary(accounts, 'Cost of Sales') },
+    { title: 'Operating Expenses', subtitle: 'Run-rate operating spend', count: getPlacementSummary(accounts, 'Operating Expenses') },
+    { title: 'Other Expense', subtitle: 'Non-operating charges', count: getPlacementSummary(accounts, 'Other Expense') },
+    { title: 'Tax', subtitle: 'Tax-specific postings', count: getPlacementSummary(accounts, 'Tax') },
+  ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-12">
       <div>
          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Revenue</h3>
+         <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+           {revenueStructure.map((item) => (
+             <PlacementSummaryCard
+               key={item.title}
+               title={item.title}
+               subtitle={item.subtitle}
+               count={item.count}
+               tone="emerald"
+             />
+           ))}
+         </div>
          <FinancialRow label="Sales Revenue" value={data.totalRevenue} note={`${revenueMappedCount} COA revenue accounts mapped into statement structure`} />
          <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
             <span>Total Revenue</span>
@@ -394,6 +426,17 @@ function PnLView({ data, accounts }: PnLViewProps) {
 
       <div>
          <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b border-slate-50 pb-2">Operating Expenses</h3>
+         <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+           {expenseStructure.map((item) => (
+             <PlacementSummaryCard
+               key={item.title}
+               title={item.title}
+               subtitle={item.subtitle}
+               count={item.count}
+               tone={item.title === 'Tax' ? 'gold' : 'slate'}
+             />
+           ))}
+         </div>
          <FinancialRow label="Operational Costs" value={data.totalExpense} indent note={`${expenseMappedCount} COA expense accounts mapped into statement structure`} />
          <div className="border-t-2 border-brand-navy/10 mt-4 pt-4 flex justify-between font-heading text-xl text-brand-navy">
             <span>Total Expenses</span>
@@ -480,6 +523,17 @@ function BalanceSheetView({ data, accounts }: BalanceSheetViewProps) {
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">{typeConfig(type).label}</h3>
             <span className="text-[10px] uppercase font-bold text-slate-400">{rows.length} accounts</span>
           </div>
+          <div className={`mb-4 grid gap-3 ${typeConfig(type).placements.length > 1 ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+            {typeConfig(type).placements.map((placement) => (
+              <PlacementSummaryCard
+                key={`${type}-${placement}`}
+                title={placement}
+                subtitle="COA placement family"
+                count={getPlacementSummary(accounts, placement)}
+                tone={type === 'equity' ? 'gold' : 'slate'}
+              />
+            ))}
+          </div>
           <div className="mb-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
             {typeConfig(type).placements.length > 0
               ? `${getPlacementAccountCount(accounts, typeConfig(type).placements)} COA accounts are mapped into ${typeConfig(type).placements.join(' / ')}.`
@@ -528,6 +582,23 @@ function ReadinessMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</div>
       <div className="mt-2 text-2xl font-heading text-brand-navy">{value}</div>
+    </div>
+  );
+}
+
+function PlacementSummaryCard({ title, subtitle, count, tone = 'slate' }: PlacementSummaryCardProps) {
+  const toneClass =
+    tone === 'emerald'
+      ? 'border-emerald-200 bg-emerald-50'
+      : tone === 'gold'
+        ? 'border-brand-gold/30 bg-brand-gold/10'
+        : 'border-slate-100 bg-slate-50';
+
+  return (
+    <div className={`rounded-[24px] border px-4 py-4 ${toneClass}`}>
+      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{title}</div>
+      <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
+      <div className="mt-3 text-2xl font-heading text-brand-navy">{count}</div>
     </div>
   );
 }
