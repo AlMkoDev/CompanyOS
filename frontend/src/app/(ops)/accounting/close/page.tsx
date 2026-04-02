@@ -6,6 +6,19 @@ import { ChevronLeft, Lock, CalendarDays, CheckCircle2, AlertTriangle, ShieldChe
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 
+type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+
+interface GLAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  fs_placement?: string | null;
+  is_header?: boolean;
+  sensitivity_tier?: string | null;
+  account_owner_id?: string | null;
+}
+
 interface AccountingPeriod {
   id: string;
   year: number;
@@ -25,10 +38,45 @@ interface CloseReadiness {
   blockers: string[];
 }
 
+interface ReportingCertificationPosture {
+  postingCount: number;
+  coveragePercent: number;
+  blockers: number;
+  unmappedCount: number;
+  invalidCount: number;
+  missingOwnerCount: number;
+  restrictedNoOwnerCount: number;
+  dailyCadenceCount: number;
+  canCertify: boolean;
+  messages: string[];
+}
+
+const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
+  asset: ['Current Assets', 'Non-current Assets'],
+  liability: ['Current Liabilities', 'Non-current Liabilities'],
+  equity: ['Equity'],
+  revenue: ['Revenue', 'Other Income'],
+  expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+};
+
+function hasValidFsPlacement(account: GLAccount) {
+  if (!account.fs_placement) return false;
+  return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
+}
+
+function getRecommendedCadence(account: GLAccount) {
+  if (account.sensitivity_tier === 'T1') return 'Daily';
+  if (account.type === 'asset' && account.fs_placement === 'Current Assets') return 'Weekly';
+  if (account.type === 'liability' && account.fs_placement === 'Current Liabilities') return 'Weekly';
+  if (account.type === 'revenue' || account.type === 'expense') return 'Monthly';
+  return 'Quarterly';
+}
+
 export default function CloseWorkflowPage() {
   const { isAuthenticated } = useAuthStore();
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [readiness, setReadiness] = React.useState<CloseReadiness | null>(null);
+  const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState(false);
@@ -40,9 +88,16 @@ export default function CloseWorkflowPage() {
 
   const loadPeriods = React.useCallback(async () => {
     try {
-      const res = await apiFetch('/accounting/periods');
-      if (res.ok) {
-        setPeriods(await res.json());
+      const [periodRes, accountRes] = await Promise.all([
+        apiFetch('/accounting/periods'),
+        apiFetch('/accounting/accounts'),
+      ]);
+      if (periodRes.ok) {
+        setPeriods(await periodRes.json());
+      }
+      if (accountRes.ok) {
+        const accountData = await accountRes.json();
+        setAccounts(Array.isArray(accountData) ? accountData : []);
       }
     } finally {
       setLoading(false);
@@ -71,10 +126,52 @@ export default function CloseWorkflowPage() {
     }
   }, [isAuthenticated, form.year, form.month, loadReadiness]);
 
+  const reportingCertification = React.useMemo<ReportingCertificationPosture>(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const mappedCount = postingAccounts.filter((account) => hasValidFsPlacement(account)).length;
+    const unmappedCount = postingAccounts.filter((account) => !account.fs_placement).length;
+    const invalidCount = postingAccounts.filter((account) => account.fs_placement && !hasValidFsPlacement(account)).length;
+    const missingOwnerCount = postingAccounts.filter((account) => !account.account_owner_id).length;
+    const restrictedNoOwnerCount = postingAccounts.filter(
+      (account) => (account.sensitivity_tier === 'T1' || account.sensitivity_tier === 'T2') && !account.account_owner_id,
+    ).length;
+    const dailyCadenceCount = postingAccounts.filter((account) => getRecommendedCadence(account) === 'Daily').length;
+    const coveragePercent = postingAccounts.length ? Math.round((mappedCount / postingAccounts.length) * 100) : 0;
+
+    const messages: string[] = [];
+    if (invalidCount > 0) messages.push(`${invalidCount} posting accounts have invalid financial-statement placement.`);
+    if (unmappedCount > 0) messages.push(`${unmappedCount} posting accounts are still missing financial-statement placement.`);
+    if (restrictedNoOwnerCount > 0) messages.push(`${restrictedNoOwnerCount} restricted accounts have no assigned owner.`);
+    if (missingOwnerCount > 0 && restrictedNoOwnerCount === 0) messages.push(`${missingOwnerCount} posting accounts still need owner assignment.`);
+    if (dailyCadenceCount > 0) messages.push(`${dailyCadenceCount} accounts are on a daily reconciliation cadence and should be reviewed before certifying reports.`);
+
+    const blockers = invalidCount + unmappedCount;
+    const canCertify = blockers === 0 && restrictedNoOwnerCount === 0;
+
+    return {
+      postingCount: postingAccounts.length,
+      coveragePercent,
+      blockers,
+      unmappedCount,
+      invalidCount,
+      missingOwnerCount,
+      restrictedNoOwnerCount,
+      dailyCadenceCount,
+      canCertify,
+      messages,
+    };
+  }, [accounts]);
+
+  const canClosePeriod = !!readiness?.can_close && confirmed && reportingCertification.canCertify;
+
   const handleClose = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!confirmed) {
       setMessage('Please confirm the close checklist before locking the period.');
+      return;
+    }
+    if (!reportingCertification.canCertify) {
+      setMessage('Reporting certification is blocked. Resolve COA mapping or ownership gaps before closing the period.');
       return;
     }
     if (!readiness?.can_close) {
@@ -129,9 +226,11 @@ export default function CloseWorkflowPage() {
             </p>
             <div className="mt-6 rounded-3xl bg-white/10 p-4 text-sm text-white/80 border border-white/10">
               {readiness
-                ? readiness.can_close
-                  ? 'Ready to close: no draft journals remain open for this period.'
-                  : `${readiness.draftEntries} draft journal entries still need attention before closing.`
+                ? reportingCertification.canCertify
+                  ? readiness.can_close
+                    ? 'Ready to close: journals are controlled and reporting structure is currently certifiable.'
+                    : `${readiness.draftEntries} draft journal entries still need attention before closing.`
+                  : 'Do not certify reporting yet: COA mapping or ownership gaps are still material for this period.'
                 : 'Loading close readiness...'}
             </div>
           </div>
@@ -176,6 +275,68 @@ export default function CloseWorkflowPage() {
               <Metric label="Bank statements" value={readiness?.bankStatements ?? 0} tone="gold" />
             </div>
 
+            <div className="md:col-span-2 rounded-3xl border border-slate-100 bg-slate-50/70 p-5 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-400">Reporting certification</div>
+                  <h3 className="mt-2 text-lg font-heading text-brand-navy">Statement-readiness blockers</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Period close is now tied to reporting trustworthiness, owner accountability, and high-frequency reconciliation posture.
+                  </p>
+                </div>
+                <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+                  reportingCertification.canCertify
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-rose-200 bg-rose-50 text-rose-700'
+                }`}>
+                  {reportingCertification.canCertify ? 'Can certify reporting' : 'Cannot certify reporting'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-sm">
+                <Metric label="Mapped %" value={reportingCertification.coveragePercent} tone={reportingCertification.blockers === 0 ? 'emerald' : 'gold'} />
+                <Metric label="Unmapped" value={reportingCertification.unmappedCount} tone={reportingCertification.unmappedCount ? 'rose' : 'emerald'} />
+                <Metric label="Invalid mapping" value={reportingCertification.invalidCount} tone={reportingCertification.invalidCount ? 'rose' : 'emerald'} />
+                <Metric label="No owner" value={reportingCertification.missingOwnerCount} tone={reportingCertification.missingOwnerCount ? 'gold' : 'emerald'} />
+                <Metric label="Daily cadence" value={reportingCertification.dailyCadenceCount} tone="navy" />
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4">
+                <div className={`rounded-2xl border px-4 py-4 text-sm ${
+                  reportingCertification.canCertify ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold mb-2">
+                    {reportingCertification.canCertify ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                    {reportingCertification.canCertify ? 'Certification posture' : 'Certification blockers'}
+                  </div>
+                  {reportingCertification.messages.length > 0 ? (
+                    <ul className="list-disc pl-5 space-y-1">
+                      {reportingCertification.messages.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div>COA mapping, ownership, and reconciliation accountability are currently strong enough to support reporting signoff.</div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+                  <div className="text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Discipline link</div>
+                  <div className="space-y-2">
+                    <p>
+                      <span className="font-semibold text-brand-navy">Reports:</span>{' '}
+                      <Link href="/accounting/reports" className="text-brand-gold hover:underline">Financial Reports</Link>
+                    </p>
+                    <p>
+                      <span className="font-semibold text-brand-navy">COA:</span>{' '}
+                      <Link href="/accounting/chart-of-accounts" className="text-brand-gold hover:underline">Chart of Accounts</Link>
+                    </p>
+                    <p><span className="font-semibold text-brand-navy">Focus:</span> Close only when journal control and reporting structure are both clean.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="md:col-span-2 rounded-3xl border border-slate-100 bg-slate-50/70 p-4 space-y-3">
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
                 <ShieldCheck size={14} />
@@ -189,7 +350,7 @@ export default function CloseWorkflowPage() {
                   className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-navy focus:ring-brand-gold"
                 />
                 <span>
-                  I have reviewed the draft journals, posted activity, and bank reconciliation status for this period.
+                  I have reviewed the draft journals, posted activity, bank reconciliation status, and reporting-certification posture for this period.
                 </span>
               </label>
               {readiness?.blockers?.length ? (
@@ -217,7 +378,7 @@ export default function CloseWorkflowPage() {
               </span>
               <button
                 type="submit"
-                disabled={saving || !confirmed || !readiness?.can_close}
+                disabled={saving || !canClosePeriod}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-navy text-white font-bold shadow-xl disabled:opacity-60"
               >
                 <CheckCircle2 size={18} />
