@@ -229,6 +229,28 @@ export class AccountingService {
     }
   }
 
+  private validateFsPlacementAlignment(type: string, fsPlacement?: string | null) {
+    if (!fsPlacement) {
+      return;
+    }
+
+    const placement = fsPlacement.trim();
+    const allowedByType: Record<string, string[]> = {
+      asset: ['Current Assets', 'Non-current Assets'],
+      liability: ['Current Liabilities', 'Non-current Liabilities'],
+      equity: ['Equity'],
+      revenue: ['Revenue', 'Other Income'],
+      expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+    };
+
+    const allowedPlacements = allowedByType[type] ?? [];
+    if (!allowedPlacements.includes(placement)) {
+      throw new BadRequestException(
+        `${placement} is not a valid financial statement placement for ${type} accounts`,
+      );
+    }
+  }
+
   private async assertUniqueCode(companyId: string, code: string, ignoreAccountId?: string) {
     const existing = await this.prisma.gLAccount.findFirst({
       where: {
@@ -476,6 +498,7 @@ export class AccountingService {
     const baseCode = this.extractBaseCode(code);
     const type = data.type.trim().toLowerCase();
     this.validateTypeRange(type, baseCode);
+    this.validateFsPlacementAlignment(type, data.fs_placement);
     this.validateReservedCodeRules(baseCode, data.is_header, data.is_contra);
     this.assertDirectSensitiveAccountAccess(data.sensitivity_tier || 'T3', actorRoles);
     await this.assertUniqueCode(companyId, code);
@@ -673,6 +696,7 @@ export class AccountingService {
     const nextCode = data.code ? this.validateAccountCodeFormat(data.code) : current.code;
     const nextBaseCode = this.extractBaseCode(nextCode);
     const nextType = (data.type ?? current.type).trim().toLowerCase();
+    const nextFsPlacement = data.fs_placement ?? current.fs_placement ?? null;
     const nextIsHeader = typeof data.is_header === 'boolean' ? data.is_header : current.is_header;
     const nextIsContra = typeof data.is_contra === 'boolean' ? data.is_contra : current.is_contra;
     const nextParentId = data.parent_id === '' ? null : data.parent_id ?? current.parent_id;
@@ -683,6 +707,7 @@ export class AccountingService {
     }
 
     this.validateTypeRange(nextType, nextBaseCode);
+    this.validateFsPlacementAlignment(nextType, nextFsPlacement);
     this.validateReservedCodeRules(nextBaseCode, nextIsHeader, nextIsContra);
     this.assertDirectSensitiveAccountAccess(nextSensitivityTier, actorRoles);
     await this.assertUniqueCode(companyId, nextCode, accountId);

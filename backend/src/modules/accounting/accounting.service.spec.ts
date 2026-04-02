@@ -367,6 +367,7 @@ describe('AccountingService', () => {
         parent_id: 'parent-1',
         is_header: false,
         sensitivity_tier: 'T3',
+        fs_placement: 'Current Assets',
         account_owner_id: 'emp-1',
       },
       ['Super Admin'],
@@ -380,6 +381,7 @@ describe('AccountingService', () => {
           subtype: 'Cash and Cash Equivalents',
           normal_balance: 'DR',
           sensitivity_tier: 'T3',
+          fs_placement: 'Current Assets',
           account_owner_id: 'emp-1',
           full_path: '1000 > 1113',
           created_by: 'user-1',
@@ -413,6 +415,25 @@ describe('AccountingService', () => {
         ],
       }),
     ).rejects.toThrow('Header account 1100 cannot accept postings');
+  });
+
+  it('blocks invalid financial statement placements for account type', async () => {
+    await expect(
+      service.createAccount(
+        'company-1',
+        'user-1',
+        {
+          code: '2110',
+          name: 'Trade Payables',
+          type: 'liability',
+          is_header: false,
+          parent_id: '',
+          sensitivity_tier: 'T3',
+          fs_placement: 'Revenue',
+        } as any,
+        ['System Administrator'],
+      ),
+    ).rejects.toThrow('Revenue is not a valid financial statement placement for liability accounts');
   });
 
   it('blocks non-privileged users from directly creating T2 accounts', async () => {

@@ -196,6 +196,14 @@ const FS_PLACEMENT_OPTIONS = [
   "Tax",
 ];
 
+const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
+  asset: ["Current Assets", "Non-current Assets"],
+  liability: ["Current Liabilities", "Non-current Liabilities"],
+  equity: ["Equity"],
+  revenue: ["Revenue", "Other Income"],
+  expense: ["Cost of Sales", "Operating Expenses", "Other Expense", "Tax"],
+};
+
 const CHANGE_REQUEST_TYPES = [
   { value: "update", label: "Metadata update" },
   { value: "reclassify", label: "Reclassify account" },
@@ -302,6 +310,11 @@ function getMandatoryRequestMessage(editing: GLAccount | null, form: AccountForm
   }
 
   return null;
+}
+
+function hasValidFsPlacement(account: GLAccount) {
+  if (!account.fs_placement) return false;
+  return FS_ALLOWED_BY_TYPE[account.type]?.includes(account.fs_placement) ?? false;
 }
 
 function getDormancyAgeDays(value?: string | null) {
@@ -714,6 +727,22 @@ export default function ChartOfAccountsPage() {
       })
       .slice(0, 6);
   }, [accounts, changeRequests]);
+  const reportingReadiness = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const mapped = postingAccounts.filter((account) => hasValidFsPlacement(account));
+    const unmapped = postingAccounts.filter((account) => !account.fs_placement);
+    const invalid = postingAccounts.filter((account) => account.fs_placement && !hasValidFsPlacement(account));
+
+    return {
+      postingCount: postingAccounts.length,
+      mappedCount: mapped.length,
+      unmappedCount: unmapped.length,
+      invalidCount: invalid.length,
+      coveragePercent: postingAccounts.length ? Math.round((mapped.length / postingAccounts.length) * 100) : 0,
+      invalidAccounts: invalid.slice(0, 5),
+      unmappedAccounts: unmapped.slice(0, 5),
+    };
+  }, [accounts]);
 
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
@@ -1409,6 +1438,62 @@ export default function ChartOfAccountsPage() {
             </div>
           </section>
 
+          <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Statement readiness</div>
+                <h3 className="mt-2 text-2xl font-heading text-brand-navy">Financial statement mapping posture</h3>
+              </div>
+              <StatusPill
+                label={`${reportingReadiness.coveragePercent}% mapped`}
+                tone={reportingReadiness.invalidCount > 0 ? "rose" : reportingReadiness.coveragePercent >= 90 ? "emerald" : "amber"}
+              />
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              Measure how completely the chart can support balance sheet and income statement reporting from COA structure rather than ad hoc assumptions.
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard icon={<BookOpen size={18} />} label="Posting accounts" value={String(reportingReadiness.postingCount)} />
+              <MetricCard icon={<ShieldCheck size={18} />} label="Mapped" value={String(reportingReadiness.mappedCount)} />
+              <MetricCard icon={<AlertCircle size={18} />} label="Unmapped" value={String(reportingReadiness.unmappedCount)} />
+              <MetricCard icon={<AlertCircle size={18} />} label="Invalid mapping" value={String(reportingReadiness.invalidCount)} />
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-brand-navy">Unmapped posting accounts</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  {reportingReadiness.unmappedAccounts.length === 0 ? (
+                    <div className="text-slate-500">All posting accounts currently have a statement placement.</div>
+                  ) : (
+                    reportingReadiness.unmappedAccounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-3">
+                        <span className="font-medium text-brand-navy">{account.code} · {account.name}</span>
+                        <span className="text-xs uppercase tracking-[0.16em] text-slate-400">{account.type}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="text-sm font-semibold text-brand-navy">Invalid statement placements</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-600">
+                  {reportingReadiness.invalidAccounts.length === 0 ? (
+                    <div className="text-slate-500">No account mappings currently conflict with their major account type.</div>
+                  ) : (
+                    reportingReadiness.invalidAccounts.map((account) => (
+                      <div key={account.id} className="rounded-2xl bg-white px-3 py-3">
+                        <div className="font-medium text-brand-navy">{account.code} · {account.name}</div>
+                        <div className="mt-1 text-xs text-rose-600">
+                          {account.fs_placement} is not valid for {account.type} accounts.
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
           {loading ? (
             <div className="rounded-[32px] border border-slate-100 bg-white px-6 py-10 text-center text-slate-500 shadow-sm">Loading chart of accounts…</div>
           ) : groupedAccounts.length === 0 ? (
@@ -1453,6 +1538,16 @@ export default function ChartOfAccountsPage() {
                           {!canDirectlyMaintainTier(account.sensitivity_tier, normalizedRoles) && getTierRestrictionMessage(account.sensitivity_tier) ? (
                             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
                               {getTierRestrictionMessage(account.sensitivity_tier)}
+                            </div>
+                          ) : null}
+                          {account.fs_placement && !hasValidFsPlacement(account) ? (
+                            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">
+                              {account.fs_placement} is not valid for {account.type} accounts and should be corrected before relying on COA-driven reporting.
+                            </div>
+                          ) : null}
+                          {!account.is_header && !account.fs_placement ? (
+                            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+                              This posting account is still missing a financial statement placement.
                             </div>
                           ) : null}
                           <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
