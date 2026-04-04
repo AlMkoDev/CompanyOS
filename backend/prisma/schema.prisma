@@ -128,6 +128,7 @@ model Company {
   apAuditTrails        APAuditTrail[]
   glAccountChangeRequests GLAccountChangeRequest[]
   glAccountAuditTrails GLAccountAuditTrail[]
+  glAccountRemediationStates GLAccountRemediationState[]
   reportCertifications ReportCertification[]
   reportCertificationAudits ReportCertificationAudit[]
 }
@@ -172,6 +173,8 @@ model User {
   glAccountChangeRequestsRaised GLAccountChangeRequest[] @relation("GLAccountChangeRequester")
   glAccountChangeRequestsReviewed GLAccountChangeRequest[] @relation("GLAccountChangeReviewer")
   glAccountAuditEntries GLAccountAuditTrail[] @relation("GLAccountAuditActor")
+  glAccountRemediationReviews GLAccountRemediationState[] @relation("GLAccountRemediationReviewer")
+  glAccountRemediationClears GLAccountRemediationState[] @relation("GLAccountRemediationClearer")
   reportCertificationsCertified ReportCertification[] @relation("ReportCertificationCertifier")
   reportCertificationsSecondary ReportCertification[] @relation("ReportCertificationSecondCertifier")
   reportCertificationAudits ReportCertificationAudit[] @relation("ReportCertificationAuditActor")
@@ -517,6 +520,7 @@ model GLAccount {
   journal_lines JournalLine[]
   change_requests GLAccountChangeRequest[]
   audit_entries GLAccountAuditTrail[]
+  remediation_states GLAccountRemediationState[]
 
   @@unique([company_id, code])
 }
@@ -570,6 +574,33 @@ model GLAccountAuditTrail {
 
   @@index([company_id, created_at])
   @@index([account_id, created_at])
+}
+
+model GLAccountRemediationState {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  account_id        String   @db.Uuid
+  issue_type        String
+  status            String   @default("open")
+  first_seen_at     DateTime @default(now())
+  last_seen_at      DateTime @default(now())
+  reviewed_at       DateTime?
+  reviewed_by       String?  @db.Uuid
+  cleared_at        DateTime?
+  cleared_by        String?  @db.Uuid
+  review_notes      String?
+  cleared_reason    String?
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  company           Company  @relation(fields: [company_id], references: [id])
+  account           GLAccount @relation(fields: [account_id], references: [id])
+  reviewer          User?    @relation("GLAccountRemediationReviewer", fields: [reviewed_by], references: [id])
+  clearer           User?    @relation("GLAccountRemediationClearer", fields: [cleared_by], references: [id])
+
+  @@unique([company_id, account_id, issue_type])
+  @@index([company_id, status])
+  @@index([account_id, issue_type])
 }
 
 model JournalEntry {

@@ -206,6 +206,17 @@ export class ReviewAccountChangeRequestDto {
   review_notes?: string;
 }
 
+export class ReviewAccountRemediationDto {
+  @IsString()
+  @IsIn(['reviewed', 'reopen'])
+  decision: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
 export class JournalEntryLineDto {
   @IsString()
   @MinLength(1)

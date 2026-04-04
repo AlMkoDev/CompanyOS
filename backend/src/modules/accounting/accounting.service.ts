@@ -5,6 +5,7 @@ import {
   CreateAccountChangeRequestDto,
   CreateJournalEntryDto,
   ImportBankStatementDto,
+  ReviewAccountRemediationDto,
   ReviewAccountChangeRequestDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
@@ -398,6 +399,132 @@ export class AccountingService {
     }
 
     return `Updated ${changedFields.slice(0, 5).join(', ')}`;
+  }
+
+  private getAccountIssueTypes(account: {
+    is_header?: boolean | null;
+    is_active?: boolean | null;
+    account_owner_id?: string | null;
+    sensitivity_tier?: string | null;
+    fs_placement?: string | null;
+    type?: string | null;
+    dormant_since?: Date | string | null;
+    sunset_candidate?: boolean | null;
+  }) {
+    const issueTypes: string[] = [];
+    const isPostingAccount = !account.is_header;
+    const sensitivityTier = account.sensitivity_tier ?? 'T3';
+    const fsPlacement = account.fs_placement?.trim();
+    const allowedByType: Record<string, string[]> = {
+      asset: ['Current Assets', 'Non-current Assets'],
+      liability: ['Current Liabilities', 'Non-current Liabilities'],
+      equity: ['Equity'],
+      revenue: ['Revenue', 'Other Income'],
+      expense: ['Cost of Sales', 'Operating Expenses', 'Other Expense', 'Tax'],
+    };
+
+    if (isPostingAccount && ['T1', 'T2'].includes(sensitivityTier) && !account.account_owner_id) {
+      issueTypes.push('restricted-owner');
+    }
+
+    if (isPostingAccount && !account.account_owner_id) {
+      issueTypes.push('owner');
+    }
+
+    if (isPostingAccount && !fsPlacement) {
+      issueTypes.push('unmapped');
+    } else if (isPostingAccount && fsPlacement && !(allowedByType[account.type || ''] || []).includes(fsPlacement)) {
+      issueTypes.push('invalid-mapping');
+    }
+
+    const dormantDate = account.dormant_since ? new Date(account.dormant_since) : null;
+    const dormantDays =
+      dormantDate && !Number.isNaN(dormantDate.getTime())
+        ? Math.max(0, Math.floor((Date.now() - dormantDate.getTime()) / (1000 * 60 * 60 * 24)))
+        : null;
+
+    if (
+      account.is_active === false ||
+      account.sunset_candidate ||
+      dormantDays !== null
+    ) {
+      issueTypes.push('lifecycle');
+    }
+
+    return Array.from(new Set(issueTypes));
+  }
+
+  private async syncAccountRemediationStates(companyId: string) {
+    const accounts = await this.prisma.gLAccount.findMany({
+      where: { company_id: companyId },
+      select: {
+        id: true,
+        is_header: true,
+        is_active: true,
+        account_owner_id: true,
+        sensitivity_tier: true,
+        fs_placement: true,
+        type: true,
+        dormant_since: true,
+        sunset_candidate: true,
+      },
+    });
+
+    const liveIssueKeys = new Set<string>();
+    const now = new Date();
+
+    for (const account of accounts) {
+      const issueTypes = this.getAccountIssueTypes(account);
+      for (const issueType of issueTypes) {
+        liveIssueKeys.add(`${account.id}:${issueType}`);
+        await this.prisma.gLAccountRemediationState.upsert({
+          where: {
+            company_id_account_id_issue_type: {
+              company_id: companyId,
+              account_id: account.id,
+              issue_type: issueType,
+            },
+          },
+          update: {
+            status: 'open',
+            last_seen_at: now,
+            cleared_at: null,
+            cleared_by: null,
+            cleared_reason: null,
+          },
+          create: {
+            company_id: companyId,
+            account_id: account.id,
+            issue_type: issueType,
+            status: 'open',
+            first_seen_at: now,
+            last_seen_at: now,
+          },
+        });
+      }
+    }
+
+    const existingStates = await this.prisma.gLAccountRemediationState.findMany({
+      where: {
+        company_id: companyId,
+        status: { in: ['open', 'reviewed'] },
+      },
+      select: { id: true, account_id: true, issue_type: true, status: true },
+    });
+
+    for (const state of existingStates) {
+      const stateKey = `${state.account_id}:${state.issue_type}`;
+      if (!liveIssueKeys.has(stateKey)) {
+        await this.prisma.gLAccountRemediationState.update({
+          where: { id: state.id },
+          data: {
+            status: 'cleared',
+            cleared_at: now,
+            cleared_reason: 'Issue no longer present in live COA posture.',
+          },
+        });
+      }
+    }
   }
 
   private async recordAccountAudit(params: {
@@ -927,6 +1054,7 @@ export class AccountingService {
   }
 
   async getAccounts(companyId: string) {
+    await this.syncAccountRemediationStates(companyId);
     return this.prisma.gLAccount.findMany({
       where: { company_id: companyId },
       orderBy: { code: 'asc' },
@@ -941,6 +1069,111 @@ export class AccountingService {
         },
       },
     });
+  }
+
+  async getAccountRemediationStates(companyId: string) {
+    await this.syncAccountRemediationStates(companyId);
+
+    return this.prisma.gLAccountRemediationState.findMany({
+      where: { company_id: companyId },
+      orderBy: [{ status: 'asc' }, { updated_at: 'desc' }],
+      include: {
+        account: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_header: true,
+            is_active: true,
+            fs_placement: true,
+            sensitivity_tier: true,
+            account_owner_id: true,
+            dormant_since: true,
+            sunset_candidate: true,
+          },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        clearer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+      take: 250,
+    });
+  }
+
+  async reviewAccountRemediationState(
+    companyId: string,
+    actorUserId: string | null,
+    remediationStateId: string,
+    data: ReviewAccountRemediationDto,
+  ) {
+    const state = await this.prisma.gLAccountRemediationState.findFirst({
+      where: { id: remediationStateId, company_id: companyId },
+      include: {
+        account: {
+          select: { id: true, code: true, name: true },
+        },
+      },
+    });
+
+    if (!state) {
+      throw new NotFoundException('Remediation state not found');
+    }
+
+    const updated = await this.prisma.gLAccountRemediationState.update({
+      where: { id: state.id },
+      data:
+        data.decision === 'reviewed'
+          ? {
+              status: 'reviewed',
+              reviewed_at: new Date(),
+              reviewed_by: actorUserId || null,
+              review_notes: data.notes || null,
+            }
+          : {
+              status: 'open',
+              review_notes: data.notes || null,
+            },
+      include: {
+        account: {
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_header: true,
+            is_active: true,
+            fs_placement: true,
+            sensitivity_tier: true,
+            account_owner_id: true,
+            dormant_since: true,
+            sunset_candidate: true,
+          },
+        },
+        reviewer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+        clearer: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
+      },
+    });
+
+    await this.recordAccountAudit({
+      companyId,
+      accountId: state.account_id,
+      actorUserId,
+      action: data.decision === 'reviewed' ? 'remediation_reviewed' : 'remediation_reopened',
+      reason: data.notes || null,
+      changeSummary: `${state.issue_type} remediation marked ${data.decision}`,
+      beforeSnapshot: this.buildAccountSnapshot(state.account),
+      afterSnapshot: this.buildAccountSnapshot(state.account),
+    });
+
+    return updated;
   }
 
   async getAccountAuditTrail(companyId: string, accountId?: string) {

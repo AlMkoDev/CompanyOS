@@ -28,6 +28,12 @@ describe('AccountingService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    gLAccountRemediationState: {
+      upsert: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      findFirst: jest.fn(),
+    },
     gLAccountChangeRequest: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -202,6 +208,92 @@ describe('AccountingService', () => {
         }),
       }),
     );
+  });
+
+  it('syncs remediation states when listing accounts', async () => {
+    prisma.gLAccount.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'acct-1',
+          code: '1000',
+          name: 'Main Bank Account',
+          type: 'asset',
+          is_header: false,
+          is_active: true,
+          fs_placement: 'Current Assets',
+          sensitivity_tier: 'T1',
+          account_owner_id: null,
+          dormant_since: null,
+          sunset_candidate: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'acct-1',
+          code: '1000',
+          name: 'Main Bank Account',
+          type: 'asset',
+          is_header: false,
+          is_active: true,
+          fs_placement: 'Current Assets',
+          sensitivity_tier: 'T1',
+          account_owner_id: null,
+          owner: null,
+        },
+      ]);
+    prisma.gLAccountRemediationState.findMany.mockResolvedValue([]);
+
+    const result = await service.getAccounts('company-1');
+
+    expect(prisma.gLAccountRemediationState.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          company_id_account_id_issue_type: expect.objectContaining({
+            company_id: 'company-1',
+            account_id: 'acct-1',
+            issue_type: 'restricted-owner',
+          }),
+        }),
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  it('marks remediation items as reviewed', async () => {
+    prisma.gLAccountRemediationState.findFirst.mockResolvedValue({
+      id: 'rem-1',
+      company_id: 'company-1',
+      account_id: 'acct-1',
+      issue_type: 'unmapped',
+      account: { id: 'acct-1', code: '1200', name: 'Inventory', type: 'asset' },
+    });
+    prisma.gLAccountRemediationState.update.mockResolvedValue({
+      id: 'rem-1',
+      status: 'reviewed',
+      issue_type: 'unmapped',
+      reviewed_at: new Date('2026-04-04T10:00:00Z'),
+      reviewed_by: 'user-1',
+      account: { id: 'acct-1', code: '1200', name: 'Inventory' },
+      reviewer: { id: 'user-1', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+      clearer: null,
+    });
+
+    const result = await service.reviewAccountRemediationState('company-1', 'user-1', 'rem-1', {
+      decision: 'reviewed',
+      notes: 'Ownership and mapping reviewed in backlog.',
+    });
+
+    expect(prisma.gLAccountRemediationState.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'rem-1' },
+        data: expect.objectContaining({
+          status: 'reviewed',
+          reviewed_by: 'user-1',
+        }),
+      }),
+    );
+    expect(prisma.gLAccountAuditTrail.create).toHaveBeenCalled();
+    expect(result.status).toBe('reviewed');
   });
 
   it('blocks closing when draft journal entries remain', async () => {

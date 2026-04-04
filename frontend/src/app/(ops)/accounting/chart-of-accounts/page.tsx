@@ -111,6 +111,25 @@ interface AccountAuditEntry {
   } | null;
 }
 
+interface RemediationState {
+  id: string;
+  issue_type: "restricted-owner" | "owner" | "invalid-mapping" | "unmapped" | "lifecycle" | string;
+  status: "open" | "reviewed" | "cleared" | string;
+  first_seen_at: string;
+  last_seen_at: string;
+  reviewed_at?: string | null;
+  cleared_at?: string | null;
+  review_notes?: string | null;
+  cleared_reason?: string | null;
+  reviewer?: GovernanceUser | null;
+  clearer?: GovernanceUser | null;
+  account?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+}
+
 interface AccountFormState {
   code: string;
   name: string;
@@ -357,17 +376,30 @@ function getPendingRequestForAccount(accountId: string, changeRequests: AccountC
   );
 }
 
+function getRemediationState(
+  accountId: string,
+  issueType: "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle",
+  remediationStates: RemediationState[],
+) {
+  return remediationStates.find((state) => state.account?.id === accountId && state.issue_type === issueType);
+}
+
 function getIssueAgeMeta(
   account: GLAccount,
   category: "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle",
   changeRequests: AccountChangeRequest[],
+  remediationStates: RemediationState[],
 ) {
+  const remediationState = getRemediationState(account.id, category, remediationStates);
+  const firstSeenDate = remediationState?.first_seen_at ? new Date(remediationState.first_seen_at) : null;
   const pendingRequest = getPendingRequestForAccount(account.id, changeRequests);
   const pendingRequestDate = pendingRequest?.created_at ? new Date(pendingRequest.created_at) : null;
   const dormantDate = account.dormant_since ? new Date(account.dormant_since) : null;
 
   const dateSource =
-    pendingRequestDate && !Number.isNaN(pendingRequestDate.getTime())
+    firstSeenDate && !Number.isNaN(firstSeenDate.getTime())
+      ? firstSeenDate
+      : pendingRequestDate && !Number.isNaN(pendingRequestDate.getTime())
       ? pendingRequestDate
       : dormantDate && !Number.isNaN(dormantDate.getTime())
         ? dormantDate
@@ -641,8 +673,10 @@ export default function ChartOfAccountsPage() {
   const [editing, setEditing] = React.useState<GLAccount | null>(null);
   const [changeRequests, setChangeRequests] = React.useState<AccountChangeRequest[]>([]);
   const [auditEntries, setAuditEntries] = React.useState<AccountAuditEntry[]>([]);
+  const [remediationStates, setRemediationStates] = React.useState<RemediationState[]>([]);
   const [requestSubmitting, setRequestSubmitting] = React.useState(false);
   const [reviewingRequestId, setReviewingRequestId] = React.useState<string | null>(null);
+  const [reviewingRemediationId, setReviewingRemediationId] = React.useState<string | null>(null);
 
   const loadAccounts = React.useCallback(async () => {
     const res = await apiFetch("/accounting/accounts");
@@ -677,9 +711,10 @@ export default function ChartOfAccountsPage() {
       setRequestsLoading(true);
       setAuditLoading(true);
       try {
-        const [requestsRes, auditRes] = await Promise.all([
+        const [requestsRes, auditRes, remediationRes] = await Promise.all([
           apiFetch("/accounting/account-change-requests"),
           apiFetch(accountId ? `/accounting/accounts/audit?accountId=${accountId}` : "/accounting/accounts/audit"),
+          apiFetch("/accounting/accounts/remediation"),
         ]);
 
         if (requestsRes.ok) {
@@ -694,6 +729,13 @@ export default function ChartOfAccountsPage() {
           setAuditEntries(Array.isArray(auditData) ? auditData : []);
         } else {
           setAuditEntries([]);
+        }
+
+        if (remediationRes.ok) {
+          const remediationData = (await remediationRes.json()) as RemediationState[];
+          setRemediationStates(Array.isArray(remediationData) ? remediationData : []);
+        } else {
+          setRemediationStates([]);
         }
       } finally {
         setRequestsLoading(false);
@@ -968,7 +1010,8 @@ export default function ChartOfAccountsPage() {
         id: `restricted-owner-${account.id}`,
         title: `${account.code} · ${account.name}`,
         detail: `${account.sensitivity_tier || "T3"} account has no assigned owner.`,
-        ageMeta: getIssueAgeMeta(account, "restricted-owner", changeRequests),
+        ageMeta: getIssueAgeMeta(account, "restricted-owner", changeRequests, remediationStates),
+        state: getRemediationState(account.id, "restricted-owner", remediationStates),
         actionLabel: "Open for ownership review",
         onAction: () => startEdit(account),
       }));
@@ -977,7 +1020,8 @@ export default function ChartOfAccountsPage() {
       id: `invalid-mapping-${account.id}`,
       title: `${account.code} · ${account.name}`,
       detail: `${account.fs_placement} is not valid for ${account.type} accounts.`,
-      ageMeta: getIssueAgeMeta(account, "invalid-mapping", changeRequests),
+      ageMeta: getIssueAgeMeta(account, "invalid-mapping", changeRequests, remediationStates),
+      state: getRemediationState(account.id, "invalid-mapping", remediationStates),
       actionLabel: "Correct mapping",
       onAction: () => startEdit(account),
     }));
@@ -986,7 +1030,8 @@ export default function ChartOfAccountsPage() {
       id: `unmapped-${account.id}`,
       title: `${account.code} · ${account.name}`,
       detail: "Posting account is still missing a statement placement.",
-      ageMeta: getIssueAgeMeta(account, "unmapped", changeRequests),
+      ageMeta: getIssueAgeMeta(account, "unmapped", changeRequests, remediationStates),
+      state: getRemediationState(account.id, "unmapped", remediationStates),
       actionLabel: "Add FS placement",
       onAction: () => startEdit(account),
     }));
@@ -1007,7 +1052,8 @@ export default function ChartOfAccountsPage() {
         id: `lifecycle-${account.id}`,
         title: `${account.code} · ${account.name}`,
         detail: getLifecycleState(account, changeRequests).recommendation,
-        ageMeta: getIssueAgeMeta(account, "lifecycle", changeRequests),
+        ageMeta: getIssueAgeMeta(account, "lifecycle", changeRequests, remediationStates),
+        state: getRemediationState(account.id, "lifecycle", remediationStates),
         actionLabel: account.is_active
           ? account.sunset_candidate
             ? "Draft restore"
@@ -1051,7 +1097,7 @@ export default function ChartOfAccountsPage() {
         items: lifecycleItems,
       },
     ];
-  }, [changeRequests, lifecycleQueue, ownerAccountability, reportingReadiness]);
+  }, [changeRequests, lifecycleQueue, ownerAccountability, remediationStates, reportingReadiness]);
 
   const visibleBacklogGroups = React.useMemo(() => {
     if (backlogFilter === "all") return remediationBacklog;
@@ -1067,16 +1113,31 @@ export default function ChartOfAccountsPage() {
     const surfacedItems = remediationBacklog.flatMap((group) => group.items);
     const agingCount = surfacedItems.filter((item) => item.ageMeta?.tone === "amber").length;
     const longStandingCount = surfacedItems.filter((item) => item.ageMeta?.tone === "rose").length;
+    const acknowledgedCount = surfacedItems.filter((item) => item.state?.status === "reviewed").length;
+    const clearedRecentlyCount = remediationStates.filter((state) => {
+      if (state.status !== "cleared" || !state.cleared_at) return false;
+      const clearedAt = new Date(state.cleared_at);
+      if (Number.isNaN(clearedAt.getTime())) return false;
+      return Date.now() - clearedAt.getTime() <= 1000 * 60 * 60 * 24 * 14;
+    }).length;
 
     return {
       totalOpen,
       criticalOpen,
       activeGroups,
-      resolvedEstimate: Math.max(0, accounts.length - totalOpen),
       agingCount,
       longStandingCount,
+      acknowledgedCount,
+      clearedRecentlyCount,
     };
-  }, [accounts.length, remediationBacklog]);
+  }, [remediationBacklog, remediationStates]);
+
+  const recentlyClearedRemediation = React.useMemo(() => {
+    return remediationStates
+      .filter((state) => state.status === "cleared" && state.cleared_at)
+      .sort((left, right) => new Date(right.cleared_at || 0).getTime() - new Date(left.cleared_at || 0).getTime())
+      .slice(0, 4);
+  }, [remediationStates]);
 
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
@@ -1128,6 +1189,37 @@ export default function ChartOfAccountsPage() {
     setBacklogActionFeedback(`Drafted a ${requestType} request for ${account.code} · ${account.name}.`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  const handleReviewRemediation = React.useCallback(
+    async (stateId: string, decision: "reviewed" | "reopen") => {
+      setReviewingRemediationId(stateId);
+      setMessage(null);
+      setError(null);
+      try {
+        const res = await apiFetch(`/accounting/accounts/remediation/${stateId}/review`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision }),
+        });
+
+        if (!res.ok) {
+          throw new Error((await res.text()) || "Failed to update remediation state.");
+        }
+
+        await loadGovernance(editing?.id);
+        setMessage(
+          decision === "reviewed"
+            ? "Remediation item marked as reviewed."
+            : "Remediation item reopened for active follow-up.",
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update remediation state.");
+      } finally {
+        setReviewingRemediationId(null);
+      }
+    },
+    [editing?.id, loadGovernance],
+  );
 
   const routeCurrentFormToChangeRequest = React.useCallback(() => {
     const requestType = !editing
@@ -1661,7 +1753,7 @@ export default function ChartOfAccountsPage() {
               <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-4">
                 <MetricCard icon={<AlertCircle size={18} />} label="Open backlog" value={String(backlogSummary.totalOpen)} />
                 <MetricCard icon={<ShieldCheck size={18} />} label="Critical issues" value={String(backlogSummary.criticalOpen)} />
-                <MetricCard icon={<Layers3 size={18} />} label="Active groups" value={String(backlogSummary.activeGroups)} />
+                <MetricCard icon={<Layers3 size={18} />} label="Acknowledged" value={String(backlogSummary.acknowledgedCount)} />
                 <MetricCard icon={<BookOpen size={18} />} label="Long-standing" value={String(backlogSummary.longStandingCount)} />
               </div>
 
@@ -1710,23 +1802,81 @@ export default function ChartOfAccountsPage() {
                           <div key={item.id} className="rounded-2xl bg-white px-3 py-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="font-medium text-brand-navy">{item.title}</div>
-                              <StatusPill label={item.ageMeta.label} tone={item.ageMeta.tone} />
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                {item.state?.status === "reviewed" ? <StatusPill label="Acknowledged" tone="navy" /> : null}
+                                <StatusPill label={item.ageMeta.label} tone={item.ageMeta.tone} />
+                              </div>
                             </div>
                             <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
                             <div className="mt-2 text-xs text-slate-400">{item.ageMeta.detail}</div>
-                            <button
-                              type="button"
-                              onClick={item.onAction}
-                              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy transition hover:bg-slate-50"
-                            >
-                              {item.actionLabel}
-                            </button>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={item.onAction}
+                                className="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy transition hover:bg-slate-50"
+                              >
+                                {item.actionLabel}
+                              </button>
+                              {item.state?.status !== "reviewed" ? (
+                                <button
+                                  type="button"
+                                  disabled={reviewingRemediationId === item.state?.id}
+                                  onClick={() => item.state?.id && handleReviewRemediation(item.state.id, "reviewed")}
+                                  className="inline-flex items-center rounded-xl border border-emerald-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {reviewingRemediationId === item.state?.id ? "Working…" : "Mark reviewed"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={reviewingRemediationId === item.state?.id}
+                                  onClick={() => item.state?.id && handleReviewRemediation(item.state.id, "reopen")}
+                                  className="inline-flex items-center rounded-xl border border-amber-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {reviewingRemediationId === item.state?.id ? "Working…" : "Reopen"}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))
                       )}
                     </div>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-brand-navy">Recently cleared</div>
+                  <StatusPill label={`${backlogSummary.clearedRecentlyCount} in 14d`} tone="emerald" />
+                </div>
+                <div className="mt-3 space-y-3">
+                  {recentlyClearedRemediation.length === 0 ? (
+                    <div className="rounded-2xl bg-white px-3 py-3 text-sm text-slate-500">
+                      No remediation items have cleared recently.
+                    </div>
+                  ) : (
+                    recentlyClearedRemediation.map((state) => (
+                      <div key={state.id} className="rounded-2xl bg-white px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium text-brand-navy">
+                              {state.account ? `${state.account.code} · ${state.account.name}` : "Unknown account"}
+                            </div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {state.issue_type.replace(/-/g, " ")} cleared
+                            </div>
+                          </div>
+                          <StatusPill label="Cleared" tone="emerald" />
+                        </div>
+                        <div className="mt-2 text-xs text-slate-400">
+                          {state.cleared_reason || "Issue no longer appears in the live COA posture."}
+                          {state.cleared_at ? ` · ${formatDateTime(state.cleared_at)}` : ""}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </section>
           </div>

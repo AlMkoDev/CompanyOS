@@ -19,6 +19,7 @@ import {
   ImportBankStatementDto,
   ReconcileBankStatementLineDto,
   ReportCertificationDto,
+  ReviewAccountRemediationDto,
   ReviewAccountChangeRequestDto,
   UpdateAccountDto,
 } from './dto/accounting.dto';
@@ -50,6 +51,25 @@ export class AccountingController {
   @Get('accounts/audit')
   async getAccountAuditTrail(@Req() req: any, @Query('accountId') accountId?: string) {
     return this.accountingService.getAccountAuditTrail(req.user.companyId, accountId);
+  }
+
+  @Get('accounts/remediation')
+  async getAccountRemediationStates(@Req() req: any) {
+    return this.accountingService.getAccountRemediationStates(req.user.companyId);
+  }
+
+  @Patch('accounts/remediation/:id/review')
+  async reviewAccountRemediationState(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() data: ReviewAccountRemediationDto,
+  ) {
+    return this.accountingService.reviewAccountRemediationState(
+      req.user.companyId,
+      req.user.userId,
+      id,
+      data,
+    );
   }
 
   @Get('account-change-requests')
