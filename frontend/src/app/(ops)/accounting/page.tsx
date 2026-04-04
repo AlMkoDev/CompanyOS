@@ -89,6 +89,31 @@ interface GLAccount {
   account_owner_id?: string | null;
 }
 
+interface RemediationState {
+  id: string;
+  issue_type: string;
+  status: string;
+  first_seen_at: string;
+  reviewed_at?: string | null;
+  cleared_at?: string | null;
+  account?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Unscheduled';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('en-ZA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 interface StatCardProps {
   label: string;
   value: string;
@@ -111,6 +136,7 @@ export default function AccountingDashboardPage() {
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [statements, setStatements] = React.useState<BankStatementSummary[]>([]);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
+  const [remediationStates, setRemediationStates] = React.useState<RemediationState[]>([]);
   const [closeReadiness, setCloseReadiness] = React.useState<CloseReadinessData | null>(null);
   const [currentPeriod, setCurrentPeriod] = React.useState<AccountingPeriod | null>(null);
   const totalDebit = tb.reduce((sum, row) => sum + Number(row.debit || 0), 0);
@@ -154,6 +180,37 @@ export default function AccountingDashboardPage() {
       restrictedNoOwnerCount,
     };
   }, [accounts]);
+
+  const remediationPosture = React.useMemo(() => {
+    const openStates = remediationStates.filter((state) => state.status === 'open' || state.status === 'reviewed');
+    const acknowledgedCount = openStates.filter((state) => state.status === 'reviewed').length;
+    const now = Date.now();
+    const sevenDays = 1000 * 60 * 60 * 24 * 7;
+    const thirtyDays = 1000 * 60 * 60 * 24 * 30;
+    const newCount = openStates.filter((state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      return !Number.isNaN(firstSeen.getTime()) && now - firstSeen.getTime() <= sevenDays;
+    }).length;
+    const longStandingCount = openStates.filter((state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      return !Number.isNaN(firstSeen.getTime()) && now - firstSeen.getTime() > thirtyDays;
+    }).length;
+    const oldestOpenDays = openStates.reduce((max, state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      if (Number.isNaN(firstSeen.getTime())) return max;
+      const age = Math.floor((now - firstSeen.getTime()) / (1000 * 60 * 60 * 24));
+      return Math.max(max, age);
+    }, 0);
+
+    return {
+      openCount: openStates.length,
+      acknowledgedCount,
+      newCount,
+      longStandingCount,
+      oldestOpenDays,
+      topIssue: openStates[0] || null,
+    };
+  }, [remediationStates]);
 
   const latestOpenPeriod = React.useMemo(() => {
     const openPeriods = periods.filter((period) => period.status !== 'closed');
@@ -261,8 +318,17 @@ export default function AccountingDashboardPage() {
       });
     }
 
+    if (remediationPosture.longStandingCount > 0) {
+      blockers.push({
+        key: 'coa-backlog',
+        title: 'COA remediation backlog',
+        detail: `${remediationPosture.longStandingCount} remediation item${remediationPosture.longStandingCount === 1 ? '' : 's'} have been unresolved for more than 30 days.`,
+        tone: 'bg-amber-50 text-amber-700 border-amber-100',
+      });
+    }
+
     return blockers;
-  }, [closeReadiness, latestOpenPeriod, ownershipReadiness]);
+  }, [closeReadiness, latestOpenPeriod, ownershipReadiness, remediationPosture.longStandingCount]);
 
   const recommendedAction = React.useMemo(() => {
     if (!currentPeriod || !closeReadiness) {
@@ -358,6 +424,29 @@ export default function AccountingDashboardPage() {
       };
     }
 
+    if (remediationPosture.longStandingCount > 0 || remediationPosture.acknowledgedCount > 0) {
+      const accountLabel = remediationPosture.topIssue?.account
+        ? `${remediationPosture.topIssue.account.code} - ${remediationPosture.topIssue.account.name}`
+        : 'COA remediation backlog';
+      return {
+        title:
+          remediationPosture.longStandingCount > 0
+            ? `Work down long-standing COA issue on ${accountLabel}`
+            : `Continue acknowledged COA cleanup for ${accountLabel}`,
+        detail:
+          remediationPosture.longStandingCount > 0
+            ? 'The chart still has aged remediation items that should be cleared before finance governance drifts.'
+            : 'The COA backlog has acknowledged items that still need real cleanup, not just review.',
+        href: '/accounting/chart-of-accounts',
+        cta: 'Open COA backlog',
+        tone:
+          remediationPosture.longStandingCount > 0
+            ? 'bg-amber-50 text-amber-700 border-amber-100'
+            : 'bg-sky-50 text-sky-700 border-sky-100',
+        secondaryActions: ['Filter the backlog by Acknowledged or Long-standing', 'Return to Period Close after COA cleanup'],
+      };
+    }
+
     return {
       title: `Review ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)} close pack`,
       detail: 'The latest period looks structurally healthy. Finish by reviewing close posture and final report certification.',
@@ -366,18 +455,19 @@ export default function AccountingDashboardPage() {
       tone: 'bg-emerald-50 text-emerald-700 border-emerald-100',
       secondaryActions: ['Confirm final close checklist', 'Validate latest report certifications remain current'],
     };
-  }, [accounts, closeReadiness, currentPeriod, ownershipReadiness]);
+  }, [accounts, closeReadiness, currentPeriod, ownershipReadiness, remediationPosture]);
 
   React.useEffect(() => {
     const fetchAccountingData = async () => {
       try {
-        const [tbRes, apRes, arRes, periodsRes, statementsRes, accountsRes] = await Promise.all([
+        const [tbRes, apRes, arRes, periodsRes, statementsRes, accountsRes, remediationRes] = await Promise.all([
           apiFetch('/accounting/trial-balance'),
           apiFetch('/ap/dashboard'),
           apiFetch('/ar/dashboard'),
           apiFetch('/accounting/periods'),
           apiFetch('/accounting/bank-statements'),
           apiFetch('/accounting/accounts'),
+          apiFetch('/accounting/accounts/remediation'),
         ]);
 
         if (tbRes.ok) {
@@ -397,6 +487,10 @@ export default function AccountingDashboardPage() {
         if (accountsRes.ok) {
           const accountsData = await accountsRes.json();
           setAccounts(Array.isArray(accountsData) ? accountsData : []);
+        }
+        if (remediationRes.ok) {
+          const remediationData = await remediationRes.json();
+          setRemediationStates(Array.isArray(remediationData) ? remediationData : []);
         }
       } catch (err) {
         console.error('Failed to fetch accounting data:', err);
@@ -598,6 +692,14 @@ export default function AccountingDashboardPage() {
               label="Restricted"
               value={`${ownershipReadiness.restrictedNoOwnerCount}`}
             />
+            <DashboardMiniMetric
+              label="COA backlog"
+              value={`${remediationPosture.openCount}`}
+            />
+            <DashboardMiniMetric
+              label="Acknowledged"
+              value={`${remediationPosture.acknowledgedCount}`}
+            />
           </div>
           <div className={`mt-4 text-sm font-medium ${signoffPosture.tone}`}>
             {signoffPosture.blockerText}
@@ -654,6 +756,49 @@ export default function AccountingDashboardPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">COA remediation posture</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">Backlog discipline</div>
+              </div>
+              <span className={`text-[10px] font-black uppercase tracking-[0.16em] px-2 py-1 rounded-full ${
+                remediationPosture.longStandingCount > 0
+                  ? 'bg-rose-50 text-rose-600'
+                  : remediationPosture.acknowledgedCount > 0
+                    ? 'bg-sky-50 text-sky-700'
+                    : remediationPosture.openCount > 0
+                      ? 'bg-amber-50 text-amber-700'
+                      : 'bg-emerald-50 text-emerald-600'
+              }`}>
+                {remediationPosture.longStandingCount > 0
+                  ? 'Long-standing'
+                  : remediationPosture.acknowledgedCount > 0
+                    ? 'Acknowledged'
+                    : remediationPosture.openCount > 0
+                      ? 'Open'
+                      : 'Healthy'}
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+              <DashboardMiniMetric label="Open" value={`${remediationPosture.openCount}`} />
+              <DashboardMiniMetric label="New" value={`${remediationPosture.newCount}`} />
+              <DashboardMiniMetric label="Ack." value={`${remediationPosture.acknowledgedCount}`} />
+              <DashboardMiniMetric label="30d+" value={`${remediationPosture.longStandingCount}`} />
+            </div>
+            <div className="mt-4 text-sm text-slate-600">
+              {remediationPosture.topIssue?.account
+                ? `${remediationPosture.topIssue.account.code} · ${remediationPosture.topIssue.account.name} is the leading COA remediation item.`
+                : 'No COA remediation items are currently open.'}
+            </div>
+            <Link
+              href="/accounting/chart-of-accounts"
+              className="mt-4 inline-flex items-center text-xs font-bold uppercase tracking-[0.16em] text-brand-gold hover:underline"
+            >
+              Open COA backlog →
+            </Link>
           </div>
         </div>
 

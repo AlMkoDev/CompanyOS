@@ -19,6 +19,20 @@ interface GLAccount {
   account_owner_id?: string | null;
 }
 
+interface RemediationState {
+  id: string;
+  issue_type: string;
+  status: string;
+  first_seen_at: string;
+  reviewed_at?: string | null;
+  cleared_at?: string | null;
+  account?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
+}
+
 interface AccountingPeriod {
   id: string;
   year: number;
@@ -141,11 +155,23 @@ function getPackActionLabel(pack: { status: string }) {
   return 'Open for certification';
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Unscheduled';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('en-ZA', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 export default function CloseWorkflowPage() {
   const { isAuthenticated } = useAuthStore();
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [readiness, setReadiness] = React.useState<CloseReadiness | null>(null);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
+  const [remediationStates, setRemediationStates] = React.useState<RemediationState[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [confirmed, setConfirmed] = React.useState(false);
@@ -157,9 +183,10 @@ export default function CloseWorkflowPage() {
 
   const loadPeriods = React.useCallback(async () => {
     try {
-      const [periodRes, accountRes] = await Promise.all([
+      const [periodRes, accountRes, remediationRes] = await Promise.all([
         apiFetch('/accounting/periods'),
         apiFetch('/accounting/accounts'),
+        apiFetch('/accounting/accounts/remediation'),
       ]);
       if (periodRes.ok) {
         setPeriods(await periodRes.json());
@@ -167,6 +194,10 @@ export default function CloseWorkflowPage() {
       if (accountRes.ok) {
         const accountData = await accountRes.json();
         setAccounts(Array.isArray(accountData) ? accountData : []);
+      }
+      if (remediationRes.ok) {
+        const remediationData = await remediationRes.json();
+        setRemediationStates(Array.isArray(remediationData) ? remediationData : []);
       }
     } finally {
       setLoading(false);
@@ -230,6 +261,27 @@ export default function CloseWorkflowPage() {
       messages,
     };
   }, [accounts]);
+
+  const remediationPosture = React.useMemo(() => {
+    const openStates = remediationStates.filter((state) => state.status === 'open' || state.status === 'reviewed');
+    const acknowledged = openStates.filter((state) => state.status === 'reviewed');
+    const now = Date.now();
+    const longStandingCount = openStates.filter((state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      return !Number.isNaN(firstSeen.getTime()) && now - firstSeen.getTime() > 1000 * 60 * 60 * 24 * 30;
+    }).length;
+    const newestCount = openStates.filter((state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      return !Number.isNaN(firstSeen.getTime()) && now - firstSeen.getTime() <= 1000 * 60 * 60 * 24 * 7;
+    }).length;
+    return {
+      openCount: openStates.length,
+      acknowledgedCount: acknowledged.length,
+      longStandingCount,
+      newestCount,
+      topIssue: openStates[0] || null,
+    };
+  }, [remediationStates]);
 
   const canClosePeriod = !!readiness?.can_close && confirmed && reportingCertification.canCertify;
 
@@ -371,6 +423,13 @@ export default function CloseWorkflowPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                <Metric label="COA open" value={remediationPosture.openCount} tone={remediationPosture.openCount > 0 ? 'gold' : 'emerald'} />
+                <Metric label="Acknowledged" value={remediationPosture.acknowledgedCount} tone={remediationPosture.acknowledgedCount > 0 ? 'navy' : 'emerald'} />
+                <Metric label="New this week" value={remediationPosture.newestCount} tone={remediationPosture.newestCount > 0 ? 'gold' : 'emerald'} />
+                <Metric label="30d+ open" value={remediationPosture.longStandingCount} tone={remediationPosture.longStandingCount > 0 ? 'rose' : 'emerald'} />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                 <Metric
                   label="Required packs"
                   value={readiness?.reporting_certification?.required_count ?? 0}
@@ -429,6 +488,57 @@ export default function CloseWorkflowPage() {
                       <Link href="/accounting/chart-of-accounts" className="text-brand-gold hover:underline">Chart of Accounts</Link>
                     </p>
                     <p><span className="font-semibold text-brand-navy">Focus:</span> Close only when journal control and reporting structure are both clean.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-400">COA backlog posture</div>
+                    <div className="mt-2 text-lg font-heading text-brand-navy">Remediation discipline for close</div>
+                  </div>
+                  <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+                    remediationPosture.longStandingCount > 0
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : remediationPosture.acknowledgedCount > 0
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : remediationPosture.openCount > 0
+                          ? 'border-amber-200 bg-amber-50 text-amber-700'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  }`}>
+                    {remediationPosture.longStandingCount > 0
+                      ? 'Aged COA blockers'
+                      : remediationPosture.acknowledgedCount > 0
+                        ? 'Acknowledged COA items'
+                        : remediationPosture.openCount > 0
+                          ? 'Open COA cleanup'
+                          : 'Healthy COA posture'}
+                  </div>
+                </div>
+
+                <div className="mt-3 text-sm">
+                  {remediationPosture.topIssue?.account
+                    ? `${remediationPosture.topIssue.account.code} · ${remediationPosture.topIssue.account.name} is the leading remediation item affecting COA hygiene for this close cycle.`
+                    : 'No active COA remediation items are currently open.'}
+                </div>
+
+                {remediationPosture.topIssue ? (
+                  <div className="mt-3 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                    First seen {formatDateTime(remediationPosture.topIssue.first_seen_at)}
+                    {remediationPosture.topIssue.reviewed_at ? ` · reviewed ${formatDateTime(remediationPosture.topIssue.reviewed_at)}` : ''}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link
+                    href="/accounting/chart-of-accounts"
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-brand-navy/90"
+                  >
+                    Open COA backlog
+                  </Link>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                    Use the COA backlog filters to separate new, acknowledged, and long-standing issues before final close signoff.
                   </div>
                 </div>
               </div>
