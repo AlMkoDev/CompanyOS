@@ -880,6 +880,186 @@ describe('AccountingService', () => {
     expect(result.posture.canCertify).toBe(true);
   });
 
+  it('requires dual signoff for higher-risk report packs before final certification', async () => {
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '1000',
+        name: 'Main Bank Account',
+        type: 'asset',
+        is_header: false,
+        fs_placement: 'Current Assets',
+        sensitivity_tier: 'T1',
+        account_owner_id: 'emp-1',
+      },
+      {
+        id: 'acct-2',
+        code: '3000',
+        name: 'Owner Equity',
+        type: 'equity',
+        is_header: false,
+        fs_placement: 'Equity',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-2',
+      },
+    ]);
+    prisma.accountingPeriod.upsert.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+    prisma.reportCertification.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'cert-1',
+        company_id: 'company-1',
+        period_id: 'period-1',
+        report_type: 'bs',
+        status: 'pending_secondary_signoff',
+        certified_by: 'user-9',
+        certified_at: new Date('2026-04-04T08:00:00Z'),
+        signoff_required: 2,
+        certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+        secondary_certifier: null,
+        audits: [],
+      });
+    prisma.gLAccount.findFirst.mockResolvedValue(null);
+    prisma.journalEntry.findFirst.mockResolvedValue(null);
+    prisma.reportCertification.upsert.mockResolvedValue({
+      id: 'cert-1',
+      company_id: 'company-1',
+      period_id: 'period-1',
+      report_type: 'bs',
+      status: 'pending_secondary_signoff',
+      certified_by: 'user-9',
+      certified_at: new Date('2026-04-04T08:00:00Z'),
+      signoff_required: 2,
+      certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+      secondary_certifier: null,
+    });
+    prisma.reportCertificationAudit.create.mockResolvedValue({ id: 'audit-cert-primary', created_at: new Date('2026-04-04T08:00:01Z') });
+    prisma.accountingPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+
+    const result = await service.certifyReport('company-1', 'user-9', ['finance_manager'], 2026, 4, 'bs', 'Primary signoff');
+
+    expect(prisma.reportCertification.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          status: 'pending_secondary_signoff',
+          signoff_required: 2,
+        }),
+      }),
+    );
+    expect(prisma.reportCertificationAudit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'primary_certified',
+        }),
+      }),
+    );
+    expect(result.certification?.status).toBe('pending_secondary_signoff');
+    expect(result.certification?.signoff_progress?.required).toBe(2);
+  });
+
+  it('completes secondary signoff with a different qualified reviewer', async () => {
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '1000',
+        name: 'Main Bank Account',
+        type: 'asset',
+        is_header: false,
+        fs_placement: 'Current Assets',
+        sensitivity_tier: 'T1',
+        account_owner_id: 'emp-1',
+      },
+    ]);
+    prisma.accountingPeriod.upsert.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+    prisma.reportCertification.findFirst
+      .mockResolvedValueOnce({
+        id: 'cert-1',
+        company_id: 'company-1',
+        period_id: 'period-1',
+        report_type: 'bs',
+        status: 'pending_secondary_signoff',
+        certified_by: 'user-9',
+        certified_at: new Date('2026-04-04T08:00:00Z'),
+      })
+      .mockResolvedValueOnce({
+        id: 'cert-1',
+        company_id: 'company-1',
+        period_id: 'period-1',
+        report_type: 'bs',
+        status: 'certified',
+        certified_by: 'user-9',
+        certified_at: new Date('2026-04-04T08:00:00Z'),
+        secondary_certified_by: 'user-10',
+        secondary_certified_at: new Date('2026-04-04T09:00:00Z'),
+        signoff_required: 2,
+        certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+        secondary_certifier: { id: 'user-10', first_name: 'Alex', last_name: 'Moyo', email: 'alex@example.com' },
+        audits: [],
+      });
+    prisma.reportCertification.upsert.mockResolvedValue({
+      id: 'cert-1',
+      company_id: 'company-1',
+      period_id: 'period-1',
+      report_type: 'bs',
+      status: 'certified',
+      certified_by: 'user-9',
+      certified_at: new Date('2026-04-04T08:00:00Z'),
+      secondary_certified_by: 'user-10',
+      secondary_certified_at: new Date('2026-04-04T09:00:00Z'),
+      signoff_required: 2,
+      certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+      secondary_certifier: { id: 'user-10', first_name: 'Alex', last_name: 'Moyo', email: 'alex@example.com' },
+    });
+    prisma.reportCertificationAudit.create.mockResolvedValue({ id: 'audit-cert-secondary', created_at: new Date('2026-04-04T09:00:01Z') });
+    prisma.gLAccount.findFirst.mockResolvedValue(null);
+    prisma.journalEntry.findFirst.mockResolvedValue(null);
+    prisma.accountingPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+
+    const result = await service.certifyReport('company-1', 'user-10', ['chief_financial_officer'], 2026, 4, 'bs', 'Secondary signoff');
+
+    expect(prisma.reportCertification.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({
+          status: 'certified',
+          secondary_certified_by: 'user-10',
+        }),
+      }),
+    );
+    expect(prisma.reportCertificationAudit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'secondary_certified',
+        }),
+      }),
+    );
+    expect(result.certification?.status).toBe('certified');
+    expect(result.certification?.signoff_progress?.completed).toBe(2);
+  });
+
   it('blocks non-finance users from certifying reports', async () => {
     await expect(
       service.certifyReport('company-1', 'user-3', ['finance_analyst'], 2026, 4, 'bs'),
@@ -913,6 +1093,7 @@ describe('AccountingService', () => {
       report_type: 'pnl',
       status: 'certified',
       certified_at: new Date('2026-04-02T08:00:00Z'),
+      signoff_required: 1,
       certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
       audits: [],
     });
@@ -932,6 +1113,13 @@ describe('AccountingService', () => {
     const result = await service.getReportCertification('company-1', 2026, 4, 'pnl');
 
     expect(result.certification?.effective_status).toBe('stale');
+    expect(prisma.reportCertificationAudit.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'stale_detected',
+        }),
+      }),
+    );
     expect(result.certification?.stale_reasons).toEqual(
       expect.arrayContaining([
         expect.stringContaining('COA changed after signoff'),

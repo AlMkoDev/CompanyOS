@@ -173,6 +173,7 @@ model User {
   glAccountChangeRequestsReviewed GLAccountChangeRequest[] @relation("GLAccountChangeReviewer")
   glAccountAuditEntries GLAccountAuditTrail[] @relation("GLAccountAuditActor")
   reportCertificationsCertified ReportCertification[] @relation("ReportCertificationCertifier")
+  reportCertificationsSecondary ReportCertification[] @relation("ReportCertificationSecondCertifier")
   reportCertificationAudits ReportCertificationAudit[] @relation("ReportCertificationAuditActor")
 }
 
@@ -626,6 +627,9 @@ model ReportCertification {
   status               String   @default("draft")
   certified_by         String?  @db.Uuid
   certified_at         DateTime?
+  secondary_certified_by String? @db.Uuid
+  secondary_certified_at DateTime?
+  signoff_required     Int      @default(1)
   revoked_at           DateTime?
   notes                String?
   coverage_percent     Int      @default(0)
@@ -639,6 +643,7 @@ model ReportCertification {
   company   Company          @relation(fields: [company_id], references: [id])
   period    AccountingPeriod @relation(fields: [period_id], references: [id])
   certifier User?            @relation("ReportCertificationCertifier", fields: [certified_by], references: [id])
+  secondary_certifier User?  @relation("ReportCertificationSecondCertifier", fields: [secondary_certified_by], references: [id])
   audits    ReportCertificationAudit[]
 
   @@unique([company_id, period_id, report_type])

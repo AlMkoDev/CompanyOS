@@ -55,14 +55,27 @@ interface CertificationAuditEntry {
 interface ReportCertificationRecord {
   id: string;
   status: string;
-  effective_status?: 'certified' | 'stale' | 'revoked' | 'uncertified';
+  effective_status?: 'certified' | 'stale' | 'revoked' | 'uncertified' | 'pending_secondary_signoff';
   report_type: string;
   certified_at?: string | null;
+  secondary_certified_at?: string | null;
   revoked_at?: string | null;
   last_source_change_at?: string | null;
   stale_reasons?: string[];
+  signoff_required?: number;
+  signoff_progress?: {
+    required: number;
+    completed: number;
+    label: string;
+  };
   notes?: string | null;
   certifier?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
+  secondary_certifier?: {
     id: string;
     first_name: string;
     last_name: string;
@@ -208,7 +221,9 @@ function ReportsContent() {
   const effectiveCertificationStatus = certificationState?.certification?.effective_status || certificationState?.certification?.status || 'uncertified';
   const certificationIsCertified = effectiveCertificationStatus === 'certified';
   const certificationIsStale = effectiveCertificationStatus === 'stale';
+  const certificationNeedsSecondSignoff = effectiveCertificationStatus === 'pending_secondary_signoff';
   const certificationRecord = certificationState?.certification ?? null;
+  const currentUserId = user?.id || null;
 
   const periodLabel = React.useMemo(() => {
     if (reportType === 'pnl') {
@@ -358,7 +373,14 @@ function ReportsContent() {
 
       const updated = await res.json();
       setCertificationState(updated);
-      setCertificationMessage(action === 'certify' ? 'Report pack certified successfully.' : 'Report certification revoked.');
+      const nextStatus = updated?.certification?.effective_status || updated?.certification?.status;
+      setCertificationMessage(
+        action === 'certify'
+          ? nextStatus === 'pending_secondary_signoff'
+            ? 'Primary signoff recorded. A second qualified reviewer is still required.'
+            : 'Report pack certified successfully.'
+          : 'Report certification revoked.',
+      );
     } catch (error) {
       setCertificationMessage('Connection error while updating report certification.');
     } finally {
@@ -586,9 +608,11 @@ function ReportsContent() {
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
               : certificationIsStale
                 ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : certificationNeedsSecondSignoff
+                  ? 'border-brand-gold/30 bg-brand-gold/10 text-brand-gold'
                 : 'border-slate-200 bg-slate-50 text-slate-600'
           }`}>
-            {certificationIsCertified ? 'Certified' : certificationIsStale ? 'Stale certification' : 'Not certified'}
+            {certificationIsCertified ? 'Certified' : certificationIsStale ? 'Stale certification' : certificationNeedsSecondSignoff ? 'Awaiting second signoff' : 'Not certified'}
           </div>
         </div>
 
@@ -608,12 +632,18 @@ function ReportsContent() {
                   disabled={certificationBusy || !certificationState?.posture?.canCertify}
                   className="rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
                 >
-                  {certificationBusy ? 'Working...' : certificationIsStale ? 'Re-certify report pack' : 'Certify report pack'}
+                  {certificationBusy
+                    ? 'Working...'
+                    : certificationNeedsSecondSignoff
+                      ? 'Complete secondary signoff'
+                      : certificationIsStale
+                        ? 'Re-certify report pack'
+                        : 'Certify report pack'}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCertificationAction('revoke')}
-                  disabled={certificationBusy || !['certified', 'stale'].includes(effectiveCertificationStatus)}
+                  disabled={certificationBusy || !['certified', 'stale', 'pending_secondary_signoff'].includes(effectiveCertificationStatus)}
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 disabled:opacity-60"
                 >
                   Revoke certification
@@ -628,6 +658,20 @@ function ReportsContent() {
               <ReadinessMetric label="Daily cadence" value={String(certificationState?.posture.dailyCadenceCount ?? 0)} />
             </div>
 
+            {certificationRecord?.signoff_progress ? (
+              <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Approval requirement</div>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-slate-600">
+                    {certificationRecord.signoff_progress.label}
+                  </span>
+                  <span>
+                    {certificationRecord.signoff_progress.completed} of {certificationRecord.signoff_progress.required} signoffs complete
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
               {certificationIsCertified && certificationRecord ? (
                 <div>
@@ -641,6 +685,29 @@ function ReportsContent() {
                     ? ` on ${new Date(certificationRecord.certified_at).toLocaleString('en-ZA')}`
                     : ''}
                   .
+                </div>
+              ) : certificationNeedsSecondSignoff && certificationRecord ? (
+                <div className="space-y-3">
+                  <div className="font-medium text-brand-gold">
+                    Primary signoff is recorded. A second qualified reviewer must complete certification before this report pack becomes formally certified.
+                  </div>
+                  <div>
+                    Primary reviewer:{' '}
+                    <span className="font-semibold text-brand-navy">
+                      {certificationRecord.certifier
+                        ? `${certificationRecord.certifier.first_name} ${certificationRecord.certifier.last_name}`
+                        : 'Unknown reviewer'}
+                    </span>
+                    {certificationRecord.certified_at
+                      ? ` on ${new Date(certificationRecord.certified_at).toLocaleString('en-ZA')}`
+                      : ''}
+                    .
+                  </div>
+                  {certificationRecord.certifier?.id === currentUserId ? (
+                    <div className="rounded-2xl border border-brand-gold/20 bg-brand-gold/10 px-3 py-3 text-brand-gold">
+                      You recorded the primary signoff, so another qualified reviewer must complete the secondary signoff.
+                    </div>
+                  ) : null}
                 </div>
               ) : certificationIsStale ? (
                 <div className="space-y-3">

@@ -596,6 +596,14 @@ export class AccountingService {
     }
   }
 
+  private requiresDualSignoff(year: number, month: number, reportType: string) {
+    return reportType === 'bs' || month === 12;
+  }
+
+  private getSignoffRequirementLabel(required: number) {
+    return required > 1 ? 'Dual signoff required' : 'Single signoff';
+  }
+
   private getPeriodDateRange(year: number, month: number) {
     return {
       start: new Date(year, month - 1, 1),
@@ -646,6 +654,8 @@ export class AccountingService {
     const baseStatus =
       certification.status === 'revoked'
         ? 'revoked'
+        : certification.status === 'pending_secondary_signoff'
+          ? 'pending_secondary_signoff'
         : certification.status === 'certified'
           ? 'certified'
           : 'uncertified';
@@ -656,6 +666,11 @@ export class AccountingService {
         effective_status: baseStatus,
         stale_reasons: [],
         last_source_change_at: null,
+        signoff_progress: {
+          required: certification.signoff_required ?? 1,
+          completed: certification.secondary_certified_at ? 2 : certification.certified_at ? 1 : 0,
+          label: this.getSignoffRequirementLabel(certification.signoff_required ?? 1),
+        },
         source_changes: {
           latest_account_change_at: null,
           latest_journal_change_at: null,
@@ -686,16 +701,51 @@ export class AccountingService {
       ? new Date(Math.max(...sourceTimestamps.map((value) => value.getTime())))
       : null;
 
-    return {
+    const effectiveCertification = {
       ...certification,
       effective_status: staleReasons.length ? 'stale' : 'certified',
       stale_reasons: staleReasons,
       last_source_change_at: lastSourceChangeAt,
+      signoff_progress: {
+        required: certification.signoff_required ?? 1,
+        completed: certification.secondary_certified_at ? 2 : certification.certified_at ? 1 : 0,
+        label: this.getSignoffRequirementLabel(certification.signoff_required ?? 1),
+      },
       source_changes: {
         latest_account_change_at: latestAccountChange?.updated_at ?? null,
         latest_journal_change_at: latestJournalChange?.updated_at ?? null,
       },
     };
+
+    if (staleReasons.length && lastSourceChangeAt) {
+      const latestStaleAudit = certification.audits?.find((audit: any) => audit.action === 'stale_detected');
+      const staleAlreadyRecorded =
+        latestStaleAudit && new Date(latestStaleAudit.created_at).getTime() >= lastSourceChangeAt.getTime();
+
+      if (!staleAlreadyRecorded) {
+        const staleAudit = await this.recordReportCertificationAudit({
+          companyId,
+          certificationId: certification.id,
+          actorUserId: null,
+          action: 'stale_detected',
+          notes: staleReasons.join(' '),
+          postureSnapshot: {
+            stale_reasons: staleReasons,
+            last_source_change_at: lastSourceChangeAt,
+          },
+        });
+
+        effectiveCertification.audits = [
+          {
+            ...staleAudit,
+            actor: null,
+          },
+          ...(effectiveCertification.audits || []),
+        ];
+      }
+    }
+
+    return effectiveCertification;
   }
 
   private async recordReportCertificationAudit(params: {
@@ -1455,6 +1505,9 @@ export class AccountingService {
             certifier: {
               select: { id: true, first_name: true, last_name: true, email: true },
             },
+            secondary_certifier: {
+              select: { id: true, first_name: true, last_name: true, email: true },
+            },
             audits: {
               orderBy: { created_at: 'desc' },
               take: 10,
@@ -1496,6 +1549,34 @@ export class AccountingService {
     }
 
     const period = await this.ensureAccountingPeriod(companyId, new Date(year, month - 1, 1));
+    const dualSignoffRequired = this.requiresDualSignoff(year, month, reportType);
+    const existingCertification = await this.prisma.reportCertification.findFirst({
+      where: {
+        company_id: companyId,
+        period_id: period.id,
+        report_type: reportType,
+      },
+    });
+
+    if (
+      dualSignoffRequired &&
+      existingCertification?.status === 'pending_secondary_signoff' &&
+      existingCertification.certified_by === userId
+    ) {
+      throw new BadRequestException('A second qualified reviewer must complete the secondary signoff for this report pack.');
+    }
+
+    const isSecondarySignoff =
+      dualSignoffRequired &&
+      existingCertification?.status === 'pending_secondary_signoff' &&
+      existingCertification.certified_by &&
+      existingCertification.certified_by !== userId;
+
+    const nextStatus = dualSignoffRequired
+      ? isSecondarySignoff
+        ? 'certified'
+        : 'pending_secondary_signoff'
+      : 'certified';
 
     const certification = await this.prisma.reportCertification.upsert({
       where: {
@@ -1506,9 +1587,12 @@ export class AccountingService {
         },
       },
       update: {
-        status: 'certified',
-        certified_by: userId,
-        certified_at: new Date(),
+        status: nextStatus,
+        certified_by: isSecondarySignoff ? existingCertification?.certified_by ?? userId : userId,
+        certified_at: isSecondarySignoff ? existingCertification?.certified_at ?? new Date() : new Date(),
+        secondary_certified_by: isSecondarySignoff ? userId : null,
+        secondary_certified_at: isSecondarySignoff ? new Date() : null,
+        signoff_required: dualSignoffRequired ? 2 : 1,
         revoked_at: null,
         notes: notes || null,
         coverage_percent: posture.coveragePercent,
@@ -1521,9 +1605,12 @@ export class AccountingService {
         company_id: companyId,
         period_id: period.id,
         report_type: reportType,
-        status: 'certified',
+        status: nextStatus,
         certified_by: userId,
         certified_at: new Date(),
+        secondary_certified_by: null,
+        secondary_certified_at: null,
+        signoff_required: dualSignoffRequired ? 2 : 1,
         notes: notes || null,
         coverage_percent: posture.coveragePercent,
         blocker_count: posture.materialBlockers,
@@ -1535,6 +1622,9 @@ export class AccountingService {
         certifier: {
           select: { id: true, first_name: true, last_name: true, email: true },
         },
+        secondary_certifier: {
+          select: { id: true, first_name: true, last_name: true, email: true },
+        },
       },
     });
 
@@ -1542,8 +1632,14 @@ export class AccountingService {
       companyId,
       certificationId: certification.id,
       actorUserId: userId,
-      action: 'certified',
-      notes: notes || null,
+      action: dualSignoffRequired ? (isSecondarySignoff ? 'secondary_certified' : 'primary_certified') : 'certified',
+      notes:
+        notes ||
+        (dualSignoffRequired
+          ? isSecondarySignoff
+            ? 'Secondary signoff completed for dual-approval report pack.'
+            : 'Primary signoff recorded; awaiting secondary reviewer.'
+          : null),
       postureSnapshot: posture,
     });
 
@@ -1583,6 +1679,8 @@ export class AccountingService {
       data: {
         status: 'revoked',
         revoked_at: new Date(),
+        secondary_certified_by: null,
+        secondary_certified_at: null,
         notes: notes || certification.notes || null,
         coverage_percent: posture.coveragePercent,
         blocker_count: posture.materialBlockers,
