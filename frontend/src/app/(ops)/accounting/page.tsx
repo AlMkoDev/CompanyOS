@@ -264,6 +264,98 @@ export default function AccountingDashboardPage() {
     return blockers;
   }, [closeReadiness, latestOpenPeriod, ownershipReadiness]);
 
+  const recommendedAction = React.useMemo(() => {
+    if (!currentPeriod || !closeReadiness) {
+      return {
+        title: 'No active close cycle',
+        detail: 'Open a period to begin close governance and reporting signoff.',
+        href: '/accounting/close',
+        cta: 'Review period close',
+        tone: 'bg-slate-50 text-slate-600 border-slate-100',
+      };
+    }
+
+    if (closeReadiness.draft_journals > 0) {
+      return {
+        title: `Resolve ${closeReadiness.draft_journals} draft journal${closeReadiness.draft_journals === 1 ? '' : 's'}`,
+        detail: `Draft journals are the first hard blocker for ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)} close.`,
+        href: '/accounting/journal',
+        cta: 'Open journal workspace',
+        tone: 'bg-rose-50 text-rose-700 border-rose-100',
+      };
+    }
+
+    const packs = closeReadiness.reporting_certification?.packs ?? [];
+    const pendingSecondaryPack = packs.find((pack) => pack.status === 'pending_secondary_signoff');
+    if (pendingSecondaryPack) {
+      return {
+        title: `Complete secondary signoff on ${getReportLabel(pendingSecondaryPack.report_type)}`,
+        detail: 'This report pack already has a primary signoff and needs a second reviewer before the period can close.',
+        href: getDashboardReportHref(pendingSecondaryPack.report_type, currentPeriod),
+        cta: 'Complete signoff',
+        tone: 'bg-amber-50 text-amber-700 border-amber-100',
+      };
+    }
+
+    const stalePack = packs.find((pack) => pack.status === 'stale');
+    if (stalePack) {
+      return {
+        title: `Re-certify ${getReportLabel(stalePack.report_type)}`,
+        detail: 'The underlying reporting source changed after signoff, so the certification must be refreshed.',
+        href: getDashboardReportHref(stalePack.report_type, currentPeriod),
+        cta: 'Re-certify report pack',
+        tone: 'bg-rose-50 text-rose-700 border-rose-100',
+      };
+    }
+
+    const uncertifiedPack = packs.find((pack) => pack.status === 'uncertified');
+    if (uncertifiedPack) {
+      return {
+        title: `Certify ${getReportLabel(uncertifiedPack.report_type)}`,
+        detail: 'A required report pack is still uncertified for the latest open period.',
+        href: getDashboardReportHref(uncertifiedPack.report_type, currentPeriod),
+        cta: 'Open for certification',
+        tone: 'bg-amber-50 text-amber-700 border-amber-100',
+      };
+    }
+
+    if (ownershipReadiness.restrictedNoOwnerCount > 0) {
+      const restrictedNoOwnerAccount = accounts.find((account) =>
+        !account.is_header &&
+        !account.account_owner_id &&
+        ['T1', 'T2'].includes((account.sensitivity_tier || '').toUpperCase()),
+      );
+
+      return {
+        title: restrictedNoOwnerAccount
+          ? `Assign owner to restricted account ${restrictedNoOwnerAccount.code}`
+          : `Assign owner to ${ownershipReadiness.restrictedNoOwnerCount} restricted account${ownershipReadiness.restrictedNoOwnerCount === 1 ? '' : 's'}`,
+        detail: 'Restricted accounts without owners are treated as material reporting-control gaps.',
+        href: '/accounting/chart-of-accounts',
+        cta: 'Open chart of accounts',
+        tone: 'bg-rose-50 text-rose-700 border-rose-100',
+      };
+    }
+
+    if (ownershipReadiness.noOwnerCount > 0) {
+      return {
+        title: `Assign owners to ${ownershipReadiness.noOwnerCount} posting account${ownershipReadiness.noOwnerCount === 1 ? '' : 's'}`,
+        detail: 'Owner accountability is still incomplete even though restricted-account coverage is clean.',
+        href: '/accounting/chart-of-accounts',
+        cta: 'Review owner assignments',
+        tone: 'bg-sky-50 text-sky-700 border-sky-100',
+      };
+    }
+
+    return {
+      title: `Review ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)} close pack`,
+      detail: 'The latest period looks structurally healthy. Finish by reviewing close posture and final report certification.',
+      href: '/accounting/close',
+      cta: 'Review period close',
+      tone: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    };
+  }, [accounts, closeReadiness, currentPeriod, ownershipReadiness]);
+
   React.useEffect(() => {
     const fetchAccountingData = async () => {
       try {
@@ -594,6 +686,28 @@ export default function AccountingDashboardPage() {
                 Report-pack certification detail will appear here once an open period is available.
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recommended next action</div>
+            <h3 className="mt-2 text-xl font-heading text-brand-navy">{recommendedAction.title}</h3>
+            <p className="mt-2 text-sm text-slate-500 max-w-3xl">{recommendedAction.detail}</p>
+          </div>
+          <Link
+            href={recommendedAction.href}
+            className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-brand-navy/90"
+          >
+            {recommendedAction.cta}
+          </Link>
+        </div>
+        <div className={`mt-5 rounded-2xl border px-4 py-4 ${recommendedAction.tone}`}>
+          <div className="text-[10px] font-black uppercase tracking-[0.16em]">Why this next</div>
+          <div className="mt-2 text-sm font-medium">
+            This is the most direct step to improve the latest period’s reporting trust and close readiness.
           </div>
         </div>
       </div>
