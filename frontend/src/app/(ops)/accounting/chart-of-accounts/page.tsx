@@ -666,6 +666,7 @@ export default function ChartOfAccountsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [backlogFilter, setBacklogFilter] = React.useState<"all" | "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle">("all");
   const [backlogStatusFilter, setBacklogStatusFilter] = React.useState<"all" | "open" | "reviewed" | "cleared">("all");
+  const [backlogAgeFilter, setBacklogAgeFilter] = React.useState<"all" | "new" | "aging" | "long-standing">("all");
   const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
@@ -769,6 +770,25 @@ export default function ChartOfAccountsPage() {
     if (!isAuthenticated) return;
     loadGovernance(editing?.id);
   }, [editing?.id, isAuthenticated, loadGovernance]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    const age = params.get("age");
+
+    if (status === "reviewed" || status === "open" || status === "cleared") {
+      setBacklogStatusFilter(status);
+    } else {
+      setBacklogStatusFilter("all");
+    }
+
+    if (age === "new" || age === "aging" || age === "long-standing") {
+      setBacklogAgeFilter(age);
+    } else {
+      setBacklogAgeFilter("all");
+    }
+  }, []);
 
   const groupedAccounts = React.useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1106,21 +1126,33 @@ export default function ChartOfAccountsPage() {
         ? remediationBacklog
         : remediationBacklog.filter((group) => group.key === backlogFilter);
 
-    if (backlogStatusFilter === "all") {
-      return categoryFiltered;
-    }
-
     return categoryFiltered
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) =>
-          backlogStatusFilter === "open"
-            ? item.state?.status !== "reviewed"
-            : item.state?.status === "reviewed",
-        ),
+        items: group.items.filter((item) => {
+          const statusMatches =
+            backlogStatusFilter === "all"
+              ? true
+              : backlogStatusFilter === "open"
+                ? item.state?.status !== "reviewed"
+                : backlogStatusFilter === "reviewed"
+                  ? item.state?.status === "reviewed"
+                  : false;
+
+          const ageMatches =
+            backlogAgeFilter === "all"
+              ? true
+              : backlogAgeFilter === "new"
+                ? item.ageMeta.label === "New"
+                : backlogAgeFilter === "aging"
+                  ? item.ageMeta.label === "Aging"
+                  : item.ageMeta.label === "Long-standing";
+
+          return statusMatches && ageMatches;
+        }),
       }))
       .filter((group) => group.items.length > 0 || group.count > 0);
-  }, [backlogFilter, backlogStatusFilter, remediationBacklog]);
+  }, [backlogAgeFilter, backlogFilter, backlogStatusFilter, remediationBacklog]);
 
   const backlogSummary = React.useMemo(() => {
     const totalOpen = remediationBacklog.reduce((sum, group) => sum + group.count, 0);
@@ -1868,6 +1900,28 @@ export default function ChartOfAccountsPage() {
                 ))}
               </div>
 
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: "All age" },
+                  { value: "new", label: "New" },
+                  { value: "aging", label: "Aging" },
+                  { value: "long-standing", label: "Long-standing" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setBacklogAgeFilter(option.value as typeof backlogAgeFilter)}
+                    className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.16em] transition ${
+                      backlogAgeFilter === option.value
+                        ? "border-brand-navy bg-brand-navy text-white"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
               {backlogActionFeedback ? (
                 <div className="mt-5 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
                   <div className="font-semibold">Action launched</div>
@@ -1950,6 +2004,7 @@ export default function ChartOfAccountsPage() {
               </div>
               ) : null}
 
+              {backlogStatusFilter === "cleared" || backlogStatusFilter === "all" ? (
               <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-brand-navy">Recently cleared</div>
@@ -1983,6 +2038,7 @@ export default function ChartOfAccountsPage() {
                   )}
                 </div>
               </div>
+              ) : null}
             </section>
           </div>
 

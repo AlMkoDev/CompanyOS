@@ -26,6 +26,13 @@ interface RemediationState {
   first_seen_at: string;
   reviewed_at?: string | null;
   cleared_at?: string | null;
+  review_notes?: string | null;
+  reviewer?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
   account?: {
     id: string;
     code: string;
@@ -283,6 +290,17 @@ export default function CloseWorkflowPage() {
     };
   }, [remediationStates]);
 
+  const recentRemediationActivity = React.useMemo(() => {
+    return remediationStates
+      .filter((state) => state.reviewed_at || state.cleared_at)
+      .sort((left, right) => {
+        const leftTime = new Date(left.cleared_at || left.reviewed_at || left.first_seen_at).getTime();
+        const rightTime = new Date(right.cleared_at || right.reviewed_at || right.first_seen_at).getTime();
+        return rightTime - leftTime;
+      })
+      .slice(0, 3);
+  }, [remediationStates]);
+
   const canClosePeriod = !!readiness?.can_close && confirmed && reportingCertification.canCertify;
 
   const handleClose = async (e: React.FormEvent) => {
@@ -522,6 +540,18 @@ export default function CloseWorkflowPage() {
                     ? `${remediationPosture.topIssue.account.code} · ${remediationPosture.topIssue.account.name} is the leading remediation item affecting COA hygiene for this close cycle.`
                     : 'No active COA remediation items are currently open.'}
                 </div>
+                {remediationPosture.topIssue?.review_notes ? (
+                  <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                    <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Leading review note</div>
+                    <div className="mt-2">{remediationPosture.topIssue.review_notes}</div>
+                    <div className="mt-2 text-xs text-slate-400">
+                      {remediationPosture.topIssue.reviewer
+                        ? `${remediationPosture.topIssue.reviewer.first_name} ${remediationPosture.topIssue.reviewer.last_name}`
+                        : 'Finance review'}
+                      {remediationPosture.topIssue.reviewed_at ? ` · ${formatDateTime(remediationPosture.topIssue.reviewed_at)}` : ''}
+                    </div>
+                  </div>
+                ) : null}
 
                 {remediationPosture.topIssue ? (
                   <div className="mt-3 rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
@@ -537,9 +567,59 @@ export default function CloseWorkflowPage() {
                   >
                     Open COA backlog
                   </Link>
+                  <Link
+                    href="/accounting/chart-of-accounts?status=reviewed"
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-slate-50"
+                  >
+                    Open Acknowledged
+                  </Link>
+                  <Link
+                    href="/accounting/chart-of-accounts?age=long-standing"
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-brand-navy transition-all hover:bg-slate-50"
+                  >
+                    Open Long-standing
+                  </Link>
                   <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
                     Use the COA backlog filters to separate new, acknowledged, and long-standing issues before final close signoff.
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-400">Recent COA governance</div>
+                    <div className="mt-2 text-lg font-heading text-brand-navy">Activity strip</div>
+                  </div>
+                  <Link href="/accounting/chart-of-accounts?status=reviewed" className="text-xs font-bold uppercase tracking-[0.16em] text-brand-gold hover:underline">
+                    Open acknowledged →
+                  </Link>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                  {recentRemediationActivity.length > 0 ? recentRemediationActivity.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-brand-navy">
+                          {item.account ? `${item.account.code} · ${item.account.name}` : 'COA remediation item'}
+                        </div>
+                        <span className={`text-[10px] font-black uppercase tracking-[0.16em] px-2 py-1 rounded-full ${
+                          item.cleared_at ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-700'
+                        }`}>
+                          {item.cleared_at ? 'Cleared' : 'Reviewed'}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">
+                        {item.review_notes || (item.cleared_at ? 'Issue dropped out of the live COA posture.' : 'Issue acknowledged for follow-up.')}
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">
+                        {item.cleared_at ? formatDateTime(item.cleared_at) : formatDateTime(item.reviewed_at)}
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3 text-slate-500 xl:col-span-3">
+                      COA governance activity will appear here once remediation items are reviewed or cleared.
+                    </div>
+                  )}
                 </div>
               </div>
 

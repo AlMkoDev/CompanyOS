@@ -96,6 +96,13 @@ interface RemediationState {
   first_seen_at: string;
   reviewed_at?: string | null;
   cleared_at?: string | null;
+  review_notes?: string | null;
+  reviewer?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
   account?: {
     id: string;
     code: string;
@@ -210,6 +217,17 @@ export default function AccountingDashboardPage() {
       oldestOpenDays,
       topIssue: openStates[0] || null,
     };
+  }, [remediationStates]);
+
+  const recentRemediationActivity = React.useMemo(() => {
+    return remediationStates
+      .filter((state) => state.reviewed_at || state.cleared_at)
+      .sort((left, right) => {
+        const leftTime = new Date(left.cleared_at || left.reviewed_at || left.first_seen_at).getTime();
+        const rightTime = new Date(right.cleared_at || right.reviewed_at || right.first_seen_at).getTime();
+        return rightTime - leftTime;
+      })
+      .slice(0, 3);
   }, [remediationStates]);
 
   const latestOpenPeriod = React.useMemo(() => {
@@ -793,6 +811,32 @@ export default function AccountingDashboardPage() {
                 ? `${remediationPosture.topIssue.account.code} · ${remediationPosture.topIssue.account.name} is the leading COA remediation item.`
                 : 'No COA remediation items are currently open.'}
             </div>
+            {remediationPosture.topIssue?.review_notes ? (
+              <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm text-slate-600">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Leading review note</div>
+                <div className="mt-2">{remediationPosture.topIssue.review_notes}</div>
+                <div className="mt-2 text-xs text-slate-400">
+                  {remediationPosture.topIssue.reviewer
+                    ? `${remediationPosture.topIssue.reviewer.first_name} ${remediationPosture.topIssue.reviewer.last_name}`
+                    : 'Finance review'}
+                  {remediationPosture.topIssue.reviewed_at ? ` · ${formatDateTime(remediationPosture.topIssue.reviewed_at)}` : ''}
+                </div>
+              </div>
+            ) : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link
+                href="/accounting/chart-of-accounts?status=reviewed"
+                className="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy transition hover:bg-slate-50"
+              >
+                Open Acknowledged
+              </Link>
+              <Link
+                href="/accounting/chart-of-accounts?age=long-standing"
+                className="inline-flex items-center rounded-full border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy transition hover:bg-slate-50"
+              >
+                Open Long-standing
+              </Link>
+            </div>
             <Link
               href="/accounting/chart-of-accounts"
               className="mt-4 inline-flex items-center text-xs font-bold uppercase tracking-[0.16em] text-brand-gold hover:underline"
@@ -844,6 +888,47 @@ export default function AccountingDashboardPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent COA governance</div>
+            <h3 className="mt-2 text-xl font-heading text-brand-navy">Activity strip</h3>
+          </div>
+          <Link
+            href="/accounting/chart-of-accounts?status=reviewed"
+            className="text-xs font-bold uppercase tracking-[0.16em] text-brand-gold hover:underline"
+          >
+            Open acknowledged →
+          </Link>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          {recentRemediationActivity.length > 0 ? recentRemediationActivity.map((item) => (
+            <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-brand-navy">
+                  {item.account ? `${item.account.code} · ${item.account.name}` : 'COA remediation item'}
+                </div>
+                <span className={`text-[10px] font-black uppercase tracking-[0.16em] px-2 py-1 rounded-full ${
+                  item.cleared_at ? 'bg-emerald-50 text-emerald-600' : 'bg-sky-50 text-sky-700'
+                }`}>
+                  {item.cleared_at ? 'Cleared' : 'Reviewed'}
+                </span>
+              </div>
+              <div className="mt-2 text-sm text-slate-600">
+                {item.review_notes || (item.cleared_at ? 'Issue dropped out of the live COA posture.' : 'Issue acknowledged for follow-up.')}
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                {item.cleared_at ? formatDateTime(item.cleared_at) : formatDateTime(item.reviewed_at)}
+              </div>
+            </div>
+          )) : (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500 lg:col-span-3">
+              COA governance activity will appear here once items are reviewed or cleared.
+            </div>
+          )}
         </div>
       </div>
 
