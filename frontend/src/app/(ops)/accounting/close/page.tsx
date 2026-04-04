@@ -36,6 +36,19 @@ interface CloseReadiness {
   bankStatements: number;
   can_close: boolean;
   blockers: string[];
+  reporting_certification?: {
+    required_count: number;
+    certified_count: number;
+    blocking_count: number;
+    can_close_reporting: boolean;
+    messages: string[];
+    packs: Array<{
+      report_type: string;
+      required_signoffs: number;
+      completed_signoffs: number;
+      status: string;
+    }>;
+  };
 }
 
 interface ReportingCertificationPosture {
@@ -301,6 +314,34 @@ export default function CloseWorkflowPage() {
                 <Metric label="Daily cadence" value={reportingCertification.dailyCadenceCount} tone="navy" />
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                <Metric
+                  label="Required packs"
+                  value={readiness?.reporting_certification?.required_count ?? 0}
+                  tone="navy"
+                />
+                <Metric
+                  label="Certified packs"
+                  value={readiness?.reporting_certification?.certified_count ?? 0}
+                  tone={(readiness?.reporting_certification?.blocking_count ?? 0) === 0 ? 'emerald' : 'gold'}
+                />
+                <Metric
+                  label="Blocking packs"
+                  value={readiness?.reporting_certification?.blocking_count ?? 0}
+                  tone={(readiness?.reporting_certification?.blocking_count ?? 0) > 0 ? 'rose' : 'emerald'}
+                />
+                <div className={`rounded-2xl border px-4 py-3 ${
+                  readiness?.reporting_certification?.can_close_reporting
+                    ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                    : 'bg-rose-50 text-rose-600 border-rose-100'
+                }`}>
+                  <div className="text-[10px] uppercase tracking-widest opacity-80">Close posture</div>
+                  <div className="text-xl font-bold">
+                    {readiness?.reporting_certification?.can_close_reporting ? 'Ready' : 'Blocked'}
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-4">
                 <div className={`rounded-2xl border px-4 py-4 text-sm ${
                   reportingCertification.canCertify ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-rose-100 bg-rose-50 text-rose-700'
@@ -332,6 +373,69 @@ export default function CloseWorkflowPage() {
                       <Link href="/accounting/chart-of-accounts" className="text-brand-gold hover:underline">Chart of Accounts</Link>
                     </p>
                     <p><span className="font-semibold text-brand-navy">Focus:</span> Close only when journal control and reporting structure are both clean.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-400">Period-level certification summary</div>
+                    <div className="mt-2 text-lg font-heading text-brand-navy">Required report packs</div>
+                  </div>
+                  <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+                    readiness?.reporting_certification?.can_close_reporting
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-rose-200 bg-rose-50 text-rose-700'
+                  }`}>
+                    {readiness?.reporting_certification?.can_close_reporting ? 'All required packs certified' : 'Close blocked by report signoff'}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  <div className="space-y-3">
+                    {readiness?.reporting_certification?.packs?.map((pack) => (
+                      <div key={pack.report_type} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-brand-navy">{pack.report_type.toUpperCase()}</div>
+                          <div className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${
+                            pack.status === 'certified'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : pack.status === 'pending_secondary_signoff'
+                                ? 'bg-brand-gold/10 text-brand-gold'
+                                : pack.status === 'stale'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {pack.status.replaceAll('_', ' ')}
+                          </div>
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">
+                          {pack.completed_signoffs} of {pack.required_signoffs} signoffs complete
+                        </div>
+                      </div>
+                    )) || (
+                      <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-slate-500">
+                        No report certification data loaded for this period yet.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                    <div className="text-sm font-semibold text-brand-navy">Close blockers from reporting</div>
+                    <div className="mt-3 space-y-2">
+                      {readiness?.reporting_certification?.messages?.length ? (
+                        readiness.reporting_certification.messages.map((message, index) => (
+                          <div key={index} className="rounded-2xl bg-white px-3 py-3">
+                            {message}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-2xl bg-white px-3 py-3 text-emerald-700">
+                          Required report certifications are complete for this period.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

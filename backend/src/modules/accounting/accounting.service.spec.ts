@@ -36,6 +36,7 @@ describe('AccountingService', () => {
     },
     reportCertification: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       upsert: jest.fn(),
       update: jest.fn(),
     },
@@ -168,6 +169,19 @@ describe('AccountingService', () => {
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(0);
     prisma.bankStatement.count.mockResolvedValue(2);
+    prisma.reportCertification.findMany.mockResolvedValue([]);
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: 'Revenue',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+    ]);
 
     const result = await service.getPeriodCloseReadiness('company-1', 2026, 3);
 
@@ -183,6 +197,9 @@ describe('AccountingService', () => {
         reversedEntries: 0,
         bankStatements: 2,
         can_close: false,
+        reporting_certification: expect.objectContaining({
+          required_count: 2,
+        }),
       }),
     );
   });
@@ -194,9 +211,76 @@ describe('AccountingService', () => {
       .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(0);
     prisma.bankStatement.count.mockResolvedValue(2);
+    prisma.reportCertification.findMany.mockResolvedValue([]);
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: 'Revenue',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+    ]);
 
     await expect(service.closePeriod('company-1', 2026, 3, 'user-1')).rejects.toThrow(
       'Draft journal entries must be resolved before closing the period',
+    );
+  });
+
+  it('blocks closing when required report certifications are incomplete', async () => {
+    prisma.accountingPeriod.findFirst.mockResolvedValue({ id: 'period-1', year: 2026, month: 4, status: 'open' });
+    prisma.journalEntry.count
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(0);
+    prisma.bankStatement.count.mockResolvedValue(2);
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: 'Revenue',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+      {
+        id: 'acct-2',
+        code: '1000',
+        name: 'Main Bank Account',
+        type: 'asset',
+        is_header: false,
+        fs_placement: 'Current Assets',
+        sensitivity_tier: 'T1',
+        account_owner_id: 'emp-2',
+      },
+    ]);
+    prisma.reportCertification.findMany.mockResolvedValue([
+      {
+        id: 'cert-bs-1',
+        company_id: 'company-1',
+        period_id: 'period-1',
+        report_type: 'bs',
+        status: 'pending_secondary_signoff',
+        certified_at: new Date('2026-04-04T08:00:00Z'),
+        signoff_required: 2,
+        certified_by: 'user-1',
+        secondary_certified_by: null,
+        secondary_certified_at: null,
+        certifier: { id: 'user-1', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+        secondary_certifier: null,
+        audits: [],
+      },
+    ]);
+    prisma.gLAccount.findFirst.mockResolvedValue(null);
+    prisma.journalEntry.findFirst.mockResolvedValue(null);
+
+    await expect(service.closePeriod('company-1', 2026, 4, 'user-1')).rejects.toThrow(
+      'Required report certifications must be complete before closing the period',
     );
   });
 

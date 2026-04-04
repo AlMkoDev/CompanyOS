@@ -604,6 +604,14 @@ export class AccountingService {
     return required > 1 ? 'Dual signoff required' : 'Single signoff';
   }
 
+  private getRequiredPeriodReportTypes(year: number, month: number) {
+    const coreTypes = ['pnl', 'bs'];
+    if (month === 12) {
+      return [...coreTypes, 'tb'];
+    }
+    return coreTypes;
+  }
+
   private getPeriodDateRange(year: number, month: number) {
     return {
       start: new Date(year, month - 1, 1),
@@ -746,6 +754,85 @@ export class AccountingService {
     }
 
     return effectiveCertification;
+  }
+
+  private async getPeriodReportingCertificationSummary(companyId: string, year: number, month: number) {
+    const requiredReportTypes = this.getRequiredPeriodReportTypes(year, month);
+    const period = await this.getCompanyAccountingPeriod(companyId, year, month);
+
+    const certifications = period
+      ? await this.prisma.reportCertification.findMany({
+          where: {
+            company_id: companyId,
+            period_id: period.id,
+            report_type: { in: requiredReportTypes },
+          },
+          include: {
+            certifier: {
+              select: { id: true, first_name: true, last_name: true, email: true },
+            },
+            secondary_certifier: {
+              select: { id: true, first_name: true, last_name: true, email: true },
+            },
+            audits: {
+              orderBy: { created_at: 'desc' },
+              take: 10,
+              include: {
+                actor: {
+                  select: { id: true, first_name: true, last_name: true, email: true },
+                },
+              },
+            },
+          },
+        })
+      : [];
+
+    const effectiveByType = new Map<string, any>();
+    for (const certification of certifications) {
+      const effective = await this.attachEffectiveCertificationState(companyId, year, month, certification);
+      effectiveByType.set(certification.report_type, effective);
+    }
+
+    const requiredPacks = requiredReportTypes.map((reportType) => {
+      const certification = effectiveByType.get(reportType) ?? null;
+      const signoffRequired = this.requiresDualSignoff(year, month, reportType) ? 2 : 1;
+      const effectiveStatus = certification?.effective_status || certification?.status || 'uncertified';
+      const completed = certification?.signoff_progress?.completed ?? 0;
+
+      return {
+        report_type: reportType,
+        required_signoffs: signoffRequired,
+        completed_signoffs: completed,
+        status: effectiveStatus,
+        certification,
+        blocking:
+          effectiveStatus !== 'certified' ||
+          completed < signoffRequired,
+      };
+    });
+
+    const blockingPacks = requiredPacks.filter((pack) => pack.blocking);
+
+    return {
+      period: period || { year, month, status: 'open' },
+      required_count: requiredPacks.length,
+      certified_count: requiredPacks.filter((pack) => pack.status === 'certified' && !pack.blocking).length,
+      blocking_count: blockingPacks.length,
+      can_close_reporting: blockingPacks.length === 0,
+      packs: requiredPacks,
+      messages:
+        blockingPacks.length === 0
+          ? ['Required report certifications are complete for this period.']
+          : blockingPacks.map((pack) => {
+              if (pack.status === 'pending_secondary_signoff') {
+                return `${pack.report_type.toUpperCase()} requires secondary signoff before period close.`;
+              }
+              if (pack.status === 'stale') {
+                return `${pack.report_type.toUpperCase()} certification is stale and must be refreshed before period close.`;
+              }
+              return `${pack.report_type.toUpperCase()} is not fully certified for this period.`;
+            }),
+    };
   }
 
   private async recordReportCertificationAudit(params: {
@@ -1228,7 +1315,7 @@ export class AccountingService {
           },
         };
 
-    const [draftEntries, postedEntries, reversedEntries, bankStatements] = await Promise.all([
+    const [draftEntries, postedEntries, reversedEntries, bankStatements, reportingCertification] = await Promise.all([
       this.prisma.journalEntry.count({
         where: {
           company_id: companyId,
@@ -1259,7 +1346,13 @@ export class AccountingService {
           },
         },
       }),
+      this.getPeriodReportingCertificationSummary(companyId, year, month),
     ]);
+
+    const blockers = [
+      ...(draftEntries > 0 ? ['Draft journal entries remain open for this period.'] : []),
+      ...(reportingCertification.can_close_reporting ? [] : reportingCertification.messages),
+    ];
 
     return {
       period: period || { year, month, status: 'open' },
@@ -1267,8 +1360,9 @@ export class AccountingService {
       postedEntries,
       reversedEntries,
       bankStatements,
-      can_close: draftEntries === 0,
-      blockers: draftEntries > 0 ? ['Draft journal entries remain open for this period.'] : [],
+      can_close: draftEntries === 0 && reportingCertification.can_close_reporting,
+      blockers,
+      reporting_certification: reportingCertification,
     };
   }
 
@@ -1719,6 +1813,9 @@ export class AccountingService {
     }
     if (readiness.draftEntries > 0) {
       throw new BadRequestException('Draft journal entries must be resolved before closing the period');
+    }
+    if (!readiness.reporting_certification?.can_close_reporting) {
+      throw new BadRequestException('Required report certifications must be complete before closing the period');
     }
 
     return this.prisma.accountingPeriod.upsert({
