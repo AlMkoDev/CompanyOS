@@ -47,6 +47,7 @@ interface AccountingPeriod {
 interface ReportCertificationPack {
   report_type: string;
   status: string;
+  blocking?: boolean;
   signoff_progress: {
     completed: number;
     required: number;
@@ -59,6 +60,7 @@ interface CloseReadinessData {
   posted_journals: number;
   reversed_journals: number;
   bank_statement_count: number;
+  blockers?: string[];
   reporting_certification?: {
     required_count: number;
     certified_count: number;
@@ -204,6 +206,63 @@ export default function AccountingDashboardPage() {
       blockerText: 'Required report packs are certified',
     };
   }, [closeReadiness, latestOpenPeriod]);
+
+  const dashboardBlockers = React.useMemo(() => {
+    const blockers: Array<{
+      key: string;
+      title: string;
+      detail: string;
+      tone: string;
+    }> = [];
+
+    if (!closeReadiness || !latestOpenPeriod) return blockers;
+
+    if (closeReadiness.draft_journals > 0) {
+      blockers.push({
+        key: 'journals',
+        title: 'Journal readiness',
+        detail: `${closeReadiness.draft_journals} draft journal${closeReadiness.draft_journals === 1 ? '' : 's'} remain open for ${formatPeriodLabel(latestOpenPeriod.year, latestOpenPeriod.month)}.`,
+        tone: 'bg-rose-50 text-rose-700 border-rose-100',
+      });
+    }
+
+    if ((closeReadiness.reporting_certification?.blocking_count ?? 0) > 0) {
+      const packs = closeReadiness.reporting_certification?.packs ?? [];
+      const staleCount = packs.filter((pack) => pack.status === 'stale').length;
+      const pendingSecondCount = packs.filter((pack) => pack.status === 'pending_secondary_signoff').length;
+      const uncertifiedCount = packs.filter((pack) => pack.status === 'uncertified').length;
+
+      blockers.push({
+        key: 'signoff',
+        title: 'Report signoff',
+        detail:
+          staleCount > 0
+            ? `${staleCount} report pack${staleCount === 1 ? '' : 's'} ha${staleCount === 1 ? 's' : 've'} stale certification.`
+            : pendingSecondCount > 0
+              ? `${pendingSecondCount} report pack${pendingSecondCount === 1 ? '' : 's'} still need secondary signoff.`
+              : `${uncertifiedCount || closeReadiness.reporting_certification?.blocking_count} report pack${(uncertifiedCount || closeReadiness.reporting_certification?.blocking_count) === 1 ? '' : 's'} are not yet certified.`,
+        tone: 'bg-amber-50 text-amber-700 border-amber-100',
+      });
+    }
+
+    if (ownershipReadiness.restrictedNoOwnerCount > 0) {
+      blockers.push({
+        key: 'restricted-owner',
+        title: 'Restricted-account ownership',
+        detail: `${ownershipReadiness.restrictedNoOwnerCount} restricted account${ownershipReadiness.restrictedNoOwnerCount === 1 ? '' : 's'} still have no owner assigned.`,
+        tone: 'bg-rose-50 text-rose-700 border-rose-100',
+      });
+    } else if (ownershipReadiness.noOwnerCount > 0) {
+      blockers.push({
+        key: 'owner',
+        title: 'Owner accountability',
+        detail: `${ownershipReadiness.noOwnerCount} posting account${ownershipReadiness.noOwnerCount === 1 ? '' : 's'} still need owner assignment.`,
+        tone: 'bg-sky-50 text-sky-700 border-sky-100',
+      });
+    }
+
+    return blockers;
+  }, [closeReadiness, latestOpenPeriod, ownershipReadiness]);
 
   React.useEffect(() => {
     const fetchAccountingData = async () => {
@@ -460,6 +519,76 @@ export default function AccountingDashboardPage() {
         </Link>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_0.7fr] gap-6">
+        <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Latest period governance</div>
+              <h3 className="mt-2 text-xl font-heading text-brand-navy">Close blockers by control type</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                {currentPeriod
+                  ? `${formatPeriodLabel(currentPeriod.year, currentPeriod.month)} is currently ${signoffPosture.label === 'Blocked' ? 'blocked' : 'progressing'} through close discipline.`
+                  : 'No active close cycle is available right now.'}
+              </p>
+            </div>
+            <span className={`shrink-0 text-[10px] font-black uppercase tracking-[0.2em] px-3 py-1 rounded-full ${signoffPosture.chipClass}`}>
+              {signoffPosture.label}
+            </span>
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            {dashboardBlockers.length > 0 ? dashboardBlockers.map((blocker) => (
+              <div key={blocker.key} className={`rounded-2xl border px-4 py-4 ${blocker.tone}`}>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em]">{blocker.title}</div>
+                <div className="mt-2 text-sm font-medium">{blocker.detail}</div>
+              </div>
+            )) : (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-emerald-700">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em]">Ready for signoff</div>
+                <div className="mt-2 text-sm font-medium">
+                  The latest open period currently has no named close blockers across journals, reporting certification, or ownership posture.
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Required report packs</div>
+          <h3 className="mt-2 text-xl font-heading text-brand-navy">Certification snapshot</h3>
+          <div className="mt-4 space-y-3">
+            {(closeReadiness?.reporting_certification?.packs ?? []).length > 0 ? (
+              closeReadiness?.reporting_certification?.packs.map((pack) => (
+                <div key={pack.report_type} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-brand-navy">{getReportLabel(pack.report_type)}</div>
+                      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{pack.report_type.toUpperCase()}</div>
+                    </div>
+                    <span className={`text-[10px] font-black uppercase tracking-[0.16em] px-2 py-1 rounded-full ${getPackStatusClass(pack.status)}`}>
+                      {formatPackStatus(pack.status)}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-sm text-slate-600">
+                    {pack.signoff_progress.completed} of {pack.signoff_progress.required} signoffs complete
+                  </div>
+                  <Link
+                    href={getDashboardReportHref(pack.report_type, currentPeriod)}
+                    className="mt-4 inline-flex items-center text-xs font-bold uppercase tracking-[0.16em] text-brand-gold hover:underline"
+                  >
+                    Open report workspace →
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                Report-pack certification detail will appear here once an open period is available.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard 
@@ -591,6 +720,69 @@ function formatPeriodLabel(year: number, month: number) {
     month: 'long',
     year: 'numeric',
   });
+}
+
+function formatPackStatus(status: string) {
+  switch (status) {
+    case 'pending_secondary_signoff':
+      return 'Awaiting second signoff';
+    case 'stale':
+      return 'Stale';
+    case 'certified':
+      return 'Certified';
+    default:
+      return 'Uncertified';
+  }
+}
+
+function getPackStatusClass(status: string) {
+  switch (status) {
+    case 'certified':
+      return 'bg-emerald-50 text-emerald-600';
+    case 'pending_secondary_signoff':
+      return 'bg-amber-50 text-amber-600';
+    case 'stale':
+      return 'bg-rose-50 text-rose-600';
+    default:
+      return 'bg-slate-100 text-slate-500';
+  }
+}
+
+function getReportLabel(reportType: string) {
+  switch (reportType) {
+    case 'pnl':
+      return 'Profit & Loss';
+    case 'bs':
+      return 'Balance Sheet';
+    case 'tb':
+      return 'Trial Balance';
+    default:
+      return reportType.toUpperCase();
+  }
+}
+
+function getDashboardReportHref(reportType: string, period: AccountingPeriod | null) {
+  if (!period) return '/accounting/reports';
+
+  const year = period.year;
+  const month = period.month;
+  const periodEnd = new Date(year, month, 0);
+  const toDate = periodEnd.toISOString().slice(0, 10);
+
+  if (reportType === 'pnl') {
+    const fromDate = new Date(year, month - 1, 1).toISOString().slice(0, 10);
+    return `/accounting/reports?type=pnl&fromDate=${fromDate}&toDate=${toDate}`;
+  }
+
+  if (reportType === 'bs') {
+    return `/accounting/reports?type=bs&toDate=${toDate}`;
+  }
+
+  if (reportType === 'tb') {
+    return `/accounting/reports?type=tb&toDate=${toDate}`;
+  }
+
+  return '/accounting/reports';
 }
 
 const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
