@@ -573,6 +573,8 @@ export default function ChartOfAccountsPage() {
   const [auditLoading, setAuditLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [backlogFilter, setBacklogFilter] = React.useState<"all" | "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle">("all");
+  const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
   const [form, setForm] = React.useState<AccountFormState>(DEFAULT_FORM);
@@ -988,6 +990,26 @@ export default function ChartOfAccountsPage() {
     ];
   }, [changeRequests, lifecycleQueue, ownerAccountability, reportingReadiness]);
 
+  const visibleBacklogGroups = React.useMemo(() => {
+    if (backlogFilter === "all") return remediationBacklog;
+    return remediationBacklog.filter((group) => group.key === backlogFilter);
+  }, [backlogFilter, remediationBacklog]);
+
+  const backlogSummary = React.useMemo(() => {
+    const totalOpen = remediationBacklog.reduce((sum, group) => sum + group.count, 0);
+    const criticalOpen = remediationBacklog
+      .filter((group) => group.tone === "rose")
+      .reduce((sum, group) => sum + group.count, 0);
+    const activeGroups = remediationBacklog.filter((group) => group.count > 0).length;
+
+    return {
+      totalOpen,
+      criticalOpen,
+      activeGroups,
+      resolvedEstimate: Math.max(0, accounts.length - totalOpen),
+    };
+  }, [accounts.length, remediationBacklog]);
+
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
     setEditing(null);
@@ -1022,6 +1044,7 @@ export default function ChartOfAccountsPage() {
     }));
     setMessage(null);
     setError(null);
+    setBacklogActionFeedback(`Opened ${account.code} · ${account.name} for direct remediation.`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -1034,6 +1057,7 @@ export default function ChartOfAccountsPage() {
     });
     setMessage(null);
     setError(null);
+    setBacklogActionFeedback(`Drafted a ${requestType} request for ${account.code} · ${account.name}.`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
@@ -1566,8 +1590,45 @@ export default function ChartOfAccountsPage() {
                 Work through ownership, mapping, and lifecycle issues by category instead of only following one recommendation at a time.
               </div>
 
+              <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+                <MetricCard icon={<AlertCircle size={18} />} label="Open backlog" value={String(backlogSummary.totalOpen)} />
+                <MetricCard icon={<ShieldCheck size={18} />} label="Critical issues" value={String(backlogSummary.criticalOpen)} />
+                <MetricCard icon={<Layers3 size={18} />} label="Active groups" value={String(backlogSummary.activeGroups)} />
+                <MetricCard icon={<BookOpen size={18} />} label="Resolved posture" value={String(backlogSummary.resolvedEstimate)} />
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: "All" },
+                  { value: "restricted-owner", label: "Ownership" },
+                  { value: "invalid-mapping", label: "Invalid mapping" },
+                  { value: "unmapped", label: "Unmapped" },
+                  { value: "lifecycle", label: "Lifecycle" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setBacklogFilter(option.value as typeof backlogFilter)}
+                    className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.16em] transition ${
+                      backlogFilter === option.value
+                        ? "border-brand-navy bg-brand-navy text-white"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              {backlogActionFeedback ? (
+                <div className="mt-5 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+                  <div className="font-semibold">Action launched</div>
+                  <div className="mt-1">{backlogActionFeedback}</div>
+                </div>
+              ) : null}
+
               <div className="mt-5 grid grid-cols-1 gap-4 2xl:grid-cols-2">
-                {remediationBacklog.map((group) => (
+                {visibleBacklogGroups.map((group) => (
                   <div key={group.key} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-semibold text-brand-navy">{group.label}</div>
