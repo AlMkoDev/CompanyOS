@@ -44,6 +44,31 @@ interface AccountingPeriod {
   status: string;
 }
 
+interface ReportCertificationPack {
+  report_type: string;
+  status: string;
+  signoff_progress: {
+    completed: number;
+    required: number;
+  };
+}
+
+interface CloseReadinessData {
+  can_close: boolean;
+  draft_journals: number;
+  posted_journals: number;
+  reversed_journals: number;
+  bank_statement_count: number;
+  reporting_certification?: {
+    required_pack_count: number;
+    certified_pack_count: number;
+    blocking_pack_count: number;
+    summary_status: 'ready' | 'blocked';
+    messages: string[];
+    packs: ReportCertificationPack[];
+  };
+}
+
 interface BankStatementSummary {
   id: string;
   statement_date: string;
@@ -58,6 +83,8 @@ interface GLAccount {
   type: AccountType;
   fs_placement?: string | null;
   is_header?: boolean;
+  sensitivity_tier?: string | null;
+  account_owner_id?: string | null;
 }
 
 interface StatCardProps {
@@ -82,6 +109,8 @@ export default function AccountingDashboardPage() {
   const [periods, setPeriods] = React.useState<AccountingPeriod[]>([]);
   const [statements, setStatements] = React.useState<BankStatementSummary[]>([]);
   const [accounts, setAccounts] = React.useState<GLAccount[]>([]);
+  const [closeReadiness, setCloseReadiness] = React.useState<CloseReadinessData | null>(null);
+  const [currentPeriod, setCurrentPeriod] = React.useState<AccountingPeriod | null>(null);
   const totalDebit = tb.reduce((sum, row) => sum + Number(row.debit || 0), 0);
   const totalCredit = tb.reduce((sum, row) => sum + Number(row.credit || 0), 0);
   const netDifference = Math.abs(totalDebit - totalCredit);
@@ -110,6 +139,71 @@ export default function AccountingDashboardPage() {
             : `${blockers} gaps`,
     };
   }, [accounts]);
+
+  const ownershipReadiness = React.useMemo(() => {
+    const postingAccounts = accounts.filter((account) => !account.is_header);
+    const noOwnerCount = postingAccounts.filter((account) => !account.account_owner_id).length;
+    const restrictedNoOwnerCount = postingAccounts.filter((account) =>
+      !account.account_owner_id && ['T1', 'T2'].includes((account.sensitivity_tier || '').toUpperCase()),
+    ).length;
+
+    return {
+      noOwnerCount,
+      restrictedNoOwnerCount,
+    };
+  }, [accounts]);
+
+  const latestOpenPeriod = React.useMemo(() => {
+    const openPeriods = periods.filter((period) => period.status !== 'closed');
+    if (!openPeriods.length) return null;
+    return [...openPeriods].sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      return b.month - a.month;
+    })[0];
+  }, [periods]);
+
+  const signoffPosture = React.useMemo(() => {
+    if (!latestOpenPeriod) {
+      return {
+        label: 'No open period',
+        tone: 'text-slate-500',
+        chipClass: 'bg-slate-100 text-slate-500',
+        detail: 'No active close cycle',
+        blockerText: 'No reporting signoff required',
+      };
+    }
+
+    const reporting = closeReadiness?.reporting_certification;
+    if (!reporting) {
+      return {
+        label: 'Loading',
+        tone: 'text-slate-500',
+        chipClass: 'bg-slate-100 text-slate-500',
+        detail: formatPeriodLabel(latestOpenPeriod.year, latestOpenPeriod.month),
+        blockerText: 'Checking reporting posture',
+      };
+    }
+
+    if (reporting.blocking_pack_count > 0 || !closeReadiness?.can_close) {
+      return {
+        label: 'Blocked',
+        tone: 'text-rose-600',
+        chipClass: 'bg-rose-50 text-rose-600',
+        detail: formatPeriodLabel(latestOpenPeriod.year, latestOpenPeriod.month),
+        blockerText:
+          reporting.messages[0] ||
+          `${reporting.blocking_pack_count} report pack${reporting.blocking_pack_count === 1 ? '' : 's'} still need attention`,
+      };
+    }
+
+    return {
+      label: 'Ready',
+      tone: 'text-emerald-600',
+      chipClass: 'bg-emerald-50 text-emerald-600',
+      detail: formatPeriodLabel(latestOpenPeriod.year, latestOpenPeriod.month),
+      blockerText: 'Required report packs are certified',
+    };
+  }, [closeReadiness, latestOpenPeriod]);
 
   React.useEffect(() => {
     const fetchAccountingData = async () => {
@@ -149,6 +243,32 @@ export default function AccountingDashboardPage() {
     if (isAuthenticated) fetchAccountingData();
   }, [isAuthenticated]);
 
+  React.useEffect(() => {
+    const fetchCloseReadiness = async () => {
+      if (!isAuthenticated || !latestOpenPeriod) {
+        setCloseReadiness(null);
+        setCurrentPeriod(latestOpenPeriod);
+        return;
+      }
+
+      setCurrentPeriod(latestOpenPeriod);
+
+      try {
+        const response = await apiFetch(
+          `/accounting/periods/close-readiness?year=${latestOpenPeriod.year}&month=${latestOpenPeriod.month}`,
+        );
+
+        if (response.ok) {
+          setCloseReadiness(await response.json());
+        }
+      } catch (err) {
+        console.error('Failed to fetch close readiness:', err);
+      }
+    };
+
+    fetchCloseReadiness();
+  }, [isAuthenticated, latestOpenPeriod]);
+
   return (
     <div className="p-6 md:p-10 flex flex-col gap-8">
       {/* Header */}
@@ -169,7 +289,7 @@ export default function AccountingDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-6">
         <StatCard 
           label="Ledger Accounts"
           value={`${tb.length}`}
@@ -218,6 +338,13 @@ export default function AccountingDashboardPage() {
           change={reportingReadiness.statusLabel}
           isPositive={reportingReadiness.blockers === 0}
           icon={<FileText className="text-brand-gold" />} 
+        />
+        <StatCard
+          label="Period Signoff"
+          value={closeReadiness?.reporting_certification ? `${closeReadiness.reporting_certification.certified_pack_count}/${closeReadiness.reporting_certification.required_pack_count}` : '--'}
+          change={signoffPosture.label}
+          isPositive={signoffPosture.label === 'Ready'}
+          icon={<Lock className="text-brand-gold" />}
         />
       </div>
 
@@ -277,6 +404,40 @@ export default function AccountingDashboardPage() {
             <DashboardMiniMetric label="Mapped" value={`${reportingReadiness.mappedCount}`} />
             <DashboardMiniMetric label="Unmapped" value={`${reportingReadiness.unmappedCount}`} />
             <DashboardMiniMetric label="Invalid" value={`${reportingReadiness.invalidCount}`} />
+          </div>
+        </Link>
+
+        <Link href={signoffPosture.label === 'Blocked' ? '/accounting/close' : '/accounting/reports'} className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><Lock className="text-brand-gold" /></div>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-full ${signoffPosture.chipClass}`}>
+              {signoffPosture.label}
+            </span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Reporting Signoff</h3>
+          <p className="text-sm text-slate-500">
+            Track whether the latest open period can support certifiable reporting and formal close.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+            <DashboardMiniMetric
+              label="Period"
+              value={currentPeriod ? `${currentPeriod.month}/${currentPeriod.year}` : '--'}
+            />
+            <DashboardMiniMetric
+              label="Blocking Packs"
+              value={`${closeReadiness?.reporting_certification?.blocking_pack_count ?? 0}`}
+            />
+            <DashboardMiniMetric
+              label="No Owner"
+              value={`${ownershipReadiness.noOwnerCount}`}
+            />
+            <DashboardMiniMetric
+              label="Restricted"
+              value={`${ownershipReadiness.restrictedNoOwnerCount}`}
+            />
+          </div>
+          <div className={`mt-4 text-sm font-medium ${signoffPosture.tone}`}>
+            {signoffPosture.blockerText}
           </div>
         </Link>
 
@@ -372,10 +533,17 @@ export default function AccountingDashboardPage() {
           <div className="bg-white rounded-3xl border border-slate-100 p-8 shadow-sm">
             <h3 className="text-lg font-heading mb-6 text-brand-navy">Month-End Close</h3>
             <div className="p-4 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-              <p className="text-xs text-slate-500 mb-4">The previous period (February 2026) is open for adjustments.</p>
-              <button className="w-full py-3 bg-brand-navy text-white rounded-xl text-xs font-bold hover:bg-brand-navy/90 transition-all shadow-md">
-                Lock Period & Close
-              </button>
+              <p className="text-xs text-slate-500 mb-4">
+                {currentPeriod
+                  ? `${formatPeriodLabel(currentPeriod.year, currentPeriod.month)} is the latest open period. ${signoffPosture.blockerText}.`
+                  : 'No open period is currently available for close review.'}
+              </p>
+              <Link
+                href="/accounting/close"
+                className="block w-full py-3 bg-brand-navy text-white rounded-xl text-xs font-bold hover:bg-brand-navy/90 transition-all shadow-md text-center"
+              >
+                {signoffPosture.label === 'Blocked' ? 'Resolve Close Blockers' : 'Review Period Close'}
+              </Link>
             </div>
           </div>
         </div>
@@ -416,6 +584,13 @@ function DashboardMiniMetric({ label, value }: { label: string; value: string })
       <div className="mt-1 text-lg font-heading text-brand-navy">{value}</div>
     </div>
   );
+}
+
+function formatPeriodLabel(year: number, month: number) {
+  return new Date(year, month - 1, 1).toLocaleDateString('en-ZA', {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 const FS_ALLOWED_BY_TYPE: Record<AccountType, string[]> = {
