@@ -782,8 +782,122 @@ export default function ChartOfAccountsPage() {
       restrictedWithoutOwnerCount: restrictedWithoutOwner.length,
       unassignedAccounts: unassigned.slice(0, 5),
       cadenceBuckets,
+      };
+    }, [accounts]);
+
+  const recommendedRemediation = React.useMemo(() => {
+    const firstRestrictedNoOwner = ownerAccountability.unassignedAccounts.find((account) =>
+      ["T1", "T2"].includes(account.sensitivity_tier ?? ""),
+    );
+    if (firstRestrictedNoOwner) {
+      return {
+        title: `Assign owner to ${firstRestrictedNoOwner.code} · ${firstRestrictedNoOwner.name}`,
+        detail: "Restricted accounts without named owners are the most material accountability gap in the chart.",
+        tone: "bg-rose-50 text-rose-700 border-rose-100",
+        primaryAction: {
+          label: "Open account for ownership review",
+          mode: "edit" as const,
+          account: firstRestrictedNoOwner,
+        },
+        secondaryActions: [
+          "Review all T1 and T2 accounts for ownership coverage",
+          "Confirm cadence accountability after owner assignment",
+        ],
+      };
+    }
+
+    if (reportingReadiness.invalidAccounts.length > 0) {
+      const account = reportingReadiness.invalidAccounts[0];
+      return {
+        title: `Correct statement mapping on ${account.code} · ${account.name}`,
+        detail: `${account.fs_placement} is not valid for ${account.type} accounts and weakens COA-driven reporting.`,
+        tone: "bg-rose-50 text-rose-700 border-rose-100",
+        primaryAction: {
+          label: "Open account for mapping correction",
+          mode: "edit" as const,
+          account,
+        },
+        secondaryActions: [
+          "Review the invalid placement list below",
+          "Refresh report readiness after the mapping fix",
+        ],
+      };
+    }
+
+    if (reportingReadiness.unmappedAccounts.length > 0) {
+      const account = reportingReadiness.unmappedAccounts[0];
+      return {
+        title: `Map ${account.code} · ${account.name} to a statement family`,
+        detail: "Posting accounts without an FS placement remain visible blockers for reporting readiness.",
+        tone: "bg-amber-50 text-amber-700 border-amber-100",
+        primaryAction: {
+          label: "Open account for FS mapping",
+          mode: "edit" as const,
+          account,
+        },
+        secondaryActions: [
+          "Work through remaining unmapped posting accounts",
+          "Recheck the reporting posture section afterward",
+        ],
+      };
+    }
+
+    const firstLifecyclePriority = lifecycleQueue[0];
+    if (firstLifecyclePriority) {
+      const { account } = firstLifecyclePriority;
+      const requestType = account.is_active
+        ? account.sunset_candidate
+          ? "restore"
+          : "sunset"
+        : "reactivate";
+      const title = account.is_active
+        ? account.sunset_candidate
+          ? `Restore ${account.code} · ${account.name}`
+          : `Mark sunset ${account.code} · ${account.name}`
+        : `Reactivate ${account.code} · ${account.name}`;
+
+      return {
+        title: `${account.code} · ${account.name} needs lifecycle review`,
+        detail: firstLifecyclePriority.lifecycle.recommendation,
+        tone:
+          firstLifecyclePriority.lifecycle.tone === "rose"
+            ? "bg-rose-50 text-rose-700 border-rose-100"
+            : firstLifecyclePriority.lifecycle.tone === "amber"
+              ? "bg-amber-50 text-amber-700 border-amber-100"
+              : "bg-emerald-50 text-emerald-700 border-emerald-100",
+        primaryAction: {
+          label: account.is_active
+            ? account.sunset_candidate
+              ? "Draft restore request"
+              : "Draft sunset request"
+            : "Draft reactivation request",
+          mode: "request" as const,
+          account,
+          requestType,
+          requestTitle: title,
+        },
+        secondaryActions: [
+          "Review the dormant and sunset queue beneath this panel",
+          "Confirm whether a governance request is already pending",
+        ],
+      };
+    }
+
+    return {
+      title: "COA posture is healthy",
+      detail: "The chart currently has no high-priority ownership, mapping, or lifecycle remediation actions waiting.",
+      tone: "bg-emerald-50 text-emerald-700 border-emerald-100",
+      primaryAction: {
+        label: "Review governance queue",
+        mode: "link" as const,
+        href: "#governance-queue",
+      },
+      secondaryActions: [
+        "Spot-check recent account change requests",
+        "Review close and reporting posture from Accounting",
+      ],
     };
-  }, [accounts]);
+  }, [lifecycleQueue, ownerAccountability, reportingReadiness]);
 
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
@@ -1291,10 +1405,66 @@ export default function ChartOfAccountsPage() {
                 </ul>
               </div>
             </section>
+
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Recommended next action</div>
+                  <h3 className="mt-2 text-2xl font-heading text-brand-navy">{recommendedRemediation.title}</h3>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-500">{recommendedRemediation.detail}</p>
+                </div>
+                {recommendedRemediation.primaryAction.mode === "link" ? (
+                  <Link
+                    href={recommendedRemediation.primaryAction.href}
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-brand-navy/90"
+                  >
+                    {recommendedRemediation.primaryAction.label}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (recommendedRemediation.primaryAction.mode === "edit" && recommendedRemediation.primaryAction.account) {
+                        startEdit(recommendedRemediation.primaryAction.account);
+                      }
+                      if (
+                        recommendedRemediation.primaryAction.mode === "request" &&
+                        recommendedRemediation.primaryAction.account &&
+                        recommendedRemediation.primaryAction.requestType &&
+                        recommendedRemediation.primaryAction.requestTitle
+                      ) {
+                        startChangeRequest(
+                          recommendedRemediation.primaryAction.account,
+                          recommendedRemediation.primaryAction.requestType,
+                          recommendedRemediation.primaryAction.requestTitle,
+                        );
+                      }
+                    }}
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-5 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-brand-navy/90"
+                  >
+                    {recommendedRemediation.primaryAction.label}
+                  </button>
+                )}
+              </div>
+
+              <div className={`mt-5 rounded-[24px] border px-4 py-4 ${recommendedRemediation.tone}`}>
+                <div className="text-[10px] font-black uppercase tracking-[0.18em]">Then</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recommendedRemediation.secondaryActions.map((action) => (
+                    <span
+                      key={action}
+                      className="rounded-full border border-current/15 px-3 py-1 text-xs font-semibold"
+                    >
+                      {action}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </section>
           </div>
 
           <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.15fr_0.85fr]">
-            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+            <section id="governance-queue" className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Governance queue</div>
