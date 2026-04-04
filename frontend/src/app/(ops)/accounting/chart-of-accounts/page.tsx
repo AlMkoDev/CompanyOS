@@ -351,6 +351,65 @@ function getPendingLifecycleRequest(accountId: string, changeRequests: AccountCh
   );
 }
 
+function getPendingRequestForAccount(accountId: string, changeRequests: AccountChangeRequest[]) {
+  return changeRequests.find(
+    (request) => request.status === "pending" && request.account?.id === accountId,
+  );
+}
+
+function getIssueAgeMeta(
+  account: GLAccount,
+  category: "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle",
+  changeRequests: AccountChangeRequest[],
+) {
+  const pendingRequest = getPendingRequestForAccount(account.id, changeRequests);
+  const pendingRequestDate = pendingRequest?.created_at ? new Date(pendingRequest.created_at) : null;
+  const dormantDate = account.dormant_since ? new Date(account.dormant_since) : null;
+
+  const dateSource =
+    pendingRequestDate && !Number.isNaN(pendingRequestDate.getTime())
+      ? pendingRequestDate
+      : dormantDate && !Number.isNaN(dormantDate.getTime())
+        ? dormantDate
+        : null;
+
+  if (!dateSource) {
+    return {
+      label: "Current posture",
+      tone: "slate" as const,
+      detail:
+        category === "lifecycle"
+          ? "This lifecycle issue is visible in the current chart posture."
+          : "This issue is visible in the current chart posture.",
+      ageDays: null as number | null,
+    };
+  }
+
+  const ageDays = Math.max(0, Math.floor((Date.now() - dateSource.getTime()) / (1000 * 60 * 60 * 24)));
+  if (ageDays <= 7) {
+    return {
+      label: "New",
+      tone: "emerald" as const,
+      detail: `${ageDays} day${ageDays === 1 ? "" : "s"} in queue`,
+      ageDays,
+    };
+  }
+  if (ageDays <= 30) {
+    return {
+      label: "Aging",
+      tone: "amber" as const,
+      detail: `${ageDays} day${ageDays === 1 ? "" : "s"} unresolved`,
+      ageDays,
+    };
+  }
+  return {
+    label: "Long-standing",
+    tone: "rose" as const,
+    detail: `${ageDays} day${ageDays === 1 ? "" : "s"} unresolved`,
+    ageDays,
+  };
+}
+
 function getLifecycleState(account: GLAccount, changeRequests: AccountChangeRequest[]) {
   const pendingRequest = getPendingLifecycleRequest(account.id, changeRequests);
   const dormantDays = getDormancyAgeDays(account.dormant_since);
@@ -909,6 +968,7 @@ export default function ChartOfAccountsPage() {
         id: `restricted-owner-${account.id}`,
         title: `${account.code} · ${account.name}`,
         detail: `${account.sensitivity_tier || "T3"} account has no assigned owner.`,
+        ageMeta: getIssueAgeMeta(account, "restricted-owner", changeRequests),
         actionLabel: "Open for ownership review",
         onAction: () => startEdit(account),
       }));
@@ -917,6 +977,7 @@ export default function ChartOfAccountsPage() {
       id: `invalid-mapping-${account.id}`,
       title: `${account.code} · ${account.name}`,
       detail: `${account.fs_placement} is not valid for ${account.type} accounts.`,
+      ageMeta: getIssueAgeMeta(account, "invalid-mapping", changeRequests),
       actionLabel: "Correct mapping",
       onAction: () => startEdit(account),
     }));
@@ -925,6 +986,7 @@ export default function ChartOfAccountsPage() {
       id: `unmapped-${account.id}`,
       title: `${account.code} · ${account.name}`,
       detail: "Posting account is still missing a statement placement.",
+      ageMeta: getIssueAgeMeta(account, "unmapped", changeRequests),
       actionLabel: "Add FS placement",
       onAction: () => startEdit(account),
     }));
@@ -945,6 +1007,7 @@ export default function ChartOfAccountsPage() {
         id: `lifecycle-${account.id}`,
         title: `${account.code} · ${account.name}`,
         detail: getLifecycleState(account, changeRequests).recommendation,
+        ageMeta: getIssueAgeMeta(account, "lifecycle", changeRequests),
         actionLabel: account.is_active
           ? account.sunset_candidate
             ? "Draft restore"
@@ -1001,12 +1064,17 @@ export default function ChartOfAccountsPage() {
       .filter((group) => group.tone === "rose")
       .reduce((sum, group) => sum + group.count, 0);
     const activeGroups = remediationBacklog.filter((group) => group.count > 0).length;
+    const surfacedItems = remediationBacklog.flatMap((group) => group.items);
+    const agingCount = surfacedItems.filter((item) => item.ageMeta?.tone === "amber").length;
+    const longStandingCount = surfacedItems.filter((item) => item.ageMeta?.tone === "rose").length;
 
     return {
       totalOpen,
       criticalOpen,
       activeGroups,
       resolvedEstimate: Math.max(0, accounts.length - totalOpen),
+      agingCount,
+      longStandingCount,
     };
   }, [accounts.length, remediationBacklog]);
 
@@ -1594,7 +1662,7 @@ export default function ChartOfAccountsPage() {
                 <MetricCard icon={<AlertCircle size={18} />} label="Open backlog" value={String(backlogSummary.totalOpen)} />
                 <MetricCard icon={<ShieldCheck size={18} />} label="Critical issues" value={String(backlogSummary.criticalOpen)} />
                 <MetricCard icon={<Layers3 size={18} />} label="Active groups" value={String(backlogSummary.activeGroups)} />
-                <MetricCard icon={<BookOpen size={18} />} label="Resolved posture" value={String(backlogSummary.resolvedEstimate)} />
+                <MetricCard icon={<BookOpen size={18} />} label="Long-standing" value={String(backlogSummary.longStandingCount)} />
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
@@ -1640,8 +1708,12 @@ export default function ChartOfAccountsPage() {
                       ) : (
                         group.items.map((item) => (
                           <div key={item.id} className="rounded-2xl bg-white px-3 py-3">
-                            <div className="font-medium text-brand-navy">{item.title}</div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="font-medium text-brand-navy">{item.title}</div>
+                              <StatusPill label={item.ageMeta.label} tone={item.ageMeta.tone} />
+                            </div>
                             <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
+                            <div className="mt-2 text-xs text-slate-400">{item.ageMeta.detail}</div>
                             <button
                               type="button"
                               onClick={item.onAction}
