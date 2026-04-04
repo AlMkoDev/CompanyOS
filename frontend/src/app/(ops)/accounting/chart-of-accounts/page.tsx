@@ -899,6 +899,95 @@ export default function ChartOfAccountsPage() {
     };
   }, [lifecycleQueue, ownerAccountability, reportingReadiness]);
 
+  const remediationBacklog = React.useMemo(() => {
+    const restrictedOwnerItems = ownerAccountability.unassignedAccounts
+      .filter((account) => ["T1", "T2"].includes(account.sensitivity_tier ?? ""))
+      .slice(0, 4)
+      .map((account) => ({
+        id: `restricted-owner-${account.id}`,
+        title: `${account.code} · ${account.name}`,
+        detail: `${account.sensitivity_tier || "T3"} account has no assigned owner.`,
+        actionLabel: "Open for ownership review",
+        onAction: () => startEdit(account),
+      }));
+
+    const invalidMappingItems = reportingReadiness.invalidAccounts.slice(0, 4).map((account) => ({
+      id: `invalid-mapping-${account.id}`,
+      title: `${account.code} · ${account.name}`,
+      detail: `${account.fs_placement} is not valid for ${account.type} accounts.`,
+      actionLabel: "Correct mapping",
+      onAction: () => startEdit(account),
+    }));
+
+    const unmappedItems = reportingReadiness.unmappedAccounts.slice(0, 4).map((account) => ({
+      id: `unmapped-${account.id}`,
+      title: `${account.code} · ${account.name}`,
+      detail: "Posting account is still missing a statement placement.",
+      actionLabel: "Add FS placement",
+      onAction: () => startEdit(account),
+    }));
+
+    const lifecycleItems = lifecycleQueue.slice(0, 4).map(({ account }) => {
+      const requestType = account.is_active
+        ? account.sunset_candidate
+          ? "restore"
+          : "sunset"
+        : "reactivate";
+      const requestTitle = account.is_active
+        ? account.sunset_candidate
+          ? `Restore ${account.code} · ${account.name}`
+          : `Mark sunset ${account.code} · ${account.name}`
+        : `Reactivate ${account.code} · ${account.name}`;
+
+      return {
+        id: `lifecycle-${account.id}`,
+        title: `${account.code} · ${account.name}`,
+        detail: getLifecycleState(account, changeRequests).recommendation,
+        actionLabel: account.is_active
+          ? account.sunset_candidate
+            ? "Draft restore"
+            : "Draft sunset"
+          : "Draft reactivate",
+        onAction: () => startChangeRequest(account, requestType, requestTitle),
+      };
+    });
+
+    return [
+      {
+        key: "restricted-owner",
+        label: "Restricted ownership",
+        tone: "rose" as const,
+        count: ownerAccountability.restrictedWithoutOwnerCount,
+        emptyState: "No restricted-owner gaps are waiting right now.",
+        items: restrictedOwnerItems,
+      },
+      {
+        key: "invalid-mapping",
+        label: "Invalid mapping",
+        tone: "rose" as const,
+        count: reportingReadiness.invalidCount,
+        emptyState: "No invalid statement placements are currently blocking the chart.",
+        items: invalidMappingItems,
+      },
+      {
+        key: "unmapped",
+        label: "Unmapped posting",
+        tone: "amber" as const,
+        count: reportingReadiness.unmappedCount,
+        emptyState: "All posting accounts currently have a statement family.",
+        items: unmappedItems,
+      },
+      {
+        key: "lifecycle",
+        label: "Lifecycle review",
+        tone: "amber" as const,
+        count: lifecycleQueue.length,
+        emptyState: "No dormant or sunset review actions are waiting right now.",
+        items: lifecycleItems,
+      },
+    ];
+  }, [changeRequests, lifecycleQueue, ownerAccountability, reportingReadiness]);
+
   const resetForm = React.useCallback(() => {
     setForm(DEFAULT_FORM);
     setEditing(null);
@@ -1459,6 +1548,52 @@ export default function ChartOfAccountsPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+            </section>
+
+            <section className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Remediation backlog</div>
+                  <h3 className="mt-2 text-2xl font-heading text-brand-navy">Systematic COA cleanup queue</h3>
+                </div>
+                <StatusPill
+                  label={`${remediationBacklog.reduce((sum, group) => sum + group.count, 0)} open items`}
+                  tone={remediationBacklog.some((group) => group.tone === "rose" && group.count > 0) ? "rose" : "amber"}
+                />
+              </div>
+              <div className="mt-2 text-sm text-slate-500">
+                Work through ownership, mapping, and lifecycle issues by category instead of only following one recommendation at a time.
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                {remediationBacklog.map((group) => (
+                  <div key={group.key} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-brand-navy">{group.label}</div>
+                      <StatusPill label={`${group.count} queued`} tone={group.tone} />
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {group.items.length === 0 ? (
+                        <div className="rounded-2xl bg-white px-3 py-3 text-sm text-slate-500">{group.emptyState}</div>
+                      ) : (
+                        group.items.map((item) => (
+                          <div key={item.id} className="rounded-2xl bg-white px-3 py-3">
+                            <div className="font-medium text-brand-navy">{item.title}</div>
+                            <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
+                            <button
+                              type="button"
+                              onClick={item.onAction}
+                              className="mt-3 inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy transition hover:bg-slate-50"
+                            >
+                              {item.actionLabel}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
           </div>
