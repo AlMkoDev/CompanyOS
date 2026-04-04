@@ -665,6 +665,7 @@ export default function ChartOfAccountsPage() {
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [backlogFilter, setBacklogFilter] = React.useState<"all" | "restricted-owner" | "invalid-mapping" | "unmapped" | "lifecycle">("all");
+  const [backlogStatusFilter, setBacklogStatusFilter] = React.useState<"all" | "open" | "reviewed" | "cleared">("all");
   const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
@@ -1100,9 +1101,26 @@ export default function ChartOfAccountsPage() {
   }, [changeRequests, lifecycleQueue, ownerAccountability, remediationStates, reportingReadiness]);
 
   const visibleBacklogGroups = React.useMemo(() => {
-    if (backlogFilter === "all") return remediationBacklog;
-    return remediationBacklog.filter((group) => group.key === backlogFilter);
-  }, [backlogFilter, remediationBacklog]);
+    const categoryFiltered =
+      backlogFilter === "all"
+        ? remediationBacklog
+        : remediationBacklog.filter((group) => group.key === backlogFilter);
+
+    if (backlogStatusFilter === "all") {
+      return categoryFiltered;
+    }
+
+    return categoryFiltered
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          backlogStatusFilter === "open"
+            ? item.state?.status !== "reviewed"
+            : item.state?.status === "reviewed",
+        ),
+      }))
+      .filter((group) => group.items.length > 0 || group.count > 0);
+  }, [backlogFilter, backlogStatusFilter, remediationBacklog]);
 
   const backlogSummary = React.useMemo(() => {
     const totalOpen = remediationBacklog.reduce((sum, group) => sum + group.count, 0);
@@ -1137,6 +1155,38 @@ export default function ChartOfAccountsPage() {
       .filter((state) => state.status === "cleared" && state.cleared_at)
       .sort((left, right) => new Date(right.cleared_at || 0).getTime() - new Date(left.cleared_at || 0).getTime())
       .slice(0, 4);
+  }, [remediationStates]);
+
+  const remediationTrend = React.useMemo(() => {
+    const now = Date.now();
+    const fourteenDays = 1000 * 60 * 60 * 24 * 14;
+
+    const introduced = remediationStates.filter((state) => {
+      const firstSeen = new Date(state.first_seen_at);
+      return !Number.isNaN(firstSeen.getTime()) && now - firstSeen.getTime() <= fourteenDays;
+    }).length;
+
+    const reviewed = remediationStates.filter((state) => {
+      if (state.status !== "reviewed" || !state.reviewed_at) return false;
+      const reviewedAt = new Date(state.reviewed_at);
+      return !Number.isNaN(reviewedAt.getTime()) && now - reviewedAt.getTime() <= fourteenDays;
+    }).length;
+
+    const cleared = remediationStates.filter((state) => {
+      if (state.status !== "cleared" || !state.cleared_at) return false;
+      const clearedAt = new Date(state.cleared_at);
+      return !Number.isNaN(clearedAt.getTime()) && now - clearedAt.getTime() <= fourteenDays;
+    }).length;
+
+    const oldestOpen = remediationStates
+      .filter((state) => state.status === "open" || state.status === "reviewed")
+      .map((state) => {
+        const firstSeen = new Date(state.first_seen_at);
+        return Number.isNaN(firstSeen.getTime()) ? 0 : Math.floor((now - firstSeen.getTime()) / (1000 * 60 * 60 * 24));
+      })
+      .sort((a, b) => b - a)[0] ?? 0;
+
+    return { introduced, reviewed, cleared, oldestOpen };
   }, [remediationStates]);
 
   const resetForm = React.useCallback(() => {
@@ -1757,6 +1807,22 @@ export default function ChartOfAccountsPage() {
                 <MetricCard icon={<BookOpen size={18} />} label="Long-standing" value={String(backlogSummary.longStandingCount)} />
               </div>
 
+              <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-brand-navy">Backlog trend</div>
+                    <div className="mt-1 text-xs text-slate-500">14-day movement across newly surfaced, acknowledged, and cleared COA issues.</div>
+                  </div>
+                  <StatusPill label={`${remediationTrend.oldestOpen}d oldest open`} tone={remediationTrend.oldestOpen >= 30 ? "rose" : remediationTrend.oldestOpen >= 14 ? "amber" : "emerald"} />
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <MetricCard icon={<Plus size={18} />} label="Newly introduced" value={String(remediationTrend.introduced)} />
+                  <MetricCard icon={<ShieldCheck size={18} />} label="Reviewed" value={String(remediationTrend.reviewed)} />
+                  <MetricCard icon={<BookOpen size={18} />} label="Cleared" value={String(remediationTrend.cleared)} />
+                  <MetricCard icon={<Layers3 size={18} />} label="Oldest open" value={`${remediationTrend.oldestOpen}d`} />
+                </div>
+              </div>
+
               <div className="mt-5 flex flex-wrap gap-2">
                 {[
                   { value: "all", label: "All" },
@@ -1780,6 +1846,28 @@ export default function ChartOfAccountsPage() {
                 ))}
               </div>
 
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: "All status" },
+                  { value: "open", label: "Open" },
+                  { value: "reviewed", label: "Acknowledged" },
+                  { value: "cleared", label: "Cleared recently" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setBacklogStatusFilter(option.value as typeof backlogStatusFilter)}
+                    className={`rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.16em] transition ${
+                      backlogStatusFilter === option.value
+                        ? "border-brand-navy bg-brand-navy text-white"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
               {backlogActionFeedback ? (
                 <div className="mt-5 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
                   <div className="font-semibold">Action launched</div>
@@ -1787,12 +1875,16 @@ export default function ChartOfAccountsPage() {
                 </div>
               ) : null}
 
+              {backlogStatusFilter !== "cleared" ? (
               <div className="mt-5 grid grid-cols-1 gap-4 2xl:grid-cols-2">
                 {visibleBacklogGroups.map((group) => (
                   <div key={group.key} className="rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-sm font-semibold text-brand-navy">{group.label}</div>
-                      <StatusPill label={`${group.count} queued`} tone={group.tone} />
+                      <StatusPill
+                        label={`${group.items.length} visible`}
+                        tone={group.tone}
+                      />
                     </div>
                     <div className="mt-3 space-y-3">
                       {group.items.length === 0 ? (
@@ -1809,6 +1901,18 @@ export default function ChartOfAccountsPage() {
                             </div>
                             <div className="mt-1 text-sm text-slate-500">{item.detail}</div>
                             <div className="mt-2 text-xs text-slate-400">{item.ageMeta.detail}</div>
+                            {item.state?.status === "reviewed" && (item.state.review_notes || item.state.reviewed_at || item.state.reviewer) ? (
+                              <div className="mt-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Review memory</div>
+                                <div className="mt-2 text-sm text-slate-600">
+                                  {item.state.review_notes || "This remediation issue has been acknowledged and is being tracked."}
+                                </div>
+                                <div className="mt-2 text-xs text-slate-400">
+                                  {item.state.reviewer ? `Reviewed by ${formatPerson(item.state.reviewer)}` : "Reviewed"}
+                                  {item.state.reviewed_at ? ` · ${formatDateTime(item.state.reviewed_at)}` : ""}
+                                </div>
+                              </div>
+                            ) : null}
                             <div className="mt-3 flex flex-wrap gap-2">
                               <button
                                 type="button"
@@ -1844,6 +1948,7 @@ export default function ChartOfAccountsPage() {
                   </div>
                 ))}
               </div>
+              ) : null}
 
               <div className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 px-4 py-4">
                 <div className="flex items-center justify-between gap-3">
