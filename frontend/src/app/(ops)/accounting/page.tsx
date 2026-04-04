@@ -272,6 +272,7 @@ export default function AccountingDashboardPage() {
         href: '/accounting/close',
         cta: 'Review period close',
         tone: 'bg-slate-50 text-slate-600 border-slate-100',
+        secondaryActions: ['Review period calendar', 'Confirm the latest open month'],
       };
     }
 
@@ -282,6 +283,7 @@ export default function AccountingDashboardPage() {
         href: '/accounting/journal',
         cta: 'Open journal workspace',
         tone: 'bg-rose-50 text-rose-700 border-rose-100',
+        secondaryActions: ['Post or reverse remaining drafts', 'Return to Period Close after journals are cleared'],
       };
     }
 
@@ -289,33 +291,36 @@ export default function AccountingDashboardPage() {
     const pendingSecondaryPack = packs.find((pack) => pack.status === 'pending_secondary_signoff');
     if (pendingSecondaryPack) {
       return {
-        title: `Complete secondary signoff on ${getReportLabel(pendingSecondaryPack.report_type)}`,
+        title: `Complete secondary signoff on ${getReportLabel(pendingSecondaryPack.report_type)} for ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)}`,
         detail: 'This report pack already has a primary signoff and needs a second reviewer before the period can close.',
         href: getDashboardReportHref(pendingSecondaryPack.report_type, currentPeriod),
         cta: 'Complete signoff',
         tone: 'bg-amber-50 text-amber-700 border-amber-100',
+        secondaryActions: ['Confirm a second qualified reviewer is available', 'Return to Period Close once secondary signoff is complete'],
       };
     }
 
     const stalePack = packs.find((pack) => pack.status === 'stale');
     if (stalePack) {
       return {
-        title: `Re-certify ${getReportLabel(stalePack.report_type)}`,
+        title: `Re-certify ${getReportLabel(stalePack.report_type)} for ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)}`,
         detail: 'The underlying reporting source changed after signoff, so the certification must be refreshed.',
         href: getDashboardReportHref(stalePack.report_type, currentPeriod),
         cta: 'Re-certify report pack',
         tone: 'bg-rose-50 text-rose-700 border-rose-100',
+        secondaryActions: ['Review stale-signoff history', 'Return to Period Close after re-certification'],
       };
     }
 
     const uncertifiedPack = packs.find((pack) => pack.status === 'uncertified');
     if (uncertifiedPack) {
       return {
-        title: `Certify ${getReportLabel(uncertifiedPack.report_type)}`,
+        title: `Certify ${getReportLabel(uncertifiedPack.report_type)} for ${formatPeriodLabel(currentPeriod.year, currentPeriod.month)}`,
         detail: 'A required report pack is still uncertified for the latest open period.',
         href: getDashboardReportHref(uncertifiedPack.report_type, currentPeriod),
         cta: 'Open for certification',
         tone: 'bg-amber-50 text-amber-700 border-amber-100',
+        secondaryActions: ['Confirm COA readiness blockers are clear', 'Return to Period Close after certification'],
       };
     }
 
@@ -328,22 +333,28 @@ export default function AccountingDashboardPage() {
 
       return {
         title: restrictedNoOwnerAccount
-          ? `Assign owner to restricted account ${restrictedNoOwnerAccount.code}`
+          ? `Assign owner to ${restrictedNoOwnerAccount.code} - ${restrictedNoOwnerAccount.name}`
           : `Assign owner to ${ownershipReadiness.restrictedNoOwnerCount} restricted account${ownershipReadiness.restrictedNoOwnerCount === 1 ? '' : 's'}`,
         detail: 'Restricted accounts without owners are treated as material reporting-control gaps.',
         href: '/accounting/chart-of-accounts',
         cta: 'Open chart of accounts',
         tone: 'bg-rose-50 text-rose-700 border-rose-100',
+        secondaryActions: ['Review T1 and T2 ownership coverage', 'Return to Period Close after owner assignment'],
       };
     }
 
     if (ownershipReadiness.noOwnerCount > 0) {
+      const firstUnownedPostingAccount = accounts.find((account) => !account.is_header && !account.account_owner_id);
+
       return {
-        title: `Assign owners to ${ownershipReadiness.noOwnerCount} posting account${ownershipReadiness.noOwnerCount === 1 ? '' : 's'}`,
+        title: firstUnownedPostingAccount
+          ? `Assign owner to ${firstUnownedPostingAccount.code} - ${firstUnownedPostingAccount.name}`
+          : `Assign owners to ${ownershipReadiness.noOwnerCount} posting account${ownershipReadiness.noOwnerCount === 1 ? '' : 's'}`,
         detail: 'Owner accountability is still incomplete even though restricted-account coverage is clean.',
         href: '/accounting/chart-of-accounts',
         cta: 'Review owner assignments',
         tone: 'bg-sky-50 text-sky-700 border-sky-100',
+        secondaryActions: ['Work through remaining unassigned posting accounts', 'Return to Period Close after ownership review'],
       };
     }
 
@@ -353,6 +364,7 @@ export default function AccountingDashboardPage() {
       href: '/accounting/close',
       cta: 'Review period close',
       tone: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      secondaryActions: ['Confirm final close checklist', 'Validate latest report certifications remain current'],
     };
   }, [accounts, closeReadiness, currentPeriod, ownershipReadiness]);
 
@@ -708,6 +720,19 @@ export default function AccountingDashboardPage() {
           <div className="text-[10px] font-black uppercase tracking-[0.16em]">Why this next</div>
           <div className="mt-2 text-sm font-medium">
             This is the most direct step to improve the latest period’s reporting trust and close readiness.
+          </div>
+          <div className="mt-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.16em]">Then</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {recommendedAction.secondaryActions.map((action: string) => (
+                <span
+                  key={action}
+                  className="rounded-full border border-current/15 px-3 py-1 text-xs font-semibold"
+                >
+                  {action}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>
