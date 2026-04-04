@@ -62,10 +62,26 @@ describe('CompanyController integration', () => {
 
     const response = await request(app.getHttpServer())
       .patch('/company')
-      .send({ tagline: 'Run everything' })
+      .send({
+        tagline: 'Run everything',
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+          functional_currency: 'ZAR',
+          presentation_currency: 'ZAR',
+        },
+      })
       .expect(200);
 
-    expect(companyService.updateCompany).toHaveBeenCalledWith('company-1', { tagline: 'Run everything' });
+    expect(companyService.updateCompany).toHaveBeenCalledWith('company-1', {
+      tagline: 'Run everything',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
     expect(response.body).toEqual({ id: 'company-1', tagline: 'Run everything' });
   });
 

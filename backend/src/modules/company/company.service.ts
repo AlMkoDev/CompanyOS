@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -18,6 +18,16 @@ const standardDepartments = [
 export class CompanyService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly supportedJurisdictions = new Set(['ZA', 'ZW']);
+  private readonly supportedFrameworksByJurisdiction: Record<string, string[]> = {
+    ZA: ['IFRS_FULL', 'IFRS_SME', 'SA_GAAP_LEGACY'],
+    ZW: ['ZW_IFRS_FULL', 'ZW_IFRS29'],
+  };
+  private readonly supportedCurrenciesByJurisdiction: Record<string, string[]> = {
+    ZA: ['ZAR', 'USD', 'EUR', 'GBP'],
+    ZW: ['ZIG', 'USD', 'ZAR', 'GBP'],
+  };
+
   private isSchemaDriftError(error: unknown) {
     return (
       error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -32,6 +42,7 @@ export class CompanyService {
       company = await this.prisma.company.findFirst({
         where: { id },
         include: {
+          accounting_profile: true,
           setup: true,
           gap_statuses: true,
           departments: {
@@ -50,6 +61,7 @@ export class CompanyService {
       company = await this.prisma.company.findFirst({
         where: { id },
         include: {
+          accounting_profile: true,
           setup: true,
           departments: {
             select: {
@@ -88,6 +100,110 @@ export class CompanyService {
 
     if (!company) throw new NotFoundException('Company not found');
     return company;
+  }
+
+  private normalizeJurisdiction(value?: string | null) {
+    return value?.trim().toUpperCase() || null;
+  }
+
+  private normalizeCurrency(value?: string | null) {
+    return value?.trim().toUpperCase() || null;
+  }
+
+  private normalizeFramework(value?: string | null) {
+    return value?.trim().toUpperCase() || null;
+  }
+
+  private buildAccountingProfilePayload(data?: Record<string, any> | null) {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+
+    const primaryJurisdiction = this.normalizeJurisdiction(data.primary_jurisdiction) || 'ZA';
+    if (!this.supportedJurisdictions.has(primaryJurisdiction)) {
+      throw new BadRequestException(`Unsupported accounting jurisdiction: ${primaryJurisdiction}`);
+    }
+
+    const operatingJurisdictions = Array.from(
+      new Set(
+        (Array.isArray(data.operating_jurisdictions) ? data.operating_jurisdictions : [])
+          .map((value) => this.normalizeJurisdiction(value))
+          .filter((value): value is string => Boolean(value) && this.supportedJurisdictions.has(value)),
+      ),
+    );
+
+    if (!operatingJurisdictions.includes(primaryJurisdiction)) {
+      operatingJurisdictions.unshift(primaryJurisdiction);
+    }
+
+    const reportingFramework =
+      this.normalizeFramework(data.reporting_framework) ||
+      (primaryJurisdiction === 'ZW' ? 'ZW_IFRS_FULL' : 'IFRS_FULL');
+
+    const allowedFrameworks = this.supportedFrameworksByJurisdiction[primaryJurisdiction] || [];
+    if (!allowedFrameworks.includes(reportingFramework)) {
+      throw new BadRequestException(
+        `${reportingFramework} is not supported for ${primaryJurisdiction} entities`,
+      );
+    }
+
+    const functionalCurrency =
+      this.normalizeCurrency(data.functional_currency) ||
+      (primaryJurisdiction === 'ZW' ? 'USD' : 'ZAR');
+    const presentationCurrency =
+      this.normalizeCurrency(data.presentation_currency) || functionalCurrency;
+
+    const allowedCurrencies = this.supportedCurrenciesByJurisdiction[primaryJurisdiction] || [];
+    if (!allowedCurrencies.includes(functionalCurrency)) {
+      throw new BadRequestException(
+        `${functionalCurrency} is not a supported functional currency for ${primaryJurisdiction}`,
+      );
+    }
+
+    if (!allowedCurrencies.includes(presentationCurrency)) {
+      throw new BadRequestException(
+        `${presentationCurrency} is not a supported presentation currency for ${primaryJurisdiction}`,
+      );
+    }
+
+    const justification = typeof data.functional_currency_justification === 'string'
+      ? data.functional_currency_justification.trim()
+      : null;
+
+    if (primaryJurisdiction === 'ZW' && !justification) {
+      throw new BadRequestException(
+        'Zimbabwe entities require a functional currency justification on the accounting profile.',
+      );
+    }
+
+    const annualPayrollEstimate =
+      typeof data.annual_payroll_estimate === 'number' && Number.isFinite(data.annual_payroll_estimate)
+        ? new Prisma.Decimal(data.annual_payroll_estimate)
+        : null;
+
+    const payload = {
+      primary_jurisdiction: primaryJurisdiction,
+      operating_jurisdictions: operatingJurisdictions,
+      reporting_framework: reportingFramework,
+      functional_currency: functionalCurrency,
+      presentation_currency: presentationCurrency,
+      functional_currency_justification: justification,
+      zw_ias29_applicable: Boolean(data.zw_ias29_applicable),
+      zw_prior_ias29_application: Boolean(data.zw_prior_ias29_application),
+      cross_border_operations: Boolean(data.cross_border_operations),
+      consolidates_subsidiaries: Boolean(data.consolidates_subsidiaries),
+      vat_registered: Boolean(data.vat_registered),
+      pfma_entity: Boolean(data.pfma_entity),
+      sdl_exempt: Boolean(data.sdl_exempt),
+      annual_payroll_estimate: annualPayrollEstimate,
+    };
+
+    if (primaryJurisdiction !== 'ZW') {
+      payload.zw_ias29_applicable = false;
+      payload.zw_prior_ias29_application = false;
+    }
+
+    return payload;
   }
 
   async updateSetupProgress(companyId: string, data: any) {
@@ -169,6 +285,10 @@ export class CompanyService {
   async updateCompany(id: string, data: any) {
     await this.findOne(id);
 
+    const accountingProfilePayload = this.buildAccountingProfilePayload(
+      data.accounting_profile as Record<string, any> | null | undefined,
+    );
+
     return this.prisma.company.update({
       where: { id },
       data: {
@@ -176,6 +296,18 @@ export class CompanyService {
         industry: data.industry,
         description: data.description,
         brand_colors: data.brand_colors,
+        accounting_profile: accountingProfilePayload
+          ? {
+              upsert: {
+                update: accountingProfilePayload,
+                create: accountingProfilePayload,
+              },
+            }
+          : undefined,
+      },
+      include: {
+        accounting_profile: true,
+        setup: true,
       },
     });
   }

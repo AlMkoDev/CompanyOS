@@ -21,6 +21,7 @@ model Company {
   updated_at      DateTime @updatedAt
 
   // Relations
+  accounting_profile   CompanyAccountingProfile?
   users                User[]
   departments          Department[]
   setup                CompanySetup?
@@ -131,6 +132,29 @@ model Company {
   glAccountRemediationStates GLAccountRemediationState[]
   reportCertifications ReportCertification[]
   reportCertificationAudits ReportCertificationAudit[]
+}
+
+model CompanyAccountingProfile {
+  id                               String   @id @default(uuid()) @db.Uuid
+  company_id                       String   @unique @db.Uuid
+  primary_jurisdiction             String   @default("ZA")
+  operating_jurisdictions          String[] @default([])
+  reporting_framework              String   @default("IFRS_FULL")
+  functional_currency              String   @default("ZAR")
+  presentation_currency            String   @default("ZAR")
+  functional_currency_justification String?
+  zw_ias29_applicable              Boolean  @default(false)
+  zw_prior_ias29_application       Boolean  @default(false)
+  cross_border_operations          Boolean  @default(false)
+  consolidates_subsidiaries        Boolean  @default(false)
+  vat_registered                   Boolean  @default(false)
+  pfma_entity                      Boolean  @default(false)
+  sdl_exempt                       Boolean  @default(false)
+  annual_payroll_estimate          Decimal? @db.Decimal(15, 2)
+  created_at                       DateTime @default(now())
+  updated_at                       DateTime @updatedAt
+
+  company Company @relation(fields: [company_id], references: [id])
 }
 
 model User {

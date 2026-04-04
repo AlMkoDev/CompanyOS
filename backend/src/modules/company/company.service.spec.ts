@@ -52,6 +52,7 @@ describe('CompanyService', () => {
     expect(prisma.company.findFirst).toHaveBeenCalledWith({
       where: { id: 'company-1' },
       include: {
+        accounting_profile: true,
         setup: true,
         gap_statuses: true,
         departments: {
@@ -69,6 +70,56 @@ describe('CompanyService', () => {
         industry: undefined,
         description: undefined,
         brand_colors: undefined,
+        accounting_profile: undefined,
+      },
+      include: {
+        accounting_profile: true,
+        setup: true,
+      },
+    });
+  });
+
+  it('upserts accounting profile when jurisdiction settings are supplied', async () => {
+    prisma.company.findFirst.mockResolvedValue({ id: 'company-1' });
+    prisma.company.update.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: { primary_jurisdiction: 'ZW' },
+    });
+
+    await service.updateCompany('company-1', {
+      accounting_profile: {
+        primary_jurisdiction: 'ZW',
+        operating_jurisdictions: ['ZW', 'ZA'],
+        reporting_framework: 'ZW_IFRS_FULL',
+        functional_currency: 'USD',
+        presentation_currency: 'USD',
+        functional_currency_justification: 'USD is the primary economic environment for revenue and treasury.',
+        zw_ias29_applicable: true,
+      },
+    });
+
+    expect(prisma.company.update).toHaveBeenCalledWith({
+      where: { id: 'company-1' },
+      data: expect.objectContaining({
+        accounting_profile: {
+          upsert: {
+            update: expect.objectContaining({
+              primary_jurisdiction: 'ZW',
+              reporting_framework: 'ZW_IFRS_FULL',
+              functional_currency: 'USD',
+              presentation_currency: 'USD',
+              zw_ias29_applicable: true,
+            }),
+            create: expect.objectContaining({
+              primary_jurisdiction: 'ZW',
+              reporting_framework: 'ZW_IFRS_FULL',
+            }),
+          },
+        },
+      }),
+      include: {
+        accounting_profile: true,
+        setup: true,
       },
     });
   });
