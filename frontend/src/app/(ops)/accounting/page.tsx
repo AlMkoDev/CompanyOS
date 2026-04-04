@@ -60,10 +60,10 @@ interface CloseReadinessData {
   reversed_journals: number;
   bank_statement_count: number;
   reporting_certification?: {
-    required_pack_count: number;
-    certified_pack_count: number;
-    blocking_pack_count: number;
-    summary_status: 'ready' | 'blocked';
+    required_count: number;
+    certified_count: number;
+    blocking_count: number;
+    can_close_reporting: boolean;
     messages: string[];
     packs: ReportCertificationPack[];
   };
@@ -184,7 +184,7 @@ export default function AccountingDashboardPage() {
       };
     }
 
-    if (reporting.blocking_pack_count > 0 || !closeReadiness?.can_close) {
+    if (reporting.blocking_count > 0 || !closeReadiness?.can_close) {
       return {
         label: 'Blocked',
         tone: 'text-rose-600',
@@ -192,7 +192,7 @@ export default function AccountingDashboardPage() {
         detail: formatPeriodLabel(latestOpenPeriod.year, latestOpenPeriod.month),
         blockerText:
           reporting.messages[0] ||
-          `${reporting.blocking_pack_count} report pack${reporting.blocking_pack_count === 1 ? '' : 's'} still need attention`,
+          `${reporting.blocking_count} report pack${reporting.blocking_count === 1 ? '' : 's'} still need attention`,
       };
     }
 
@@ -341,7 +341,7 @@ export default function AccountingDashboardPage() {
         />
         <StatCard
           label="Period Signoff"
-          value={closeReadiness?.reporting_certification ? `${closeReadiness.reporting_certification.certified_pack_count}/${closeReadiness.reporting_certification.required_pack_count}` : '--'}
+          value={closeReadiness?.reporting_certification ? `${closeReadiness.reporting_certification.certified_count}/${closeReadiness.reporting_certification.required_count}` : '--'}
           change={signoffPosture.label}
           isPositive={signoffPosture.label === 'Ready'}
           icon={<Lock className="text-brand-gold" />}
@@ -425,7 +425,7 @@ export default function AccountingDashboardPage() {
             />
             <DashboardMiniMetric
               label="Blocking Packs"
-              value={`${closeReadiness?.reporting_certification?.blocking_pack_count ?? 0}`}
+              value={`${closeReadiness?.reporting_certification?.blocking_count ?? 0}`}
             />
             <DashboardMiniMetric
               label="No Owner"
