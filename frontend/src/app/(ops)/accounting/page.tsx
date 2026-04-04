@@ -48,7 +48,7 @@ interface ReportCertificationPack {
   report_type: string;
   status: string;
   blocking?: boolean;
-  signoff_progress: {
+  signoff_progress?: {
     completed: number;
     required: number;
   };
@@ -560,6 +560,12 @@ export default function AccountingDashboardPage() {
             {(closeReadiness?.reporting_certification?.packs ?? []).length > 0 ? (
               closeReadiness?.reporting_certification?.packs.map((pack) => (
                 <div key={pack.report_type} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                  {(() => {
+                    const completed = pack.signoff_progress?.completed ?? 0;
+                    const required = pack.signoff_progress?.required ?? (pack.status === 'pending_secondary_signoff' ? 2 : 1);
+
+                    return (
+                      <>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-bold text-brand-navy">{getReportLabel(pack.report_type)}</div>
@@ -570,7 +576,7 @@ export default function AccountingDashboardPage() {
                     </span>
                   </div>
                   <div className="mt-3 text-sm text-slate-600">
-                    {pack.signoff_progress.completed} of {pack.signoff_progress.required} signoffs complete
+                    {completed} of {required} signoffs complete
                   </div>
                   <Link
                     href={getDashboardReportHref(pack.report_type, currentPeriod)}
@@ -578,6 +584,9 @@ export default function AccountingDashboardPage() {
                   >
                     Open report workspace →
                   </Link>
+                      </>
+                    );
+                  })()}
                 </div>
               ))
             ) : (
