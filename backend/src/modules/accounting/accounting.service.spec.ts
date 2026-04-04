@@ -885,4 +885,59 @@ describe('AccountingService', () => {
       service.certifyReport('company-1', 'user-3', ['finance_analyst'], 2026, 4, 'bs'),
     ).rejects.toThrow('Only finance leadership or system administrators can certify reporting.');
   });
+
+  it('marks a certification stale when chart or posted journal sources changed after signoff', async () => {
+    prisma.gLAccount.findMany.mockResolvedValue([
+      {
+        id: 'acct-1',
+        code: '4000',
+        name: 'Produce Sales',
+        type: 'revenue',
+        is_header: false,
+        fs_placement: 'Revenue',
+        sensitivity_tier: 'T3',
+        account_owner_id: 'emp-1',
+      },
+    ]);
+    prisma.accountingPeriod.findFirst.mockResolvedValue({
+      id: 'period-1',
+      company_id: 'company-1',
+      year: 2026,
+      month: 4,
+      status: 'open',
+    });
+    prisma.reportCertification.findFirst.mockResolvedValue({
+      id: 'cert-1',
+      company_id: 'company-1',
+      period_id: 'period-1',
+      report_type: 'pnl',
+      status: 'certified',
+      certified_at: new Date('2026-04-02T08:00:00Z'),
+      certifier: { id: 'user-9', first_name: 'Jane', last_name: 'Done', email: 'jane@example.com' },
+      audits: [],
+    });
+    prisma.gLAccount.findFirst.mockResolvedValue({
+      id: 'acct-9',
+      code: '6100',
+      name: 'Operating Costs',
+      updated_at: new Date('2026-04-03T10:00:00Z'),
+    });
+    prisma.journalEntry.findFirst.mockResolvedValue({
+      id: 'je-1',
+      reference: 'JE-STG-001',
+      description: 'Month end revenue true-up',
+      updated_at: new Date('2026-04-03T12:30:00Z'),
+    });
+
+    const result = await service.getReportCertification('company-1', 2026, 4, 'pnl');
+
+    expect(result.certification?.effective_status).toBe('stale');
+    expect(result.certification?.stale_reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('COA changed after signoff'),
+        expect.stringContaining('Posted journal activity changed after signoff'),
+      ]),
+    );
+    expect(result.certification?.last_source_change_at).toEqual(new Date('2026-04-03T12:30:00Z'));
+  });
 });

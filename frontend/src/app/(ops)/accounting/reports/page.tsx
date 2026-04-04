@@ -55,9 +55,12 @@ interface CertificationAuditEntry {
 interface ReportCertificationRecord {
   id: string;
   status: string;
+  effective_status?: 'certified' | 'stale' | 'revoked' | 'uncertified';
   report_type: string;
   certified_at?: string | null;
   revoked_at?: string | null;
+  last_source_change_at?: string | null;
+  stale_reasons?: string[];
   notes?: string | null;
   certifier?: {
     id: string;
@@ -201,6 +204,11 @@ function ReportsContent() {
       month: Number.isNaN(parsed.getTime()) ? 1 : parsed.getMonth() + 1,
     };
   }, [currentYear, toDate]);
+
+  const effectiveCertificationStatus = certificationState?.certification?.effective_status || certificationState?.certification?.status || 'uncertified';
+  const certificationIsCertified = effectiveCertificationStatus === 'certified';
+  const certificationIsStale = effectiveCertificationStatus === 'stale';
+  const certificationRecord = certificationState?.certification ?? null;
 
   const periodLabel = React.useMemo(() => {
     if (reportType === 'pnl') {
@@ -574,11 +582,13 @@ function ReportsContent() {
             </p>
           </div>
           <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
-            certificationState?.certification?.status === 'certified'
+            certificationIsCertified
               ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-slate-200 bg-slate-50 text-slate-600'
+              : certificationIsStale
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-slate-200 bg-slate-50 text-slate-600'
           }`}>
-            {certificationState?.certification?.status === 'certified' ? 'Certified' : 'Not certified'}
+            {certificationIsCertified ? 'Certified' : certificationIsStale ? 'Stale certification' : 'Not certified'}
           </div>
         </div>
 
@@ -598,12 +608,12 @@ function ReportsContent() {
                   disabled={certificationBusy || !certificationState?.posture?.canCertify}
                   className="rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
                 >
-                  {certificationBusy ? 'Working...' : 'Certify report pack'}
+                  {certificationBusy ? 'Working...' : certificationIsStale ? 'Re-certify report pack' : 'Certify report pack'}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCertificationAction('revoke')}
-                  disabled={certificationBusy || certificationState?.certification?.status !== 'certified'}
+                  disabled={certificationBusy || !['certified', 'stale'].includes(effectiveCertificationStatus)}
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 disabled:opacity-60"
                 >
                   Revoke certification
@@ -619,18 +629,41 @@ function ReportsContent() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-600">
-              {certificationState?.certification?.status === 'certified' ? (
+              {certificationIsCertified && certificationRecord ? (
                 <div>
                   Certified by{' '}
                   <span className="font-semibold text-brand-navy">
-                    {certificationState.certification.certifier
-                      ? `${certificationState.certification.certifier.first_name} ${certificationState.certification.certifier.last_name}`
+                    {certificationRecord.certifier
+                      ? `${certificationRecord.certifier.first_name} ${certificationRecord.certifier.last_name}`
                       : 'Unknown reviewer'}
                   </span>
-                  {certificationState.certification.certified_at
-                    ? ` on ${new Date(certificationState.certification.certified_at).toLocaleString('en-ZA')}`
+                  {certificationRecord.certified_at
+                    ? ` on ${new Date(certificationRecord.certified_at).toLocaleString('en-ZA')}`
                     : ''}
                   .
+                </div>
+              ) : certificationIsStale ? (
+                <div className="space-y-3">
+                  <div className="font-medium text-amber-700">
+                    This report pack was previously certified, but that certification is now stale because the reporting base changed after signoff.
+                  </div>
+                  {certificationRecord?.last_source_change_at ? (
+                    <div>
+                      Last source change:{' '}
+                      <span className="font-semibold text-brand-navy">
+                        {new Date(certificationRecord.last_source_change_at).toLocaleString('en-ZA')}
+                      </span>
+                    </div>
+                  ) : null}
+                  {certificationRecord?.stale_reasons?.length ? (
+                    <div className="space-y-2">
+                      {certificationRecord.stale_reasons.map((reason, index) => (
+                        <div key={index} className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-3 text-amber-800">
+                          {reason}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div>

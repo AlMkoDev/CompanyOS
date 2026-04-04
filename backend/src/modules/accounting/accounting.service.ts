@@ -596,6 +596,108 @@ export class AccountingService {
     }
   }
 
+  private getPeriodDateRange(year: number, month: number) {
+    return {
+      start: new Date(year, month - 1, 1),
+      end: new Date(year, month, 1),
+    };
+  }
+
+  private async getLatestReportSourceChanges(companyId: string, year: number, month: number) {
+    const { start, end } = this.getPeriodDateRange(year, month);
+
+    const [latestAccountChange, latestJournalChange] = await Promise.all([
+      this.prisma.gLAccount.findFirst({
+        where: { company_id: companyId },
+        orderBy: { updated_at: 'desc' },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          updated_at: true,
+        },
+      }),
+      this.prisma.journalEntry.findFirst({
+        where: {
+          company_id: companyId,
+          status: { in: ['posted', 'reversed'] },
+          entry_date: {
+            gte: start,
+            lt: end,
+          },
+        },
+        orderBy: { updated_at: 'desc' },
+        select: {
+          id: true,
+          reference: true,
+          description: true,
+          updated_at: true,
+        },
+      }),
+    ]);
+
+    return {
+      latestAccountChange,
+      latestJournalChange,
+    };
+  }
+
+  private async attachEffectiveCertificationState(companyId: string, year: number, month: number, certification: any) {
+    const baseStatus =
+      certification.status === 'revoked'
+        ? 'revoked'
+        : certification.status === 'certified'
+          ? 'certified'
+          : 'uncertified';
+
+    if (baseStatus !== 'certified' || !certification.certified_at) {
+      return {
+        ...certification,
+        effective_status: baseStatus,
+        stale_reasons: [],
+        last_source_change_at: null,
+        source_changes: {
+          latest_account_change_at: null,
+          latest_journal_change_at: null,
+        },
+      };
+    }
+
+    const { latestAccountChange, latestJournalChange } = await this.getLatestReportSourceChanges(companyId, year, month);
+    const certifiedAt = new Date(certification.certified_at);
+    const staleReasons: string[] = [];
+    const sourceTimestamps: Date[] = [];
+
+    if (latestAccountChange?.updated_at && latestAccountChange.updated_at > certifiedAt) {
+      staleReasons.push(
+        `COA changed after signoff: ${latestAccountChange.code} ${latestAccountChange.name} was updated on ${latestAccountChange.updated_at.toLocaleString('en-ZA')}.`,
+      );
+      sourceTimestamps.push(latestAccountChange.updated_at);
+    }
+
+    if (latestJournalChange?.updated_at && latestJournalChange.updated_at > certifiedAt) {
+      staleReasons.push(
+        `Posted journal activity changed after signoff: ${latestJournalChange.reference || latestJournalChange.description || latestJournalChange.id} was updated on ${latestJournalChange.updated_at.toLocaleString('en-ZA')}.`,
+      );
+      sourceTimestamps.push(latestJournalChange.updated_at);
+    }
+
+    const lastSourceChangeAt = sourceTimestamps.length
+      ? new Date(Math.max(...sourceTimestamps.map((value) => value.getTime())))
+      : null;
+
+    return {
+      ...certification,
+      effective_status: staleReasons.length ? 'stale' : 'certified',
+      stale_reasons: staleReasons,
+      last_source_change_at: lastSourceChangeAt,
+      source_changes: {
+        latest_account_change_at: latestAccountChange?.updated_at ?? null,
+        latest_journal_change_at: latestJournalChange?.updated_at ?? null,
+      },
+    };
+  }
+
   private async recordReportCertificationAudit(params: {
     companyId: string;
     certificationId: string;
@@ -1366,11 +1468,15 @@ export class AccountingService {
         })
       : null;
 
+    const effectiveCertification = certification
+      ? await this.attachEffectiveCertificationState(companyId, year, month, certification)
+      : null;
+
     return {
       period: period || { year, month, status: 'open' },
       report_type: reportType,
       posture,
-      certification,
+      certification: effectiveCertification,
     };
   }
 
