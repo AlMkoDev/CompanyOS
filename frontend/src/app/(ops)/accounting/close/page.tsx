@@ -47,6 +47,34 @@ interface CloseReadiness {
       required_signoffs: number;
       completed_signoffs: number;
       status: string;
+      certification?: {
+        certified_at?: string | null;
+        secondary_certified_at?: string | null;
+        certifier?: {
+          id: string;
+          first_name: string;
+          last_name: string;
+          email?: string | null;
+        } | null;
+        secondary_certifier?: {
+          id: string;
+          first_name: string;
+          last_name: string;
+          email?: string | null;
+        } | null;
+        audits?: Array<{
+          id: string;
+          action: string;
+          notes?: string | null;
+          created_at: string;
+          actor?: {
+            id: string;
+            first_name: string;
+            last_name: string;
+            email?: string | null;
+          } | null;
+        }>;
+      } | null;
     }>;
   };
 }
@@ -83,6 +111,34 @@ function getRecommendedCadence(account: GLAccount) {
   if (account.type === 'liability' && account.fs_placement === 'Current Liabilities') return 'Weekly';
   if (account.type === 'revenue' || account.type === 'expense') return 'Monthly';
   return 'Quarterly';
+}
+
+function getReportLabel(reportType: string) {
+  const map: Record<string, string> = {
+    pnl: 'Profit & Loss',
+    bs: 'Balance Sheet',
+    tb: 'Trial Balance',
+  };
+  return map[reportType] || reportType.toUpperCase();
+}
+
+function getReportWorkspaceHref(pack: { report_type: string }, year: number, month: number) {
+  const toDate = `${year}-${String(month).padStart(2, '0')}-28`;
+  if (pack.report_type === 'pnl') {
+    const fromDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    return `/accounting/reports?type=pnl&fromDate=${fromDate}&toDate=${toDate}`;
+  }
+  if (pack.report_type === 'bs') {
+    return `/accounting/reports?type=bs&toDate=${toDate}`;
+  }
+  return `/accounting/reports?type=tb&toDate=${toDate}`;
+}
+
+function getPackActionLabel(pack: { status: string }) {
+  if (pack.status === 'stale') return 'Re-certify pack';
+  if (pack.status === 'pending_secondary_signoff') return 'Complete signoff';
+  if (pack.status === 'certified') return 'Open certified pack';
+  return 'Open for certification';
 }
 
 export default function CloseWorkflowPage() {
@@ -397,7 +453,12 @@ export default function CloseWorkflowPage() {
                     {readiness?.reporting_certification?.packs?.map((pack) => (
                       <div key={pack.report_type} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="font-semibold text-brand-navy">{pack.report_type.toUpperCase()}</div>
+                          <div>
+                            <div className="font-semibold text-brand-navy">{getReportLabel(pack.report_type)}</div>
+                            <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">
+                              {pack.report_type.toUpperCase()} pack
+                            </div>
+                          </div>
                           <div className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${
                             pack.status === 'certified'
                               ? 'bg-emerald-50 text-emerald-700'
@@ -412,6 +473,76 @@ export default function CloseWorkflowPage() {
                         </div>
                         <div className="mt-2 text-xs text-slate-500">
                           {pack.completed_signoffs} of {pack.required_signoffs} signoffs complete
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto]">
+                          <div className="space-y-2">
+                            <div className="rounded-2xl bg-white px-3 py-3 text-xs text-slate-600">
+                              <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Certified by</div>
+                              <div className="mt-1 font-medium text-brand-navy">
+                                {pack.certification?.certifier
+                                  ? `${pack.certification.certifier.first_name} ${pack.certification.certifier.last_name}`
+                                  : 'No primary signoff yet'}
+                              </div>
+                              {pack.certification?.certified_at ? (
+                                <div className="mt-1 text-slate-500">
+                                  {new Date(pack.certification.certified_at).toLocaleString('en-ZA')}
+                                </div>
+                              ) : null}
+                            </div>
+                            {pack.required_signoffs > 1 ? (
+                              <div className="rounded-2xl bg-white px-3 py-3 text-xs text-slate-600">
+                                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Secondary signoff</div>
+                                <div className="mt-1 font-medium text-brand-navy">
+                                  {pack.certification?.secondary_certifier
+                                    ? `${pack.certification.secondary_certifier.first_name} ${pack.certification.secondary_certifier.last_name}`
+                                    : 'Awaiting secondary reviewer'}
+                                </div>
+                                {pack.certification?.secondary_certified_at ? (
+                                  <div className="mt-1 text-slate-500">
+                                    {new Date(pack.certification.secondary_certified_at).toLocaleString('en-ZA')}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            <Link
+                              href={getReportWorkspaceHref(pack, form.year, form.month)}
+                              className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-brand-navy/90"
+                            >
+                              {getPackActionLabel(pack)}
+                            </Link>
+                            <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                              Open the exact report workspace for certification, recertification, or signoff completion.
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 rounded-2xl border border-slate-100 bg-white px-3 py-3">
+                          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Signoff timeline</div>
+                          <div className="mt-3 space-y-2">
+                            {pack.certification?.audits?.length ? (
+                              pack.certification.audits.slice(0, 3).map((audit) => (
+                                <div key={audit.id} className="rounded-2xl bg-slate-50 px-3 py-3 text-xs text-slate-600">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="font-bold uppercase tracking-[0.12em] text-brand-navy">{audit.action.replaceAll('_', ' ')}</span>
+                                    <span className="text-slate-400">{new Date(audit.created_at).toLocaleString('en-ZA')}</span>
+                                  </div>
+                                  <div className="mt-1">
+                                    {audit.actor
+                                      ? `${audit.actor.first_name} ${audit.actor.last_name}`
+                                      : 'System workflow'}
+                                  </div>
+                                  {audit.notes ? <div className="mt-2 text-slate-500">{audit.notes}</div> : null}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="rounded-2xl bg-slate-50 px-3 py-3 text-slate-500">
+                                No signoff history recorded for this pack yet.
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )) || (
