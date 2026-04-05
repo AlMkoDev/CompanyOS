@@ -215,6 +215,8 @@ export default function AccountingSettingsPage() {
   const [activationResult, setActivationResult] = React.useState<ActivationResult | null>(null);
   const [activationScope, setActivationScope] = React.useState<ActivationScope>('FULL_RECOMMENDED');
   const [selectedModuleCodes, setSelectedModuleCodes] = React.useState<string[]>([]);
+  const [showActivationConfirmation, setShowActivationConfirmation] = React.useState(false);
+  const [activationConfirmed, setActivationConfirmed] = React.useState(false);
   const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -225,6 +227,8 @@ export default function AccountingSettingsPage() {
   const frameworkOptions = FRAMEWORK_OPTIONS[form.primaryJurisdiction] || FRAMEWORK_OPTIONS.ZA;
   const currencyOptions = CURRENCY_OPTIONS[form.primaryJurisdiction] || CURRENCY_OPTIONS.ZA;
   const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+  const scopeLabel =
+    ACTIVATION_SCOPE_OPTIONS.find((option) => option.value === activationScope)?.label || 'Full recommended';
 
   const buildTemplateRequestPayload = React.useCallback(
     (profileForm: AccountingProfileForm) => ({
@@ -360,6 +364,8 @@ export default function AccountingSettingsPage() {
 
   React.useEffect(() => {
     setActivationResult(null);
+    setShowActivationConfirmation(false);
+    setActivationConfirmed(false);
   }, [activationScope, selectedModuleCodes, form]);
 
   React.useEffect(() => {
@@ -442,6 +448,8 @@ export default function AccountingSettingsPage() {
           ? `Recommended chart activated. ${result.created_count} account${result.created_count === 1 ? '' : 's'} created.`
           : result.message || 'No new template accounts were created.',
       );
+      setShowActivationConfirmation(false);
+      setActivationConfirmed(false);
       await Promise.all([refreshTemplateInsights(form), loadHistory()]);
     } catch (activationError) {
       console.error(activationError);
@@ -730,11 +738,14 @@ export default function AccountingSettingsPage() {
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    onClick={handleActivation}
+                    onClick={() => {
+                      setShowActivationConfirmation(true);
+                      setActivationConfirmed(false);
+                    }}
                     disabled={!canEdit || isSaving || activationDryRun.collisions > 0 || activationDryRun.accounts_to_create === 0}
                     className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
-                    {isSaving ? 'Activating...' : 'Activate Recommended Chart'}
+                    Review Activation Summary
                   </button>
                   {activationDryRun.collisions > 0 ? (
                     <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
@@ -742,6 +753,79 @@ export default function AccountingSettingsPage() {
                     </div>
                   ) : null}
                 </div>
+
+                {showActivationConfirmation ? (
+                  <div className="rounded-2xl border border-brand-navy/15 bg-brand-navy/5 p-4">
+                    <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Pre-activation confirmation</div>
+                    <h3 className="mt-2 text-lg font-heading text-brand-navy">Final admin confirmation</h3>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Review this activation one more time before we write accounts into the company chart.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-center md:grid-cols-4">
+                      <SummaryMetric label="Scope" value={scopeLabel} />
+                      <SummaryMetric label="To create" value={`${activationDryRun.accounts_to_create}`} />
+                      <SummaryMetric label="Collisions" value={`${activationDryRun.collisions}`} />
+                      <SummaryMetric label="Modules" value={`${selectedModuleCodes.length}`} />
+                    </div>
+
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                      <div className="font-semibold text-brand-navy">Activation summary</div>
+                      <div className="mt-3 grid gap-2">
+                        <div>
+                          <span className="font-semibold text-brand-navy">Template:</span> {activationDryRun.template_name} ({activationDryRun.template_code})
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Scope:</span> {scopeLabel}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Selected modules:</span>{' '}
+                          {selectedModuleCodes.length > 0 ? selectedModuleCodes.join(', ') : 'No additional module packs selected'}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Accounts to create:</span> {activationDryRun.accounts_to_create}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Code collisions:</span> {activationDryRun.collisions}
+                        </div>
+                      </div>
+                    </div>
+
+                    <label className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={activationConfirmed}
+                        onChange={(event) => setActivationConfirmed(event.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-navy focus:ring-brand-navy"
+                      />
+                      <span>
+                        I confirm that I have reviewed the scope, module selection, account counts, and collision posture for this chart activation.
+                      </span>
+                    </label>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleActivation}
+                        disabled={!activationConfirmed || isSaving || activationDryRun.collisions > 0 || activationDryRun.accounts_to_create === 0}
+                        className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        {isSaving ? 'Activating...' : 'Confirm And Activate'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActivationConfirmation(false);
+                          setActivationConfirmed(false);
+                        }}
+                        disabled={isSaving}
+                        className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <SummaryMetric label="Existing" value={`${activationDryRun.existing_company_accounts}`} />
