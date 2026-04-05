@@ -352,6 +352,12 @@ export class CompanyService {
         modules: {
           orderBy: [{ is_required: 'desc' }, { module_name: 'asc' }],
         },
+        accounts: {
+          orderBy: { sort_order: 'asc' },
+          include: {
+            catalog_account: true,
+          },
+        },
       },
     });
 
@@ -365,6 +371,37 @@ export class CompanyService {
       );
     }
 
+    const activeModuleCodes = new Set(
+      Array.from(modules.values())
+        .filter((module) => module.required)
+        .map((module) => module.code),
+    );
+
+    const templateAccounts = (template?.accounts || []).filter((account) => {
+      if (!account.module_dependency) {
+        return true;
+      }
+
+      return activeModuleCodes.has(account.module_dependency);
+    });
+
+    const catalogPreview = {
+      total_accounts: templateAccounts.length,
+      core_accounts: templateAccounts.filter((account) => account.catalog_account.is_core).length,
+      regulatory_accounts: templateAccounts.filter((account) => account.catalog_account.is_regulatory).length,
+      optional_accounts: templateAccounts.filter((account) => account.catalog_account.is_optional).length,
+      module_dependent_accounts: templateAccounts.filter((account) => Boolean(account.module_dependency)).length,
+      sample_accounts: templateAccounts.slice(0, 12).map((account) => ({
+        code: account.catalog_account.code,
+        name: account.catalog_account.name,
+        jurisdiction: account.catalog_account.jurisdiction,
+        module_dependency: account.module_dependency,
+        is_core: account.catalog_account.is_core,
+        is_regulatory: account.catalog_account.is_regulatory,
+        is_optional: account.catalog_account.is_optional,
+      })),
+    };
+
     return {
       profile,
       recommendation: {
@@ -375,6 +412,7 @@ export class CompanyService {
         modules: Array.from(modules.values()),
         regulatory_packs: regulatoryPacks,
         warnings,
+        catalog_preview: catalogPreview,
       },
     };
   }

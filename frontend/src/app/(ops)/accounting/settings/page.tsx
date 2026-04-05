@@ -32,6 +32,22 @@ type Recommendation = {
   modules: Array<{ code: string; name: string; required: boolean; reason: string }>;
   regulatory_packs: Array<{ code: string; name: string; reason: string }>;
   warnings: string[];
+  catalog_preview?: {
+    total_accounts: number;
+    core_accounts: number;
+    regulatory_accounts: number;
+    optional_accounts: number;
+    module_dependent_accounts: number;
+    sample_accounts: Array<{
+      code: string;
+      name: string;
+      jurisdiction?: string | null;
+      module_dependency?: string | null;
+      is_core: boolean;
+      is_regulatory: boolean;
+      is_optional: boolean;
+    }>;
+  };
 };
 
 type AccountingProfileAudit = {
@@ -468,6 +484,38 @@ export default function AccountingSettingsPage() {
                 <RecommendationList title="Recommended Modules" items={templateRecommendation.modules.map((module) => ({ key: module.code, label: module.name, detail: module.reason, badge: module.required ? 'Required' : 'Optional' }))} emptyState="No modules are currently recommended for this profile." />
                 <RecommendationList title="Regulatory Packs" items={templateRecommendation.regulatory_packs.map((pack) => ({ key: pack.code, label: pack.name, detail: pack.reason }))} emptyState="No additional regulatory packs are currently suggested." />
                 <RecommendationList title="Wizard Warnings" items={templateRecommendation.warnings.map((warning, index) => ({ key: `${index}-${warning}`, label: warning }))} emptyState="No extra jurisdiction warnings are currently raised for this profile." />
+                {templateRecommendation.catalog_preview ? (
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Chart activation preview</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+                      <SummaryMetric label="Total" value={`${templateRecommendation.catalog_preview.total_accounts}`} />
+                      <SummaryMetric label="Core" value={`${templateRecommendation.catalog_preview.core_accounts}`} />
+                      <SummaryMetric label="Regulatory" value={`${templateRecommendation.catalog_preview.regulatory_accounts}`} />
+                      <SummaryMetric label="Optional" value={`${templateRecommendation.catalog_preview.optional_accounts}`} />
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Sample accounts that would load</div>
+                      <div className="mt-3 space-y-2">
+                        {templateRecommendation.catalog_preview.sample_accounts.map((account) => (
+                          <div key={account.code} className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-3">
+                            <div>
+                              <div className="text-sm font-semibold text-brand-navy">{account.code} · {account.name}</div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {account.jurisdiction ? `${account.jurisdiction} specific` : 'Global core'}
+                                {account.module_dependency ? ` · ${account.module_dependency}` : ''}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {account.is_core ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-600">Core</span> : null}
+                              {account.is_regulatory ? <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">Reg</span> : null}
+                              {account.is_optional ? <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Optional</span> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Recommendation guidance will appear once the accounting profile is complete enough to evaluate.</div>
@@ -555,6 +603,15 @@ function RecommendationList({ title, items, emptyState }: { title: string; items
           <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">{emptyState}</div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-3 py-3">
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-1 text-lg font-heading text-brand-navy">{value}</div>
     </div>
   );
 }

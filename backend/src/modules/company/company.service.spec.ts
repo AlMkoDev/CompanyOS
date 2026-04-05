@@ -103,6 +103,41 @@ describe('CompanyService', () => {
         { module_code: 'MULTI_CURRENCY', module_name: 'Multi-currency Accounting', is_required: true },
         { module_code: 'IAS29', module_name: 'IAS 29 Restatement', is_required: false },
       ],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'ZW_TAX',
+          catalog_account: {
+            code: '2311',
+            name: 'ZIMRA VAT Output',
+            jurisdiction: 'ZW',
+            is_core: true,
+            is_regulatory: true,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'MULTI_CURRENCY',
+          catalog_account: {
+            code: '7000',
+            name: 'Foreign Exchange Gain or Loss',
+            jurisdiction: null,
+            is_core: false,
+            is_regulatory: true,
+            is_optional: true,
+          },
+        },
+      ],
     });
 
     const result = await service.previewAccountingTemplateRecommendation('company-1', {
@@ -137,6 +172,15 @@ describe('CompanyService', () => {
         expect.stringContaining('USD functional currency'),
         expect.stringContaining('Cross-border ZA/ZW'),
       ]),
+    );
+    expect(result.recommendation.catalog_preview).toEqual(
+      expect.objectContaining({
+        total_accounts: 3,
+        core_accounts: 2,
+        regulatory_accounts: 2,
+        optional_accounts: 1,
+        module_dependent_accounts: 2,
+      }),
     );
   });
 
