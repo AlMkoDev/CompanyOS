@@ -22,10 +22,11 @@ describe('CompanyController integration', () => {
       findOne: jest.fn(),
       updateCompany: jest.fn(),
       updateSetupProgress: jest.fn(),
-      previewAccountingTemplateRecommendation: jest.fn(),
-      previewAccountingTemplateActivation: jest.fn(),
-      listAccountingProfileAuditHistory: jest.fn(),
-    };
+    previewAccountingTemplateRecommendation: jest.fn(),
+    previewAccountingTemplateActivation: jest.fn(),
+    activateAccountingTemplate: jest.fn(),
+    listAccountingProfileAuditHistory: jest.fn(),
+  };
 
     guardSpy = jest
       .spyOn(JwtAuthGuard.prototype, 'canActivate')
@@ -168,6 +169,37 @@ describe('CompanyController integration', () => {
     });
     expect(response.body).toEqual({
       dry_run: { accounts_to_create: 12 },
+    });
+  });
+
+  it('activates the recommended accounting template through company-scoped context', async () => {
+    companyService.activateAccountingTemplate.mockResolvedValue({
+      activated: true,
+      created_count: 8,
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/company/accounting-template-activation')
+      .send({
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+        },
+      })
+      .expect(201);
+
+    expect(companyService.activateAccountingTemplate).toHaveBeenCalledWith(
+      'company-1',
+      ['Super Admin'],
+      'user-1',
+      {
+        primary_jurisdiction: 'ZA',
+        reporting_framework: 'IFRS_FULL',
+      },
+    );
+    expect(response.body).toEqual({
+      activated: true,
+      created_count: 8,
     });
   });
 });

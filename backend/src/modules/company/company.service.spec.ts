@@ -12,6 +12,10 @@ describe('CompanyService', () => {
     },
     gLAccount: {
       findMany: jest.fn(),
+      create: jest.fn(),
+    },
+    gLAccountAuditTrail: {
+      create: jest.fn(),
     },
     companyAccountingProfileAudit: {
       findMany: jest.fn(),
@@ -36,6 +40,8 @@ describe('CompanyService', () => {
     prisma.$transaction.mockImplementation(async (callback) =>
       callback({
         company: prisma.company,
+        gLAccount: prisma.gLAccount,
+        gLAccountAuditTrail: prisma.gLAccountAuditTrail,
         companyAccountingProfileAudit: prisma.companyAccountingProfileAudit,
       }),
     );
@@ -112,6 +118,7 @@ describe('CompanyService', () => {
           catalog_account: {
             code: '1000',
             name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
             jurisdiction: null,
             is_core: true,
             is_regulatory: false,
@@ -123,6 +130,7 @@ describe('CompanyService', () => {
           catalog_account: {
             code: '2311',
             name: 'ZIMRA VAT Output',
+            account_type: 'liability',
             jurisdiction: 'ZW',
             is_core: true,
             is_regulatory: true,
@@ -134,6 +142,7 @@ describe('CompanyService', () => {
           catalog_account: {
             code: '7000',
             name: 'Foreign Exchange Gain or Loss',
+            account_type: 'expense',
             jurisdiction: null,
             is_core: false,
             is_regulatory: true,
@@ -311,6 +320,7 @@ describe('CompanyService', () => {
           catalog_account: {
             code: '1000',
             name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
             jurisdiction: null,
             is_core: true,
             is_regulatory: false,
@@ -322,6 +332,7 @@ describe('CompanyService', () => {
           catalog_account: {
             code: '2310',
             name: 'SARS VAT Output',
+            account_type: 'liability',
             jurisdiction: 'ZA',
             is_core: true,
             is_regulatory: true,
@@ -346,7 +357,7 @@ describe('CompanyService', () => {
     );
     expect(result.dry_run.to_create_sample).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: '2310', name: 'SARS VAT Output' }),
+        expect.objectContaining({ code: '2310', name: 'SARS VAT Output', account_type: 'liability' }),
       ]),
     );
     expect(result.dry_run.collisions_sample).toEqual(
@@ -354,6 +365,101 @@ describe('CompanyService', () => {
         expect.objectContaining({ code: '1000', existing_name: 'Cash Existing' }),
       ]),
     );
+  });
+
+  it('activates the recommended template into the company chart when no collisions exist', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [{ module_code: 'SA_TAX', module_name: 'South Africa Tax Pack', is_required: true }],
+      accounts: [
+        {
+          inclusion_reason: 'Cash baseline',
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            description: 'Cash control',
+            account_type: 'asset',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+        {
+          inclusion_reason: 'VAT control',
+          module_dependency: 'SA_TAX',
+          catalog_account: {
+            code: '2310',
+            name: 'SARS VAT Output',
+            description: 'VAT output control',
+            account_type: 'liability',
+            jurisdiction: 'ZA',
+            is_core: true,
+            is_regulatory: true,
+            is_optional: false,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    prisma.gLAccount.create
+      .mockResolvedValueOnce({
+        id: 'gl-1000',
+        code: '1000',
+        name: 'Cash and Cash Equivalents',
+        level: 1,
+        full_path: '1000',
+      })
+      .mockResolvedValueOnce({
+        id: 'gl-2310',
+        code: '2310',
+        name: 'SARS VAT Output',
+        level: 1,
+        full_path: '2310',
+      });
+
+    const result = await service.activateAccountingTemplate(
+      'company-1',
+      ['Super Admin'],
+      'user-1',
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        activated: true,
+        template_code: 'FULL_INTEGRATED',
+        created_count: 2,
+        created_accounts: expect.arrayContaining([
+          expect.objectContaining({ code: '1000', account_type: 'asset' }),
+          expect.objectContaining({ code: '2310', account_type: 'liability' }),
+        ]),
+      }),
+    );
+    expect(prisma.gLAccount.create).toHaveBeenCalledTimes(2);
+    expect(prisma.gLAccountAuditTrail.create).toHaveBeenCalledTimes(2);
+    expect(prisma.companyAccountingProfileAudit.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        company_id: 'company-1',
+        actor_user_id: 'user-1',
+        action: 'template_activation',
+        change_summary: expect.stringContaining('FULL_INTEGRATED'),
+      }),
+    });
   });
 
   it('merges setup config and creates missing selected departments once', async () => {

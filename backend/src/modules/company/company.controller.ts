@@ -60,4 +60,19 @@ export class CompanyController {
       data.accounting_profile,
     );
   }
+
+  @Post('accounting-template-activation')
+  async activateAccountingTemplate(
+    @CurrentUser('companyId') companyId: string,
+    @CurrentUser('roles') roles: string[],
+    @CurrentUser('userId') userId: string,
+    @Body() data: PreviewAccountingTemplateRecommendationDto,
+  ) {
+    return this.companyService.activateAccountingTemplate(
+      companyId,
+      roles,
+      userId,
+      data.accounting_profile,
+    );
+  }
 }

@@ -41,6 +41,7 @@ type Recommendation = {
     sample_accounts: Array<{
       code: string;
       name: string;
+      account_type?: string | null;
       jurisdiction?: string | null;
       module_dependency?: string | null;
       is_core: boolean;
@@ -61,6 +62,7 @@ type ActivationDryRun = {
   to_create_sample: Array<{
     code: string;
     name: string;
+    account_type?: string | null;
     jurisdiction?: string | null;
     module_dependency?: string | null;
     is_core: boolean;
@@ -73,6 +75,19 @@ type ActivationDryRun = {
     existing_name?: string | null;
     existing_id?: string | null;
     existing_active?: boolean | null;
+  }>;
+};
+
+type ActivationResult = {
+  activated: boolean;
+  template_code?: string;
+  message?: string;
+  created_count: number;
+  created_accounts?: Array<{
+    id: string;
+    code: string;
+    name: string;
+    account_type: string;
   }>;
 };
 
@@ -183,6 +198,7 @@ export default function AccountingSettingsPage() {
   const [savedForm, setSavedForm] = React.useState<AccountingProfileForm>(defaultForm());
   const [templateRecommendation, setTemplateRecommendation] = React.useState<Recommendation | null>(null);
   const [activationDryRun, setActivationDryRun] = React.useState<ActivationDryRun | null>(null);
+  const [activationResult, setActivationResult] = React.useState<ActivationResult | null>(null);
   const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -193,6 +209,58 @@ export default function AccountingSettingsPage() {
   const frameworkOptions = FRAMEWORK_OPTIONS[form.primaryJurisdiction] || FRAMEWORK_OPTIONS.ZA;
   const currencyOptions = CURRENCY_OPTIONS[form.primaryJurisdiction] || CURRENCY_OPTIONS.ZA;
   const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+
+  const loadHistory = React.useCallback(async () => {
+    const historyResponse = await apiFetch('/company/accounting-profile/history');
+    if (historyResponse.ok) {
+      const historyData = await historyResponse.json();
+      setHistory(Array.isArray(historyData) ? historyData : []);
+    }
+  }, []);
+
+  const refreshTemplateInsights = React.useCallback(async (profileForm: AccountingProfileForm) => {
+    if (profileForm.primaryJurisdiction === 'ZW' && !profileForm.functionalCurrencyJustification.trim()) {
+      setTemplateRecommendation(null);
+      setActivationDryRun(null);
+      return;
+    }
+
+    setRecommendationLoading(true);
+    try {
+      const payload = { accounting_profile: buildPayload(profileForm) };
+      const response = await apiFetch('/company/accounting-template-recommendation/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        setTemplateRecommendation(null);
+        setActivationDryRun(null);
+        return;
+      }
+
+      const data = await response.json();
+      setTemplateRecommendation(data.recommendation || null);
+
+      const dryRunResponse = await apiFetch('/company/accounting-template-activation/dry-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (dryRunResponse.ok) {
+        const dryRunData = await dryRunResponse.json();
+        setActivationDryRun(dryRunData.dry_run || null);
+      } else {
+        setActivationDryRun(null);
+      }
+    } catch (previewError) {
+      console.error(previewError);
+      setTemplateRecommendation(null);
+      setActivationDryRun(null);
+    } finally {
+      setRecommendationLoading(false);
+    }
+  }, []);
 
   React.useEffect(() => {
     const loadCompany = async () => {
@@ -207,11 +275,7 @@ export default function AccountingSettingsPage() {
         setForm(nextForm);
         setSavedForm(nextForm);
 
-        const historyResponse = await apiFetch('/company/accounting-profile/history');
-        if (historyResponse.ok) {
-          const historyData = await historyResponse.json();
-          setHistory(Array.isArray(historyData) ? historyData : []);
-        }
+        await loadHistory();
       } catch (loadError) {
         console.error(loadError);
         setError('We could not load the company accounting profile just now.');
@@ -220,7 +284,7 @@ export default function AccountingSettingsPage() {
       }
     };
     void loadCompany();
-  }, []);
+  }, [loadHistory]);
 
   React.useEffect(() => {
     setForm((current) => {
@@ -257,58 +321,15 @@ export default function AccountingSettingsPage() {
   }, [form.primaryJurisdiction, form.crossBorderOperations]);
 
   React.useEffect(() => {
-    let cancelled = false;
     const loadRecommendation = async () => {
-      if (form.primaryJurisdiction === 'ZW' && !form.functionalCurrencyJustification.trim()) {
-        setTemplateRecommendation(null);
-        setActivationDryRun(null);
-        return;
-      }
-
-      setRecommendationLoading(true);
-      try {
-        const response = await apiFetch('/company/accounting-template-recommendation/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accounting_profile: buildPayload(form) }),
-        });
-        if (!response.ok) {
-          if (!cancelled) setTemplateRecommendation(null);
-          return;
-        }
-        const data = await response.json();
-        if (!cancelled) setTemplateRecommendation(data.recommendation || null);
-
-        const dryRunResponse = await apiFetch('/company/accounting-template-activation/dry-run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accounting_profile: buildPayload(form) }),
-        });
-        if (dryRunResponse.ok) {
-          const dryRunData = await dryRunResponse.json();
-          if (!cancelled) {
-            setActivationDryRun(dryRunData.dry_run || null);
-          }
-        } else if (!cancelled) {
-          setActivationDryRun(null);
-        }
-      } catch (previewError) {
-        if (!cancelled) {
-          console.error(previewError);
-          setTemplateRecommendation(null);
-          setActivationDryRun(null);
-        }
-      } finally {
-        if (!cancelled) setRecommendationLoading(false);
-      }
+      await refreshTemplateInsights(form);
     };
 
     const timeout = window.setTimeout(() => void loadRecommendation(), 250);
     return () => {
-      cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [form]);
+  }, [form, refreshTemplateInsights]);
 
   const toggleOperatingJurisdiction = (jurisdiction: 'ZA' | 'ZW') => {
     setForm((current) => {
@@ -343,15 +364,46 @@ export default function AccountingSettingsPage() {
       const nextForm = normalizeProfile(data.accounting_profile);
       setForm(nextForm);
       setSavedForm(nextForm);
+      setActivationResult(null);
       setMessage('Accounting settings updated. The jurisdiction and reporting foundation is now saved.');
-      const historyResponse = await apiFetch('/company/accounting-profile/history');
-      if (historyResponse.ok) {
-        const historyData = await historyResponse.json();
-        setHistory(Array.isArray(historyData) ? historyData : []);
-      }
+      await loadHistory();
     } catch (saveError) {
       console.error(saveError);
       setError(saveError instanceof Error ? saveError.message : 'Unable to save the accounting profile.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleActivation = async () => {
+    if (!canEdit) return;
+
+    setIsSaving(true);
+    setError(null);
+    setMessage(null);
+    setActivationResult(null);
+    try {
+      const response = await apiFetch('/company/accounting-template-activation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accounting_profile: buildPayload(form) }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message || 'Unable to activate the recommended chart.');
+      }
+      const data = await response.json();
+      const result = data as ActivationResult;
+      setActivationResult(result);
+      setMessage(
+        result.activated
+          ? `Recommended chart activated. ${result.created_count} account${result.created_count === 1 ? '' : 's'} created.`
+          : result.message || 'No new template accounts were created.',
+      );
+      await Promise.all([refreshTemplateInsights(form), loadHistory()]);
+    } catch (activationError) {
+      console.error(activationError);
+      setError(activationError instanceof Error ? activationError.message : 'Unable to activate the recommended chart.');
     } finally {
       setIsSaving(false);
     }
@@ -549,6 +601,7 @@ export default function AccountingSettingsPage() {
                               </div>
                             </div>
                             <div className="flex flex-wrap justify-end gap-1">
+                              {account.account_type ? <AccountTypeBadge accountType={account.account_type} /> : null}
                               {account.is_core ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-600">Core</span> : null}
                               {account.is_regulatory ? <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">Reg</span> : null}
                               {account.is_optional ? <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Optional</span> : null}
@@ -572,12 +625,47 @@ export default function AccountingSettingsPage() {
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Refreshing activation preview...</div>
             ) : activationDryRun ? (
               <div className="mt-5 space-y-5">
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleActivation}
+                    disabled={!canEdit || isSaving || activationDryRun.collisions > 0 || activationDryRun.accounts_to_create === 0}
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {isSaving ? 'Activating...' : 'Activate Recommended Chart'}
+                  </button>
+                  {activationDryRun.collisions > 0 ? (
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                      Activation is blocked until code collisions are resolved in the current chart.
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <SummaryMetric label="Existing" value={`${activationDryRun.existing_company_accounts}`} />
                   <SummaryMetric label="Template" value={`${activationDryRun.template_accounts_considered}`} />
                   <SummaryMetric label="To create" value={`${activationDryRun.accounts_to_create}`} />
                   <SummaryMetric label="Collisions" value={`${activationDryRun.collisions}`} />
                 </div>
+
+                {activationResult ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+                    <div className="font-semibold">
+                      {activationResult.activated
+                        ? `${activationResult.created_count} account${activationResult.created_count === 1 ? '' : 's'} created from ${activationResult.template_code}.`
+                        : activationResult.message || 'No new template accounts were created.'}
+                    </div>
+                    {activationResult.created_accounts?.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {activationResult.created_accounts.slice(0, 8).map((account) => (
+                          <span key={account.id} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                            {account.code} · {account.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <RecommendationList
                   title="Governance Warnings"
@@ -594,7 +682,7 @@ export default function AccountingSettingsPage() {
                     key: account.code,
                     label: `${account.code} · ${account.name}`,
                     detail: `${account.jurisdiction ? `${account.jurisdiction} specific` : 'Global baseline'}${account.module_dependency ? ` · ${account.module_dependency}` : ''}`,
-                    badge: account.is_regulatory ? 'Reg' : account.is_core ? 'Core' : account.is_optional ? 'Optional' : undefined,
+                    badge: account.account_type ? prettifyAccountType(account.account_type) : account.is_regulatory ? 'Reg' : account.is_core ? 'Core' : account.is_optional ? 'Optional' : undefined,
                   }))}
                   emptyState="The current company chart already covers this template sample."
                 />
@@ -707,5 +795,18 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
       <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</div>
       <div className="mt-1 text-lg font-heading text-brand-navy">{value}</div>
     </div>
+  );
+}
+
+function prettifyAccountType(accountType: string) {
+  const normalized = accountType.trim().toLowerCase();
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function AccountTypeBadge({ accountType }: { accountType: string }) {
+  return (
+    <span className="rounded-full bg-brand-navy/8 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-brand-navy">
+      {prettifyAccountType(accountType)}
+    </span>
   );
 }

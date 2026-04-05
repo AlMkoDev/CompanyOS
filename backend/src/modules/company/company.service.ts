@@ -397,6 +397,45 @@ export class CompanyService {
     };
   }
 
+  private inferCatalogAccountType(account: { account_type?: string | null; code: string }) {
+    if (account.account_type?.trim()) {
+      return account.account_type.trim().toLowerCase();
+    }
+
+    if (account.code.startsWith('1')) return 'asset';
+    if (account.code.startsWith('2')) return 'liability';
+    if (account.code.startsWith('3')) return 'equity';
+    if (account.code.startsWith('4')) return 'revenue';
+    return 'expense';
+  }
+
+  private getDefaultFsPlacementForAccountType(type: string) {
+    switch (type) {
+      case 'asset':
+        return 'Current Assets';
+      case 'liability':
+        return 'Current Liabilities';
+      case 'equity':
+        return 'Equity';
+      case 'revenue':
+        return 'Revenue';
+      case 'expense':
+        return 'Operating Expenses';
+      default:
+        return null;
+    }
+  }
+
+  private getActivationParentCode(code: string) {
+    const numericCode = Number(code);
+    if (Number.isNaN(numericCode) || code.endsWith('00')) {
+      return null;
+    }
+
+    const parentCode = String(Math.floor(numericCode / 100) * 100).padStart(4, '0');
+    return parentCode === code ? null : parentCode;
+  }
+
   async previewAccountingTemplateRecommendation(companyId: string, data?: Record<string, any> | null) {
     const {
       profile,
@@ -418,6 +457,7 @@ export class CompanyService {
       sample_accounts: templateAccounts.slice(0, 12).map((account) => ({
         code: account.catalog_account.code,
         name: account.catalog_account.name,
+        account_type: this.inferCatalogAccountType(account.catalog_account),
         jurisdiction: account.catalog_account.jurisdiction,
         module_dependency: account.module_dependency,
         is_core: account.catalog_account.is_core,
@@ -476,6 +516,7 @@ export class CompanyService {
       .map((account) => ({
         code: account.catalog_account.code,
         name: account.catalog_account.name,
+        account_type: this.inferCatalogAccountType(account.catalog_account),
         jurisdiction: account.catalog_account.jurisdiction,
         module_dependency: account.module_dependency,
         is_core: account.catalog_account.is_core,
@@ -512,6 +553,147 @@ export class CompanyService {
         collisions_sample: collisions.slice(0, 12),
       },
     };
+  }
+
+  async activateAccountingTemplate(
+    companyId: string,
+    actorRoles?: string[] | null,
+    actorUserId?: string | null,
+    data?: Record<string, any> | null,
+  ) {
+    this.assertAccountingProfileAdminAccess(actorRoles);
+
+    const preview = await this.previewAccountingTemplateActivation(companyId, data);
+    if (preview.dry_run.collisions > 0) {
+      throw new BadRequestException(
+        'Template activation is blocked because account code collisions already exist in the company chart.',
+      );
+    }
+
+    if (preview.dry_run.accounts_to_create === 0) {
+      return {
+        activated: false,
+        message: 'No new accounts were created because the current company chart already covers this template.',
+        created_count: 0,
+      };
+    }
+
+    const context = await this.buildTemplateRecommendationContext(companyId, data);
+
+    return this.prisma.$transaction(async (tx) => {
+      const existingAccounts = await tx.gLAccount.findMany({
+        where: { company_id: companyId },
+        select: { id: true, code: true, level: true, full_path: true },
+      });
+
+      const accountIndex = new Map(
+        existingAccounts.map((account) => [
+          account.code.toUpperCase(),
+          {
+            id: account.id,
+            level: account.level ?? 1,
+            full_path: account.full_path ?? account.code,
+          },
+        ]),
+      );
+
+      const createdAccounts: Array<{ id: string; code: string; name: string; account_type: string }> = [];
+
+      for (const templateAccount of context.templateAccounts) {
+        const code = templateAccount.catalog_account.code.toUpperCase();
+        if (accountIndex.has(code)) {
+          continue;
+        }
+
+        const accountType = this.inferCatalogAccountType(templateAccount.catalog_account);
+        const parentCode = this.getActivationParentCode(templateAccount.catalog_account.code);
+        const parent = parentCode ? accountIndex.get(parentCode.toUpperCase()) : null;
+        const level = parent ? parent.level + 1 : 1;
+        const fullPath = parent ? `${parent.full_path} > ${templateAccount.catalog_account.code}` : templateAccount.catalog_account.code;
+
+        const created = await tx.gLAccount.create({
+          data: {
+            company_id: companyId,
+            code: templateAccount.catalog_account.code,
+            name: templateAccount.catalog_account.name,
+            description: templateAccount.catalog_account.description || templateAccount.inclusion_reason,
+            type: accountType,
+            category: accountType.charAt(0).toUpperCase() + accountType.slice(1),
+            subtype: templateAccount.module_dependency || null,
+            parent_id: parent?.id || null,
+            is_header: templateAccount.catalog_account.code.endsWith('00'),
+            is_contra: false,
+            is_active: true,
+            normal_balance: ['asset', 'expense'].includes(accountType) ? 'DR' : 'CR',
+            sensitivity_tier: 'T3',
+            fs_placement: this.getDefaultFsPlacementForAccountType(accountType),
+            budget_enabled: false,
+            tax_treatment: templateAccount.catalog_account.is_regulatory ? 'template_regulatory_default' : null,
+            level,
+            full_path: fullPath,
+            created_by: actorUserId || null,
+            modified_by: actorUserId || null,
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            level: true,
+            full_path: true,
+          },
+        });
+
+        accountIndex.set(created.code.toUpperCase(), {
+          id: created.id,
+          level: created.level ?? 1,
+          full_path: created.full_path ?? created.code,
+        });
+        createdAccounts.push({
+          id: created.id,
+          code: created.code,
+          name: created.name,
+          account_type: accountType,
+        });
+
+        await tx.gLAccountAuditTrail.create({
+          data: {
+            company_id: companyId,
+            account_id: created.id,
+            actor_user_id: actorUserId || null,
+            action: 'template_activation',
+            reason: `Activated from ${preview.recommendation.template_code}`,
+            change_summary: `Account ${created.code} created during template activation.`,
+            after_snapshot: {
+              code: created.code,
+              name: created.name,
+              type: accountType,
+              source_template: preview.recommendation.template_code,
+            },
+          },
+        });
+      }
+
+      await tx.companyAccountingProfileAudit.create({
+        data: {
+          company_id: companyId,
+          actor_user_id: actorUserId || null,
+          action: 'template_activation',
+          change_summary: `Activated ${preview.recommendation.template_code} and created ${createdAccounts.length} chart account${createdAccounts.length === 1 ? '' : 's'}.`,
+          next_snapshot: {
+            template_code: preview.recommendation.template_code,
+            created_count: createdAccounts.length,
+            created_codes: createdAccounts.map((account) => account.code),
+          },
+        },
+      });
+
+      return {
+        activated: true,
+        template_code: preview.recommendation.template_code,
+        created_count: createdAccounts.length,
+        created_accounts: createdAccounts.slice(0, 20),
+      };
+    });
   }
 
   async listAccountingProfileAuditHistory(companyId: string) {
