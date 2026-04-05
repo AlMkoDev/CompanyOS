@@ -110,6 +110,13 @@ type AccountingProfileAudit = {
   action: string;
   change_summary?: string | null;
   created_at: string;
+  next_snapshot?: {
+    template_code?: string;
+    activation_scope?: ActivationScope;
+    selected_module_codes?: string[];
+    created_count?: number;
+    created_codes?: string[];
+  } | null;
   actor?: {
     id: string;
     first_name: string;
@@ -229,6 +236,7 @@ export default function AccountingSettingsPage() {
   const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm);
   const scopeLabel =
     ACTIVATION_SCOPE_OPTIONS.find((option) => option.value === activationScope)?.label || 'Full recommended';
+  const activationHistory = history.filter((item) => item.action === 'template_activation');
 
   const buildTemplateRequestPayload = React.useCallback(
     (profileForm: AccountingProfileForm) => ({
@@ -888,6 +896,73 @@ export default function AccountingSettingsPage() {
                 Dry-run activation preview will appear once the accounting profile is complete enough to evaluate.
               </div>
             )}
+          </div>
+
+          <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Activation history</div>
+            <h2 className="mt-2 text-xl font-heading text-brand-navy">Recent Chart Activations</h2>
+            <div className="mt-5 space-y-3">
+              {activationHistory.length > 0 ? activationHistory.map((item) => {
+                const snapshot = item.next_snapshot || {};
+                const historyScopeLabel = snapshot.activation_scope
+                  ? ACTIVATION_SCOPE_OPTIONS.find((option) => option.value === snapshot.activation_scope)?.label || snapshot.activation_scope
+                  : 'Full recommended';
+                return (
+                  <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-sm font-semibold text-brand-navy">
+                        {item.change_summary || 'Chart activation recorded.'}
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                        Activated
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                      <div>
+                        <span className="font-semibold text-brand-navy">Template:</span>{' '}
+                        {snapshot.template_code || 'Unknown'}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-brand-navy">Scope:</span>{' '}
+                        {historyScopeLabel}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-brand-navy">Accounts created:</span>{' '}
+                        {snapshot.created_count ?? 0}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-brand-navy">Modules:</span>{' '}
+                        {snapshot.selected_module_codes?.length
+                          ? snapshot.selected_module_codes.join(', ')
+                          : 'No additional module packs recorded'}
+                      </div>
+                    </div>
+                    {snapshot.created_codes?.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {snapshot.created_codes.slice(0, 8).map((code) => (
+                          <span key={code} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
+                            {code}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 text-sm text-slate-500">
+                      {item.actor ? `${item.actor.first_name} ${item.actor.last_name}` : 'System or legacy actor'}
+                      {' · '}
+                      {new Date(item.created_at).toLocaleString('en-ZA', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                  Chart activation history will appear here after the first governed template activation is completed.
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
