@@ -10,7 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-class UpdateCompanyAccountingProfileDto {
+export class UpdateCompanyAccountingProfileDto {
   @IsOptional()
   @IsString()
   primary_jurisdiction?: string;

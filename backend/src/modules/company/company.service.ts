@@ -206,6 +206,147 @@ export class CompanyService {
     return payload;
   }
 
+  private async getResolvedAccountingProfile(companyId: string, data?: Record<string, any> | null) {
+    if (data && Object.keys(data).length > 0) {
+      return this.buildAccountingProfilePayload(data);
+    }
+
+    const company = await this.prisma.company.findFirst({
+      where: { id: companyId },
+      include: { accounting_profile: true },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    if (company.accounting_profile) {
+      return this.buildAccountingProfilePayload(company.accounting_profile as unknown as Record<string, any>);
+    }
+
+    return this.buildAccountingProfilePayload({
+      primary_jurisdiction: 'ZA',
+      reporting_framework: 'IFRS_FULL',
+      functional_currency: 'ZAR',
+      presentation_currency: 'ZAR',
+      operating_jurisdictions: ['ZA'],
+    });
+  }
+
+  async previewAccountingTemplateRecommendation(companyId: string, data?: Record<string, any> | null) {
+    const profile = await this.getResolvedAccountingProfile(companyId, data);
+
+    const warnings: string[] = [];
+    const modules = new Map<string, { code: string; name: string; required: boolean; reason: string }>();
+    const regulatoryPacks: Array<{ code: string; name: string; reason: string }> = [];
+    let templateCode = 'FULL_INTEGRATED';
+    let rationale =
+      'Recommended as the broad integrated chart for operational finance, reporting, and control coverage.';
+
+    const addModule = (code: string, name: string, required: boolean, reason: string) => {
+      const existing = modules.get(code);
+      if (existing) {
+        modules.set(code, { ...existing, required: existing.required || required });
+        return;
+      }
+      modules.set(code, { code, name, required, reason });
+    };
+
+    if (profile.primary_jurisdiction === 'ZW') {
+      templateCode = 'ZW_FULL_INTEGRATED';
+      rationale =
+        'Zimbabwe entities need a chart prepared for local tax structure, multi-currency operations, and possible IAS 29 restatement.';
+      addModule('ZW_TAX', 'Zimbabwe Tax Pack', true, 'Required for ZIMRA-aligned tax defaults.');
+      addModule('MULTI_CURRENCY', 'Multi-currency Accounting', true, 'Zimbabwe setup requires explicit multi-currency readiness.');
+
+      if (profile.zw_ias29_applicable || profile.reporting_framework === 'ZW_IFRS29') {
+        addModule('IAS29', 'IAS 29 Restatement', true, 'Required when hyperinflationary reporting is applicable.');
+        warnings.push(
+          'IAS 29 restatement accounts and CPI setup must be completed before the first Zimbabwe period close.',
+        );
+      }
+
+      if (profile.functional_currency === 'USD') {
+        warnings.push(
+          'USD functional currency is allowed for Zimbabwe only when supported by documented IAS 21 justification and exchange-control compliance.',
+        );
+      }
+    } else {
+      addModule('SA_TAX', 'South Africa Tax Pack', true, 'Required for SARS-aligned tax defaults.');
+
+      if (profile.reporting_framework === 'IFRS_SME') {
+        templateCode = 'SME_LITE';
+        rationale =
+          'Recommended as a leaner South African chart for private entities using IFRS for SMEs.';
+      }
+
+      if (profile.pfma_entity) {
+        templateCode = 'ZA_PUBLIC_SECTOR_REVIEW';
+        rationale =
+          'Public-sector South African entities need a chart that is flagged for PFMA and SCOA review before go-live.';
+        addModule('PFMA_SCOA_REVIEW', 'PFMA and SCOA Review', true, 'Required for public-sector reporting and control review.');
+        warnings.push(
+          'PFMA selection means the chart must be reviewed against SCOA and National Treasury guidance before activation.',
+        );
+      }
+
+      if (!profile.sdl_exempt && profile.annual_payroll_estimate && new Prisma.Decimal(profile.annual_payroll_estimate).greaterThan(0)) {
+        warnings.push(
+          'SDL is active for this profile, so payroll tax accounts should be included during chart activation.',
+        );
+      }
+    }
+
+    if (profile.cross_border_operations && profile.operating_jurisdictions.includes('ZA') && profile.operating_jurisdictions.includes('ZW')) {
+      addModule(
+        'CROSS_BORDER_INTERCOMPANY',
+        'Cross-border Intercompany',
+        Boolean(profile.consolidates_subsidiaries),
+        'Needed for ZA/ZW intercompany accounting, treaty handling, and cross-border reporting.',
+      );
+      regulatoryPacks.push({
+        code: 'ZA_ZW_DTA',
+        name: 'South Africa / Zimbabwe DTA Review',
+        reason: 'Cross-border withholding and treaty-rate handling should be configured before payment journals are posted.',
+      });
+      warnings.push(
+        'Cross-border ZA/ZW entities should configure DTA treaty rates and intercompany rules before activating payment workflows.',
+      );
+    }
+
+    const template = await this.prisma.coaTemplate.findUnique({
+      where: { code: templateCode },
+      include: {
+        modules: {
+          orderBy: [{ is_required: 'desc' }, { module_name: 'asc' }],
+        },
+      },
+    });
+
+    const templateModules = template?.modules ?? [];
+    for (const module of templateModules) {
+      addModule(
+        module.module_code,
+        module.module_name,
+        module.is_required,
+        `Seeded by the ${template?.name || templateCode} template.`,
+      );
+    }
+
+    return {
+      profile,
+      recommendation: {
+        template_code: templateCode,
+        template_name: template?.name || templateCode,
+        template_description: template?.description || rationale,
+        rationale,
+        modules: Array.from(modules.values()),
+        regulatory_packs: regulatoryPacks,
+        warnings,
+      },
+    };
+  }
+
   async updateSetupProgress(companyId: string, data: any) {
     return this.prisma.$transaction(async (tx) => {
       const existingSetup = await tx.companySetup.findUnique({

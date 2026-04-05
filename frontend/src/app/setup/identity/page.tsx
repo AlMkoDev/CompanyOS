@@ -24,6 +24,16 @@ const currencyOptions: Record<string, string[]> = {
 };
 
 export default function IdentityStep() {
+  const [templateRecommendation, setTemplateRecommendation] = useState<{
+    template_code: string;
+    template_name: string;
+    template_description: string;
+    rationale: string;
+    modules: Array<{ code: string; name: string; required: boolean; reason: string }>;
+    regulatory_packs: Array<{ code: string; name: string; reason: string }>;
+    warnings: string[];
+  } | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
   const [identity, setIdentity] = useState({
     tagline: '',
     industry: '',
@@ -142,6 +152,96 @@ export default function IdentityStep() {
       };
     });
   }, [identity.primaryJurisdiction, identity.crossBorderOperations]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRecommendation = async () => {
+      if (identity.primaryJurisdiction === 'ZW' && !identity.functionalCurrencyJustification.trim()) {
+        setTemplateRecommendation(null);
+        return;
+      }
+
+      setRecommendationLoading(true);
+
+      try {
+        const response = await apiFetch('/company/accounting-template-recommendation/preview', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            accounting_profile: {
+              primary_jurisdiction: identity.primaryJurisdiction,
+              operating_jurisdictions: Array.from(new Set(identity.operatingJurisdictions)),
+              reporting_framework: identity.reportingFramework,
+              functional_currency: identity.functionalCurrency,
+              presentation_currency: identity.presentationCurrency,
+              functional_currency_justification:
+                identity.primaryJurisdiction === 'ZW' ? identity.functionalCurrencyJustification : undefined,
+              zw_ias29_applicable: identity.primaryJurisdiction === 'ZW' ? identity.zwIas29Applicable : false,
+              zw_prior_ias29_application:
+                identity.primaryJurisdiction === 'ZW' ? identity.zwPriorIas29Application : false,
+              cross_border_operations: identity.crossBorderOperations,
+              consolidates_subsidiaries: identity.consolidatesSubsidiaries,
+              vat_registered: identity.vatRegistered,
+              pfma_entity: identity.primaryJurisdiction === 'ZA' ? identity.pfmaEntity : false,
+              sdl_exempt: identity.primaryJurisdiction === 'ZA' ? identity.sdlExempt : false,
+              annual_payroll_estimate:
+                identity.annualPayrollEstimate.trim().length > 0
+                  ? Number(identity.annualPayrollEstimate)
+                  : undefined,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setTemplateRecommendation(null);
+          }
+          return;
+        }
+
+        const data = await response.json();
+        if (!cancelled) {
+          setTemplateRecommendation(data.recommendation || null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to preview accounting template recommendation:', error);
+          setTemplateRecommendation(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setRecommendationLoading(false);
+        }
+      }
+    };
+
+    const timeout = window.setTimeout(() => {
+      void loadRecommendation();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [
+    identity.primaryJurisdiction,
+    identity.operatingJurisdictions,
+    identity.reportingFramework,
+    identity.functionalCurrency,
+    identity.presentationCurrency,
+    identity.functionalCurrencyJustification,
+    identity.zwIas29Applicable,
+    identity.zwPriorIas29Application,
+    identity.crossBorderOperations,
+    identity.consolidatesSubsidiaries,
+    identity.vatRegistered,
+    identity.pfmaEntity,
+    identity.sdlExempt,
+    identity.annualPayrollEstimate,
+  ]);
 
   const toggleOperatingJurisdiction = (jurisdiction: string) => {
     setIdentity((current) => {
@@ -443,6 +543,83 @@ export default function IdentityStep() {
                   </label>
                 </div>
               )}
+            </div>
+
+            <div className="rounded-2xl border border-brand-gold/20 bg-gradient-to-br from-brand-gold/10 via-white to-white p-6 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-brand-gold">Accounting Template Recommendation</p>
+                  <h3 className="mt-2 text-xl font-heading text-brand-navy">
+                    {templateRecommendation?.template_name || 'Waiting for profile inputs'}
+                  </h3>
+                </div>
+                <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">
+                  {recommendationLoading ? 'Refreshing' : templateRecommendation?.template_code || 'Preview'}
+                </span>
+              </div>
+
+              <p className="text-sm text-slate-600">
+                {templateRecommendation?.rationale ||
+                  (identity.primaryJurisdiction === 'ZW'
+                    ? 'Complete the Zimbabwe currency justification and profile choices to unlock the template recommendation.'
+                    : 'Choose the accounting profile inputs and we will recommend the best starting chart.' )}
+              </p>
+
+              {templateRecommendation ? (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-400">Recommended Modules</p>
+                      <div className="mt-3 space-y-3">
+                        {templateRecommendation.modules.map((module) => (
+                          <div key={module.code} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-slate-900">{module.name}</p>
+                              <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${module.required ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-700'}`}>
+                                {module.required ? 'Required' : 'Recommended'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">{module.reason}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-400">Regulatory Packs</p>
+                        <div className="mt-3 space-y-3">
+                          {templateRecommendation.regulatory_packs.length ? (
+                            templateRecommendation.regulatory_packs.map((pack) => (
+                              <div key={pack.code} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
+                                <p className="text-sm font-semibold text-slate-900">{pack.name}</p>
+                                <p className="mt-1 text-xs text-slate-500">{pack.reason}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">No extra regulatory packs are required for this profile yet.</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-slate-400">Wizard Warnings</p>
+                        <div className="mt-3 space-y-2">
+                          {templateRecommendation.warnings.length ? (
+                            templateRecommendation.warnings.map((warning) => (
+                              <div key={warning} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                                {warning}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">No jurisdiction-driven warnings are currently triggered by this profile.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
 
             <div className="flex justify-end gap-4 pt-4">

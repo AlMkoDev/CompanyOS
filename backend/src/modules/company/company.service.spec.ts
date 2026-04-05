@@ -10,6 +10,9 @@ describe('CompanyService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    coaTemplate: {
+      findUnique: jest.fn(),
+    },
     companySetup: {
       findUnique: jest.fn(),
       upsert: jest.fn(),
@@ -77,6 +80,53 @@ describe('CompanyService', () => {
         setup: true,
       },
     });
+  });
+
+  it('recommends Zimbabwe integrated template with mandatory IAS 29 and cross-border modules', async () => {
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'ZW_FULL_INTEGRATED',
+      name: 'Zimbabwe Full Integrated Chart',
+      description: 'Zimbabwe chart',
+      modules: [
+        { module_code: 'ZW_TAX', module_name: 'Zimbabwe Tax Pack', is_required: true },
+        { module_code: 'MULTI_CURRENCY', module_name: 'Multi-currency Accounting', is_required: true },
+        { module_code: 'IAS29', module_name: 'IAS 29 Restatement', is_required: false },
+      ],
+    });
+
+    const result = await service.previewAccountingTemplateRecommendation('company-1', {
+      primary_jurisdiction: 'ZW',
+      operating_jurisdictions: ['ZW', 'ZA'],
+      reporting_framework: 'ZW_IFRS29',
+      functional_currency: 'USD',
+      presentation_currency: 'USD',
+      functional_currency_justification: 'USD is the primary revenue and treasury currency.',
+      zw_ias29_applicable: true,
+      cross_border_operations: true,
+      consolidates_subsidiaries: true,
+    });
+
+    expect(result.recommendation.template_code).toBe('ZW_FULL_INTEGRATED');
+    expect(result.recommendation.modules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'ZW_TAX', required: true }),
+        expect.objectContaining({ code: 'MULTI_CURRENCY', required: true }),
+        expect.objectContaining({ code: 'IAS29', required: true }),
+        expect.objectContaining({ code: 'CROSS_BORDER_INTERCOMPANY', required: true }),
+      ]),
+    );
+    expect(result.recommendation.regulatory_packs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'ZA_ZW_DTA' }),
+      ]),
+    );
+    expect(result.recommendation.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('IAS 29'),
+        expect.stringContaining('USD functional currency'),
+        expect.stringContaining('Cross-border ZA/ZW'),
+      ]),
+    );
   });
 
   it('upserts accounting profile when jurisdiction settings are supplied', async () => {

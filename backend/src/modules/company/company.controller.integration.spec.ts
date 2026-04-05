@@ -12,6 +12,7 @@ describe('CompanyController integration', () => {
     findOne: jest.Mock;
     updateCompany: jest.Mock;
     updateSetupProgress: jest.Mock;
+    previewAccountingTemplateRecommendation: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -19,6 +20,7 @@ describe('CompanyController integration', () => {
       findOne: jest.fn(),
       updateCompany: jest.fn(),
       updateSetupProgress: jest.fn(),
+      previewAccountingTemplateRecommendation: jest.fn(),
     };
 
     guardSpy = jest
@@ -99,5 +101,29 @@ describe('CompanyController integration', () => {
       isComplete: false,
     });
     expect(response.body).toEqual({ current_step: 3 });
+  });
+
+  it('previews accounting template recommendation through company-scoped context', async () => {
+    companyService.previewAccountingTemplateRecommendation.mockResolvedValue({
+      recommendation: { template_code: 'FULL_INTEGRATED' },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/company/accounting-template-recommendation/preview')
+      .send({
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+        },
+      })
+      .expect(201);
+
+    expect(companyService.previewAccountingTemplateRecommendation).toHaveBeenCalledWith('company-1', {
+      primary_jurisdiction: 'ZA',
+      reporting_framework: 'IFRS_FULL',
+    });
+    expect(response.body).toEqual({
+      recommendation: { template_code: 'FULL_INTEGRATED' },
+    });
   });
 });

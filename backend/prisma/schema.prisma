@@ -157,6 +157,68 @@ model CompanyAccountingProfile {
   company Company @relation(fields: [company_id], references: [id])
 }
 
+model CoaTemplate {
+  id                   String   @id @default(uuid()) @db.Uuid
+  code                 String   @unique
+  name                 String
+  description          String?
+  jurisdiction         String?
+  reporting_frameworks String[] @default([])
+  is_active            Boolean  @default(true)
+  sort_order           Int      @default(0)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  modules  CoaTemplateModule[]
+  accounts CoaTemplateAccount[]
+}
+
+model CoaTemplateModule {
+  id              String   @id @default(uuid()) @db.Uuid
+  template_id     String   @db.Uuid
+  module_code     String
+  module_name     String
+  is_required     Boolean  @default(false)
+  default_enabled Boolean  @default(true)
+  created_at      DateTime @default(now())
+
+  template CoaTemplate @relation(fields: [template_id], references: [id])
+
+  @@unique([template_id, module_code])
+}
+
+model CoaCatalogAccount {
+  id                   String   @id @default(uuid()) @db.Uuid
+  code                 String   @unique
+  name                 String
+  description          String?
+  jurisdiction         String?
+  reporting_frameworks String[] @default([])
+  module_tags          String[] @default([])
+  is_core              Boolean  @default(false)
+  is_regulatory        Boolean  @default(false)
+  is_optional          Boolean  @default(false)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  templates CoaTemplateAccount[]
+}
+
+model CoaTemplateAccount {
+  id                 String   @id @default(uuid()) @db.Uuid
+  template_id        String   @db.Uuid
+  catalog_account_id String   @db.Uuid
+  inclusion_reason   String
+  module_dependency  String?
+  sort_order         Int      @default(0)
+  created_at         DateTime @default(now())
+
+  template       CoaTemplate       @relation(fields: [template_id], references: [id])
+  catalog_account CoaCatalogAccount @relation(fields: [catalog_account_id], references: [id])
+
+  @@unique([template_id, catalog_account_id])
+}
+
 model User {
   id            String   @id @default(uuid()) @db.Uuid
   email         String   @unique

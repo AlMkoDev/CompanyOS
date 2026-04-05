@@ -1,9 +1,10 @@
-import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, UseGuards } from '@nestjs/common';
 import { CompanyService } from './company.service';
 import { JwtAuthGuard } from '../auth/jwt.strategy';
 import { CurrentUser } from '../../common/decorators/user.decorator';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateCompanySetupDto } from './dto/update-company-setup.dto';
+import { PreviewAccountingTemplateRecommendationDto } from './dto/preview-accounting-template-recommendation.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('company')
@@ -29,5 +30,16 @@ export class CompanyController {
     @Body() data: UpdateCompanySetupDto,
   ) {
     return this.companyService.updateSetupProgress(companyId, data);
+  }
+
+  @Post('accounting-template-recommendation/preview')
+  async previewAccountingTemplateRecommendation(
+    @CurrentUser('companyId') companyId: string,
+    @Body() data: PreviewAccountingTemplateRecommendationDto,
+  ) {
+    return this.companyService.previewAccountingTemplateRecommendation(
+      companyId,
+      data.accounting_profile,
+    );
   }
 }
