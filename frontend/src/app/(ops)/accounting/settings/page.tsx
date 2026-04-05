@@ -858,6 +858,26 @@ export default function AccountingSettingsPage() {
                         ))}
                       </div>
                     ) : null}
+                    {activationResult.activated ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-200 bg-white px-4 py-4 text-slate-700">
+                        <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Post-activation working set</div>
+                        <div className="mt-2 text-sm font-semibold text-brand-navy">Continue in Chart of Accounts</div>
+                        <div className="mt-2 text-sm text-slate-600">
+                          Open the company chart to review the newly created account set, validate hierarchy, and continue account-level governance work.
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
+                          <Link
+                            href="/accounting/chart-of-accounts"
+                            className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
+                          >
+                            Open Chart Of Accounts
+                          </Link>
+                          <span className="inline-flex items-center justify-center rounded-2xl border border-emerald-200 px-4 py-3 text-sm font-semibold text-emerald-700">
+                            {activationResult.created_count} newly created
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -954,6 +974,14 @@ export default function AccountingSettingsPage() {
                         month: 'short',
                         day: 'numeric',
                       })}
+                    </div>
+                    <div className="mt-3">
+                      <Link
+                        href="/accounting/chart-of-accounts"
+                        className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-brand-navy transition hover:bg-slate-50"
+                      >
+                        Open Chart Of Accounts
+                      </Link>
                     </div>
                   </div>
                 );
