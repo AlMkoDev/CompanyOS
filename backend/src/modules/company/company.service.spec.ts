@@ -10,6 +10,9 @@ describe('CompanyService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    gLAccount: {
+      findMany: jest.fn(),
+    },
     companyAccountingProfileAudit: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -284,6 +287,73 @@ describe('CompanyService', () => {
       },
     });
     expect(result).toEqual([{ id: 'audit-1' }]);
+  });
+
+  it('previews activation dry-run with create counts and collisions', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [{ module_code: 'SA_TAX', module_name: 'South Africa Tax Pack', is_required: true }],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'SA_TAX',
+          catalog_account: {
+            code: '2310',
+            name: 'SARS VAT Output',
+            jurisdiction: 'ZA',
+            is_core: true,
+            is_regulatory: true,
+            is_optional: false,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany.mockResolvedValue([
+      { id: 'gl-1', code: '1000', name: 'Cash Existing', type: 'asset', is_active: true },
+    ]);
+
+    const result = await service.previewAccountingTemplateActivation('company-1');
+
+    expect(result.dry_run).toEqual(
+      expect.objectContaining({
+        existing_company_accounts: 1,
+        template_accounts_considered: 2,
+        accounts_to_create: 1,
+        collisions: 1,
+      }),
+    );
+    expect(result.dry_run.to_create_sample).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: '2310', name: 'SARS VAT Output' }),
+      ]),
+    );
+    expect(result.dry_run.collisions_sample).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: '1000', existing_name: 'Cash Existing' }),
+      ]),
+    );
   });
 
   it('merges setup config and creates missing selected departments once', async () => {

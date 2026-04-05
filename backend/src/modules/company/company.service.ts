@@ -265,7 +265,7 @@ export class CompanyService {
     });
   }
 
-  async previewAccountingTemplateRecommendation(companyId: string, data?: Record<string, any> | null) {
+  private async buildTemplateRecommendationContext(companyId: string, data?: Record<string, any> | null) {
     const profile = await this.getResolvedAccountingProfile(companyId, data);
 
     const warnings: string[] = [];
@@ -385,6 +385,30 @@ export class CompanyService {
       return activeModuleCodes.has(account.module_dependency);
     });
 
+    return {
+      profile,
+      warnings,
+      modules,
+      regulatoryPacks,
+      templateCode,
+      rationale,
+      template,
+      templateAccounts,
+    };
+  }
+
+  async previewAccountingTemplateRecommendation(companyId: string, data?: Record<string, any> | null) {
+    const {
+      profile,
+      warnings,
+      modules,
+      regulatoryPacks,
+      templateCode,
+      rationale,
+      template,
+      templateAccounts,
+    } = await this.buildTemplateRecommendationContext(companyId, data);
+
     const catalogPreview = {
       total_accounts: templateAccounts.length,
       core_accounts: templateAccounts.filter((account) => account.catalog_account.is_core).length,
@@ -413,6 +437,79 @@ export class CompanyService {
         regulatory_packs: regulatoryPacks,
         warnings,
         catalog_preview: catalogPreview,
+      },
+    };
+  }
+
+  async previewAccountingTemplateActivation(companyId: string, data?: Record<string, any> | null) {
+    const recommendation = await this.previewAccountingTemplateRecommendation(companyId, data);
+    const context = await this.buildTemplateRecommendationContext(companyId, data);
+
+    const existingAccounts = await this.prisma.gLAccount.findMany({
+      where: { company_id: companyId },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+        is_active: true,
+      },
+      orderBy: { code: 'asc' },
+    });
+
+    const existingByCode = new Map(existingAccounts.map((account) => [account.code.toUpperCase(), account]));
+    const collisions = context.templateAccounts
+      .filter((account) => existingByCode.has(account.catalog_account.code.toUpperCase()))
+      .map((account) => {
+        const existing = existingByCode.get(account.catalog_account.code.toUpperCase());
+        return {
+          code: account.catalog_account.code,
+          template_name: account.catalog_account.name,
+          existing_name: existing?.name || null,
+          existing_id: existing?.id || null,
+          existing_active: existing?.is_active ?? null,
+        };
+      });
+
+    const toCreate = context.templateAccounts
+      .filter((account) => !existingByCode.has(account.catalog_account.code.toUpperCase()))
+      .map((account) => ({
+        code: account.catalog_account.code,
+        name: account.catalog_account.name,
+        jurisdiction: account.catalog_account.jurisdiction,
+        module_dependency: account.module_dependency,
+        is_core: account.catalog_account.is_core,
+        is_regulatory: account.catalog_account.is_regulatory,
+        is_optional: account.catalog_account.is_optional,
+      }));
+
+    const governanceWarnings = [
+      ...recommendation.recommendation.warnings,
+      ...(collisions.length > 0
+        ? [
+            `${collisions.length} template account code collision${
+              collisions.length === 1 ? '' : 's'
+            } detected against the current company chart.`,
+          ]
+        : []),
+      ...(context.profile.primary_jurisdiction === 'ZW' && !context.profile.functional_currency_justification
+        ? ['Zimbabwe activation still needs functional currency justification before chart load.']
+        : []),
+    ];
+
+    return {
+      profile: recommendation.profile,
+      recommendation: recommendation.recommendation,
+      dry_run: {
+        template_code: recommendation.recommendation.template_code,
+        template_name: recommendation.recommendation.template_name,
+        existing_company_accounts: existingAccounts.length,
+        template_accounts_considered: context.templateAccounts.length,
+        accounts_to_create: toCreate.length,
+        collisions: collisions.length,
+        governance_warnings: governanceWarnings,
+        to_create_sample: toCreate.slice(0, 12),
+        collisions_sample: collisions.slice(0, 12),
       },
     };
   }

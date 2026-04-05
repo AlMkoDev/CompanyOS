@@ -50,6 +50,32 @@ type Recommendation = {
   };
 };
 
+type ActivationDryRun = {
+  template_code: string;
+  template_name: string;
+  existing_company_accounts: number;
+  template_accounts_considered: number;
+  accounts_to_create: number;
+  collisions: number;
+  governance_warnings: string[];
+  to_create_sample: Array<{
+    code: string;
+    name: string;
+    jurisdiction?: string | null;
+    module_dependency?: string | null;
+    is_core: boolean;
+    is_regulatory: boolean;
+    is_optional: boolean;
+  }>;
+  collisions_sample: Array<{
+    code: string;
+    template_name: string;
+    existing_name?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+  }>;
+};
+
 type AccountingProfileAudit = {
   id: string;
   action: string;
@@ -156,6 +182,7 @@ export default function AccountingSettingsPage() {
   const [form, setForm] = React.useState<AccountingProfileForm>(defaultForm());
   const [savedForm, setSavedForm] = React.useState<AccountingProfileForm>(defaultForm());
   const [templateRecommendation, setTemplateRecommendation] = React.useState<Recommendation | null>(null);
+  const [activationDryRun, setActivationDryRun] = React.useState<ActivationDryRun | null>(null);
   const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -234,6 +261,7 @@ export default function AccountingSettingsPage() {
     const loadRecommendation = async () => {
       if (form.primaryJurisdiction === 'ZW' && !form.functionalCurrencyJustification.trim()) {
         setTemplateRecommendation(null);
+        setActivationDryRun(null);
         return;
       }
 
@@ -250,10 +278,25 @@ export default function AccountingSettingsPage() {
         }
         const data = await response.json();
         if (!cancelled) setTemplateRecommendation(data.recommendation || null);
+
+        const dryRunResponse = await apiFetch('/company/accounting-template-activation/dry-run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounting_profile: buildPayload(form) }),
+        });
+        if (dryRunResponse.ok) {
+          const dryRunData = await dryRunResponse.json();
+          if (!cancelled) {
+            setActivationDryRun(dryRunData.dry_run || null);
+          }
+        } else if (!cancelled) {
+          setActivationDryRun(null);
+        }
       } catch (previewError) {
         if (!cancelled) {
           console.error(previewError);
           setTemplateRecommendation(null);
+          setActivationDryRun(null);
         }
       } finally {
         if (!cancelled) setRecommendationLoading(false);
@@ -519,6 +562,57 @@ export default function AccountingSettingsPage() {
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Recommendation guidance will appear once the accounting profile is complete enough to evaluate.</div>
+            )}
+          </div>
+
+          <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Activation readiness</div>
+            <h2 className="mt-2 text-xl font-heading text-brand-navy">COA Activation Dry-Run</h2>
+            {recommendationLoading ? (
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Refreshing activation preview...</div>
+            ) : activationDryRun ? (
+              <div className="mt-5 space-y-5">
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <SummaryMetric label="Existing" value={`${activationDryRun.existing_company_accounts}`} />
+                  <SummaryMetric label="Template" value={`${activationDryRun.template_accounts_considered}`} />
+                  <SummaryMetric label="To create" value={`${activationDryRun.accounts_to_create}`} />
+                  <SummaryMetric label="Collisions" value={`${activationDryRun.collisions}`} />
+                </div>
+
+                <RecommendationList
+                  title="Governance Warnings"
+                  items={activationDryRun.governance_warnings.map((warning, index) => ({
+                    key: `${index}-${warning}`,
+                    label: warning,
+                  }))}
+                  emptyState="No additional dry-run governance warnings were raised."
+                />
+
+                <RecommendationList
+                  title="Accounts That Would Be Created"
+                  items={activationDryRun.to_create_sample.map((account) => ({
+                    key: account.code,
+                    label: `${account.code} · ${account.name}`,
+                    detail: `${account.jurisdiction ? `${account.jurisdiction} specific` : 'Global baseline'}${account.module_dependency ? ` · ${account.module_dependency}` : ''}`,
+                    badge: account.is_regulatory ? 'Reg' : account.is_core ? 'Core' : account.is_optional ? 'Optional' : undefined,
+                  }))}
+                  emptyState="The current company chart already covers this template sample."
+                />
+
+                <RecommendationList
+                  title="Code Collisions Against Current Chart"
+                  items={activationDryRun.collisions_sample.map((collision) => ({
+                    key: collision.code,
+                    label: `${collision.code} · ${collision.template_name}`,
+                    detail: `Existing company account: ${collision.existing_name || 'Unknown'}${collision.existing_active === false ? ' · inactive' : ''}`,
+                  }))}
+                  emptyState="No code collisions were detected in the dry-run sample."
+                />
+              </div>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                Dry-run activation preview will appear once the accounting profile is complete enough to evaluate.
+              </div>
             )}
           </div>
 

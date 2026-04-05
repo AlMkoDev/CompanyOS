@@ -13,6 +13,7 @@ describe('CompanyController integration', () => {
     updateCompany: jest.Mock;
     updateSetupProgress: jest.Mock;
     previewAccountingTemplateRecommendation: jest.Mock;
+    previewAccountingTemplateActivation: jest.Mock;
     listAccountingProfileAuditHistory: jest.Mock;
   };
 
@@ -22,6 +23,7 @@ describe('CompanyController integration', () => {
       updateCompany: jest.fn(),
       updateSetupProgress: jest.fn(),
       previewAccountingTemplateRecommendation: jest.fn(),
+      previewAccountingTemplateActivation: jest.fn(),
       listAccountingProfileAuditHistory: jest.fn(),
     };
 
@@ -142,6 +144,30 @@ describe('CompanyController integration', () => {
     });
     expect(response.body).toEqual({
       recommendation: { template_code: 'FULL_INTEGRATED' },
+    });
+  });
+
+  it('previews accounting template activation dry-run through company-scoped context', async () => {
+    companyService.previewAccountingTemplateActivation.mockResolvedValue({
+      dry_run: { accounts_to_create: 12 },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/company/accounting-template-activation/dry-run')
+      .send({
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+        },
+      })
+      .expect(201);
+
+    expect(companyService.previewAccountingTemplateActivation).toHaveBeenCalledWith('company-1', {
+      primary_jurisdiction: 'ZA',
+      reporting_framework: 'IFRS_FULL',
+    });
+    expect(response.body).toEqual({
+      dry_run: { accounts_to_create: 12 },
     });
   });
 });

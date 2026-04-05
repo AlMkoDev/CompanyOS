@@ -49,4 +49,15 @@ export class CompanyController {
       data.accounting_profile,
     );
   }
+
+  @Post('accounting-template-activation/dry-run')
+  async previewAccountingTemplateActivation(
+    @CurrentUser('companyId') companyId: string,
+    @Body() data: PreviewAccountingTemplateRecommendationDto,
+  ) {
+    return this.companyService.previewAccountingTemplateActivation(
+      companyId,
+      data.accounting_profile,
+    );
+  }
 }
