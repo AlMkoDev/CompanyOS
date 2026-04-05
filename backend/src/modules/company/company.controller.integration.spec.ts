@@ -136,12 +136,16 @@ describe('CompanyController integration', () => {
           primary_jurisdiction: 'ZA',
           reporting_framework: 'IFRS_FULL',
         },
+        activation_scope: 'CORE_ONLY',
       })
       .expect(201);
 
     expect(companyService.previewAccountingTemplateRecommendation).toHaveBeenCalledWith('company-1', {
-      primary_jurisdiction: 'ZA',
-      reporting_framework: 'IFRS_FULL',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        reporting_framework: 'IFRS_FULL',
+      },
+      activation_scope: 'CORE_ONLY',
     });
     expect(response.body).toEqual({
       recommendation: { template_code: 'FULL_INTEGRATED' },
@@ -160,12 +164,16 @@ describe('CompanyController integration', () => {
           primary_jurisdiction: 'ZA',
           reporting_framework: 'IFRS_FULL',
         },
+        activation_scope: 'CORE_AND_REGULATORY',
       })
       .expect(201);
 
     expect(companyService.previewAccountingTemplateActivation).toHaveBeenCalledWith('company-1', {
-      primary_jurisdiction: 'ZA',
-      reporting_framework: 'IFRS_FULL',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        reporting_framework: 'IFRS_FULL',
+      },
+      activation_scope: 'CORE_AND_REGULATORY',
     });
     expect(response.body).toEqual({
       dry_run: { accounts_to_create: 12 },
@@ -185,6 +193,8 @@ describe('CompanyController integration', () => {
           primary_jurisdiction: 'ZA',
           reporting_framework: 'IFRS_FULL',
         },
+        activation_scope: 'MODULE_SELECTED',
+        selected_module_codes: ['SA_TAX'],
       })
       .expect(201);
 
@@ -193,8 +203,12 @@ describe('CompanyController integration', () => {
       ['Super Admin'],
       'user-1',
       {
-        primary_jurisdiction: 'ZA',
-        reporting_framework: 'IFRS_FULL',
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+        },
+        activation_scope: 'MODULE_SELECTED',
+        selected_module_codes: ['SA_TAX'],
       },
     );
     expect(response.body).toEqual({

@@ -367,6 +367,88 @@ describe('CompanyService', () => {
     );
   });
 
+  it('supports scoped activation previews for core and regulatory selection', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [
+        { module_code: 'SA_TAX', module_name: 'South Africa Tax Pack', is_required: true },
+        { module_code: 'PAYROLL', module_name: 'Payroll Pack', is_required: false },
+      ],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'SA_TAX',
+          catalog_account: {
+            code: '2310',
+            name: 'SARS VAT Output',
+            account_type: 'liability',
+            jurisdiction: 'ZA',
+            is_core: true,
+            is_regulatory: true,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'PAYROLL',
+          catalog_account: {
+            code: '5100',
+            name: 'Payroll Tax Expense',
+            account_type: 'expense',
+            jurisdiction: null,
+            is_core: false,
+            is_regulatory: false,
+            is_optional: true,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany.mockResolvedValue([]);
+
+    const result = await service.previewAccountingTemplateActivation('company-1', {
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        reporting_framework: 'IFRS_FULL',
+      },
+      activation_scope: 'CORE_AND_REGULATORY',
+    });
+
+    expect(result.dry_run).toEqual(
+      expect.objectContaining({
+        activation_scope: 'CORE_AND_REGULATORY',
+        template_accounts_considered: 2,
+        accounts_to_create: 2,
+      }),
+    );
+    expect(result.dry_run.to_create_sample).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ code: '5100' }),
+      ]),
+    );
+  });
+
   it('activates the recommended template into the company chart when no collisions exist', async () => {
     prisma.company.findFirst.mockResolvedValue({
       id: 'company-1',

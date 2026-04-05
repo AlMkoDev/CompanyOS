@@ -35,6 +35,12 @@ export class CompanyService {
     ZA: ['ZAR', 'USD', 'EUR', 'GBP'],
     ZW: ['ZIG', 'USD', 'ZAR', 'GBP'],
   };
+  private readonly supportedActivationScopes = new Set([
+    'FULL_RECOMMENDED',
+    'CORE_ONLY',
+    'CORE_AND_REGULATORY',
+    'MODULE_SELECTED',
+  ]);
 
   private isSchemaDriftError(error: unknown) {
     return (
@@ -265,8 +271,43 @@ export class CompanyService {
     });
   }
 
+  private extractAccountingProfileData(data?: Record<string, any> | null) {
+    if (data?.accounting_profile && typeof data.accounting_profile === 'object') {
+      return data.accounting_profile as Record<string, any>;
+    }
+
+    return data;
+  }
+
+  private resolveActivationScope(data?: Record<string, any> | null) {
+    const requestedScope =
+      typeof data?.activation_scope === 'string'
+        ? data.activation_scope.trim().toUpperCase()
+        : 'FULL_RECOMMENDED';
+
+    const activationScope = this.supportedActivationScopes.has(requestedScope)
+      ? requestedScope
+      : 'FULL_RECOMMENDED';
+
+    const selectedModuleCodes = Array.from(
+      new Set(
+        Array.isArray(data?.selected_module_codes)
+          ? data.selected_module_codes
+              .filter((value): value is string => typeof value === 'string')
+              .map((value) => value.trim())
+              .filter(Boolean)
+          : [],
+      ),
+    );
+
+    return {
+      activation_scope: activationScope,
+      selected_module_codes: selectedModuleCodes,
+    };
+  }
+
   private async buildTemplateRecommendationContext(companyId: string, data?: Record<string, any> | null) {
-    const profile = await this.getResolvedAccountingProfile(companyId, data);
+    const profile = await this.getResolvedAccountingProfile(companyId, this.extractAccountingProfileData(data));
 
     const warnings: string[] = [];
     const modules = new Map<string, { code: string; name: string; required: boolean; reason: string }>();
@@ -371,11 +412,7 @@ export class CompanyService {
       );
     }
 
-    const activeModuleCodes = new Set(
-      Array.from(modules.values())
-        .filter((module) => module.required)
-        .map((module) => module.code),
-    );
+    const activeModuleCodes = new Set(Array.from(modules.keys()));
 
     const templateAccounts = (template?.accounts || []).filter((account) => {
       if (!account.module_dependency) {
@@ -395,6 +432,41 @@ export class CompanyService {
       template,
       templateAccounts,
     };
+  }
+
+  private filterTemplateAccountsByScope(
+    templateAccounts: Array<any>,
+    activationScope: string,
+    selectedModuleCodes: string[],
+  ) {
+    switch (activationScope) {
+      case 'CORE_ONLY':
+        return templateAccounts.filter(
+          (account) =>
+            account.catalog_account.is_core &&
+            !account.catalog_account.is_regulatory &&
+            !account.catalog_account.is_optional,
+        );
+      case 'CORE_AND_REGULATORY':
+        return templateAccounts.filter(
+          (account) =>
+            (account.catalog_account.is_core || account.catalog_account.is_regulatory) &&
+            !account.catalog_account.is_optional,
+        );
+      case 'MODULE_SELECTED': {
+        const selected = new Set(selectedModuleCodes);
+        return templateAccounts.filter((account) => {
+          if (!account.module_dependency) {
+            return account.catalog_account.is_core || account.catalog_account.is_regulatory;
+          }
+
+          return selected.has(account.module_dependency);
+        });
+      }
+      case 'FULL_RECOMMENDED':
+      default:
+        return templateAccounts;
+    }
   }
 
   private inferCatalogAccountType(account: { account_type?: string | null; code: string }) {
@@ -447,14 +519,20 @@ export class CompanyService {
       template,
       templateAccounts,
     } = await this.buildTemplateRecommendationContext(companyId, data);
+    const scope = this.resolveActivationScope(data);
+    const scopedAccounts = this.filterTemplateAccountsByScope(
+      templateAccounts,
+      scope.activation_scope,
+      scope.selected_module_codes,
+    );
 
     const catalogPreview = {
-      total_accounts: templateAccounts.length,
-      core_accounts: templateAccounts.filter((account) => account.catalog_account.is_core).length,
-      regulatory_accounts: templateAccounts.filter((account) => account.catalog_account.is_regulatory).length,
-      optional_accounts: templateAccounts.filter((account) => account.catalog_account.is_optional).length,
-      module_dependent_accounts: templateAccounts.filter((account) => Boolean(account.module_dependency)).length,
-      sample_accounts: templateAccounts.slice(0, 12).map((account) => ({
+      total_accounts: scopedAccounts.length,
+      core_accounts: scopedAccounts.filter((account) => account.catalog_account.is_core).length,
+      regulatory_accounts: scopedAccounts.filter((account) => account.catalog_account.is_regulatory).length,
+      optional_accounts: scopedAccounts.filter((account) => account.catalog_account.is_optional).length,
+      module_dependent_accounts: scopedAccounts.filter((account) => Boolean(account.module_dependency)).length,
+      sample_accounts: scopedAccounts.slice(0, 12).map((account) => ({
         code: account.catalog_account.code,
         name: account.catalog_account.name,
         account_type: this.inferCatalogAccountType(account.catalog_account),
@@ -474,6 +552,8 @@ export class CompanyService {
         template_description: template?.description || rationale,
         rationale,
         modules: Array.from(modules.values()),
+        activation_scope: scope.activation_scope,
+        selected_module_codes: scope.selected_module_codes,
         regulatory_packs: regulatoryPacks,
         warnings,
         catalog_preview: catalogPreview,
@@ -484,6 +564,12 @@ export class CompanyService {
   async previewAccountingTemplateActivation(companyId: string, data?: Record<string, any> | null) {
     const recommendation = await this.previewAccountingTemplateRecommendation(companyId, data);
     const context = await this.buildTemplateRecommendationContext(companyId, data);
+    const scope = this.resolveActivationScope(data);
+    const scopedAccounts = this.filterTemplateAccountsByScope(
+      context.templateAccounts,
+      scope.activation_scope,
+      scope.selected_module_codes,
+    );
 
     const existingAccounts = await this.prisma.gLAccount.findMany({
       where: { company_id: companyId },
@@ -498,7 +584,7 @@ export class CompanyService {
     });
 
     const existingByCode = new Map(existingAccounts.map((account) => [account.code.toUpperCase(), account]));
-    const collisions = context.templateAccounts
+    const collisions = scopedAccounts
       .filter((account) => existingByCode.has(account.catalog_account.code.toUpperCase()))
       .map((account) => {
         const existing = existingByCode.get(account.catalog_account.code.toUpperCase());
@@ -511,7 +597,7 @@ export class CompanyService {
         };
       });
 
-    const toCreate = context.templateAccounts
+    const toCreate = scopedAccounts
       .filter((account) => !existingByCode.has(account.catalog_account.code.toUpperCase()))
       .map((account) => ({
         code: account.catalog_account.code,
@@ -544,8 +630,10 @@ export class CompanyService {
       dry_run: {
         template_code: recommendation.recommendation.template_code,
         template_name: recommendation.recommendation.template_name,
+        activation_scope: scope.activation_scope,
+        selected_module_codes: scope.selected_module_codes,
         existing_company_accounts: existingAccounts.length,
-        template_accounts_considered: context.templateAccounts.length,
+        template_accounts_considered: scopedAccounts.length,
         accounts_to_create: toCreate.length,
         collisions: collisions.length,
         governance_warnings: governanceWarnings,
@@ -579,6 +667,12 @@ export class CompanyService {
     }
 
     const context = await this.buildTemplateRecommendationContext(companyId, data);
+    const scope = this.resolveActivationScope(data);
+    const scopedAccounts = this.filterTemplateAccountsByScope(
+      context.templateAccounts,
+      scope.activation_scope,
+      scope.selected_module_codes,
+    );
 
     return this.prisma.$transaction(async (tx) => {
       const existingAccounts = await tx.gLAccount.findMany({
@@ -599,7 +693,7 @@ export class CompanyService {
 
       const createdAccounts: Array<{ id: string; code: string; name: string; account_type: string }> = [];
 
-      for (const templateAccount of context.templateAccounts) {
+      for (const templateAccount of scopedAccounts) {
         const code = templateAccount.catalog_account.code.toUpperCase();
         if (accountIndex.has(code)) {
           continue;
@@ -678,9 +772,11 @@ export class CompanyService {
           company_id: companyId,
           actor_user_id: actorUserId || null,
           action: 'template_activation',
-          change_summary: `Activated ${preview.recommendation.template_code} and created ${createdAccounts.length} chart account${createdAccounts.length === 1 ? '' : 's'}.`,
+          change_summary: `Activated ${preview.recommendation.template_code} (${scope.activation_scope}) and created ${createdAccounts.length} chart account${createdAccounts.length === 1 ? '' : 's'}.`,
           next_snapshot: {
             template_code: preview.recommendation.template_code,
+            activation_scope: scope.activation_scope,
+            selected_module_codes: scope.selected_module_codes,
             created_count: createdAccounts.length,
             created_codes: createdAccounts.map((account) => account.code),
           },
@@ -690,6 +786,7 @@ export class CompanyService {
       return {
         activated: true,
         template_code: preview.recommendation.template_code,
+        activation_scope: scope.activation_scope,
         created_count: createdAccounts.length,
         created_accounts: createdAccounts.slice(0, 20),
       };

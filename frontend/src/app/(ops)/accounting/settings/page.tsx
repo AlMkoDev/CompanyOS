@@ -7,6 +7,15 @@ import { apiFetch } from '@/lib/api';
 import { canManageAccountingSettings } from '@/lib/permissions';
 import { useAuthStore } from '@/store/authStore';
 
+const ACTIVATION_SCOPE_OPTIONS = [
+  { value: 'FULL_RECOMMENDED', label: 'Full recommended', description: 'Load the full recommended chart and optional packs.' },
+  { value: 'CORE_ONLY', label: 'Core only', description: 'Load only the core baseline accounts.' },
+  { value: 'CORE_AND_REGULATORY', label: 'Core + regulatory', description: 'Load the core chart plus regulatory control accounts.' },
+  { value: 'MODULE_SELECTED', label: 'Selected modules', description: 'Load the baseline plus only the module packs you choose.' },
+] as const;
+
+type ActivationScope = (typeof ACTIVATION_SCOPE_OPTIONS)[number]['value'];
+
 const FRAMEWORK_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
   ZA: [
     { value: 'IFRS_FULL', label: 'IFRS Full' },
@@ -30,6 +39,8 @@ type Recommendation = {
   template_description: string;
   rationale: string;
   modules: Array<{ code: string; name: string; required: boolean; reason: string }>;
+  activation_scope?: ActivationScope;
+  selected_module_codes?: string[];
   regulatory_packs: Array<{ code: string; name: string; reason: string }>;
   warnings: string[];
   catalog_preview?: {
@@ -54,6 +65,8 @@ type Recommendation = {
 type ActivationDryRun = {
   template_code: string;
   template_name: string;
+  activation_scope?: ActivationScope;
+  selected_module_codes?: string[];
   existing_company_accounts: number;
   template_accounts_considered: number;
   accounts_to_create: number;
@@ -81,6 +94,7 @@ type ActivationDryRun = {
 type ActivationResult = {
   activated: boolean;
   template_code?: string;
+  activation_scope?: ActivationScope;
   message?: string;
   created_count: number;
   created_accounts?: Array<{
@@ -199,6 +213,8 @@ export default function AccountingSettingsPage() {
   const [templateRecommendation, setTemplateRecommendation] = React.useState<Recommendation | null>(null);
   const [activationDryRun, setActivationDryRun] = React.useState<ActivationDryRun | null>(null);
   const [activationResult, setActivationResult] = React.useState<ActivationResult | null>(null);
+  const [activationScope, setActivationScope] = React.useState<ActivationScope>('FULL_RECOMMENDED');
+  const [selectedModuleCodes, setSelectedModuleCodes] = React.useState<string[]>([]);
   const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -209,6 +225,15 @@ export default function AccountingSettingsPage() {
   const frameworkOptions = FRAMEWORK_OPTIONS[form.primaryJurisdiction] || FRAMEWORK_OPTIONS.ZA;
   const currencyOptions = CURRENCY_OPTIONS[form.primaryJurisdiction] || CURRENCY_OPTIONS.ZA;
   const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+
+  const buildTemplateRequestPayload = React.useCallback(
+    (profileForm: AccountingProfileForm) => ({
+      accounting_profile: buildPayload(profileForm),
+      activation_scope: activationScope,
+      selected_module_codes: selectedModuleCodes,
+    }),
+    [activationScope, selectedModuleCodes],
+  );
 
   const loadHistory = React.useCallback(async () => {
     const historyResponse = await apiFetch('/company/accounting-profile/history');
@@ -227,7 +252,7 @@ export default function AccountingSettingsPage() {
 
     setRecommendationLoading(true);
     try {
-      const payload = { accounting_profile: buildPayload(profileForm) };
+      const payload = buildTemplateRequestPayload(profileForm);
       const response = await apiFetch('/company/accounting-template-recommendation/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -260,7 +285,7 @@ export default function AccountingSettingsPage() {
     } finally {
       setRecommendationLoading(false);
     }
-  }, []);
+  }, [buildTemplateRequestPayload]);
 
   React.useEffect(() => {
     const loadCompany = async () => {
@@ -319,6 +344,23 @@ export default function AccountingSettingsPage() {
       };
     });
   }, [form.primaryJurisdiction, form.crossBorderOperations]);
+
+  React.useEffect(() => {
+    const requiredCodes = (templateRecommendation?.modules || [])
+      .filter((module) => module.required)
+      .map((module) => module.code);
+    const availableCodes = new Set((templateRecommendation?.modules || []).map((module) => module.code));
+
+    setSelectedModuleCodes((current) => {
+      const retained = current.filter((code) => availableCodes.has(code));
+      const merged = Array.from(new Set([...requiredCodes, ...retained]));
+      return JSON.stringify(merged) === JSON.stringify(current) ? current : merged;
+    });
+  }, [templateRecommendation]);
+
+  React.useEffect(() => {
+    setActivationResult(null);
+  }, [activationScope, selectedModuleCodes, form]);
 
   React.useEffect(() => {
     const loadRecommendation = async () => {
@@ -386,7 +428,7 @@ export default function AccountingSettingsPage() {
       const response = await apiFetch('/company/accounting-template-activation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accounting_profile: buildPayload(form) }),
+        body: JSON.stringify(buildTemplateRequestPayload(form)),
       });
       if (!response.ok) {
         const data = await response.json().catch(() => null);
@@ -582,6 +624,9 @@ export default function AccountingSettingsPage() {
                 {templateRecommendation.catalog_preview ? (
                   <div>
                     <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Chart activation preview</div>
+                    <div className="mt-2 text-sm text-slate-500">
+                      Scope: <span className="font-semibold text-brand-navy">{ACTIVATION_SCOPE_OPTIONS.find((option) => option.value === activationScope)?.label || 'Full recommended'}</span>
+                    </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-center">
                       <SummaryMetric label="Total" value={`${templateRecommendation.catalog_preview.total_accounts}`} />
                       <SummaryMetric label="Core" value={`${templateRecommendation.catalog_preview.core_accounts}`} />
@@ -625,6 +670,63 @@ export default function AccountingSettingsPage() {
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Refreshing activation preview...</div>
             ) : activationDryRun ? (
               <div className="mt-5 space-y-5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Activation scope</div>
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    {ACTIVATION_SCOPE_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() => setActivationScope(option.value)}
+                        className={`rounded-2xl border px-4 py-3 text-left transition ${
+                          activationScope === option.value
+                            ? 'border-brand-navy bg-brand-navy text-white'
+                            : 'border-slate-200 bg-white text-slate-700'
+                        } disabled:cursor-not-allowed disabled:opacity-70`}
+                      >
+                        <div className="text-sm font-semibold">{option.label}</div>
+                        <div className={`mt-1 text-xs ${activationScope === option.value ? 'text-white/80' : 'text-slate-500'}`}>
+                          {option.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {activationScope === 'MODULE_SELECTED' && templateRecommendation?.modules?.length ? (
+                    <div className="mt-4">
+                      <div className="text-sm font-semibold text-brand-navy">Module packs</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {templateRecommendation.modules.map((module) => {
+                          const selected = selectedModuleCodes.includes(module.code);
+                          return (
+                            <button
+                              key={module.code}
+                              type="button"
+                              disabled={!canEdit || module.required}
+                              onClick={() =>
+                                setSelectedModuleCodes((current) =>
+                                  current.includes(module.code)
+                                    ? current.filter((code) => code !== module.code)
+                                    : [...current, module.code],
+                                )
+                              }
+                              className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] transition ${
+                                selected
+                                  ? 'border-brand-navy bg-brand-navy text-white'
+                                  : 'border-slate-200 bg-white text-slate-600'
+                              } disabled:cursor-not-allowed disabled:opacity-70`}
+                            >
+                              {module.code}
+                              {module.required ? ' · Required' : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"

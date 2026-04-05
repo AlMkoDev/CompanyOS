@@ -46,7 +46,7 @@ export class CompanyController {
   ) {
     return this.companyService.previewAccountingTemplateRecommendation(
       companyId,
-      data.accounting_profile,
+      data,
     );
   }
 
@@ -57,7 +57,7 @@ export class CompanyController {
   ) {
     return this.companyService.previewAccountingTemplateActivation(
       companyId,
-      data.accounting_profile,
+      data,
     );
   }
 
@@ -72,7 +72,7 @@ export class CompanyController {
       companyId,
       roles,
       userId,
-      data.accounting_profile,
+      data,
     );
   }
 }
