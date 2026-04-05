@@ -28,6 +28,14 @@ const moduleRoleMatrix: Record<AppModule, string[]> = {
 };
 
 const fullHrisAccessRoles = new Set(['super_admin', 'chro', 'hr_director', 'administration_manager']);
+const accountingSettingsAdminRoles = new Set([
+  'super_admin',
+  'system_admin',
+  'system_administrator',
+  'admin',
+  'owner',
+  'company_admin',
+]);
 
 export function normalizeRoleName(role?: string | null) {
   if (!role) {
@@ -62,4 +70,9 @@ export function canAccessModule(user: PermissionUser | null | undefined, module:
 export function canViewSensitiveHrisData(user?: PermissionUser | null) {
   const roles = getNormalizedRoles(user);
   return roles.some((role) => fullHrisAccessRoles.has(role));
+}
+
+export function canManageAccountingSettings(user?: PermissionUser | null) {
+  const roles = getNormalizedRoles(user);
+  return roles.some((role) => accountingSettingsAdminRoles.has(role));
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -19,6 +19,14 @@ export class CompanyService {
   constructor(private prisma: PrismaService) {}
 
   private readonly supportedJurisdictions = new Set(['ZA', 'ZW']);
+  private readonly accountingProfileAdminRoles = new Set([
+    'super_admin',
+    'system_admin',
+    'system_administrator',
+    'admin',
+    'owner',
+    'company_admin',
+  ]);
   private readonly supportedFrameworksByJurisdiction: Record<string, string[]> = {
     ZA: ['IFRS_FULL', 'IFRS_SME', 'SA_GAAP_LEGACY'],
     ZW: ['ZW_IFRS_FULL', 'ZW_IFRS29'],
@@ -112,6 +120,30 @@ export class CompanyService {
 
   private normalizeFramework(value?: string | null) {
     return value?.trim().toUpperCase() || null;
+  }
+
+  private normalizeRoleName(role?: string | null) {
+    if (!role) {
+      return null;
+    }
+
+    return role.trim().toLowerCase().replace(/\s+/g, '_');
+  }
+
+  private getNormalizedRoles(roles?: string[] | null) {
+    return Array.from(
+      new Set((roles || []).map((role) => this.normalizeRoleName(role)).filter((role): role is string => Boolean(role))),
+    );
+  }
+
+  private assertAccountingProfileAdminAccess(actorRoles?: string[] | null) {
+    const roles = this.getNormalizedRoles(actorRoles);
+
+    if (!roles.some((role) => this.accountingProfileAdminRoles.has(role))) {
+      throw new ForbiddenException(
+        'Only administrators can change the company accounting profile.',
+      );
+    }
   }
 
   private buildAccountingProfilePayload(data?: Record<string, any> | null) {
@@ -423,8 +455,12 @@ export class CompanyService {
     });
   }
 
-  async updateCompany(id: string, data: any) {
+  async updateCompany(id: string, data: any, actorRoles?: string[] | null) {
     await this.findOne(id);
+
+    if (Object.prototype.hasOwnProperty.call(data, 'accounting_profile')) {
+      this.assertAccountingProfileAdminAccess(actorRoles);
+    }
 
     const accountingProfilePayload = this.buildAccountingProfilePayload(
       data.accounting_profile as Record<string, any> | null | undefined,

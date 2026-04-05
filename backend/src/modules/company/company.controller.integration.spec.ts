@@ -27,7 +27,7 @@ describe('CompanyController integration', () => {
       .spyOn(JwtAuthGuard.prototype, 'canActivate')
       .mockImplementation((context) => {
         const req = context.switchToHttp().getRequest();
-        req.user = { companyId: 'company-1', userId: 'user-1' };
+        req.user = { companyId: 'company-1', userId: 'user-1', roles: ['Super Admin'] };
         return true;
       });
 
@@ -75,15 +75,19 @@ describe('CompanyController integration', () => {
       })
       .expect(200);
 
-    expect(companyService.updateCompany).toHaveBeenCalledWith('company-1', {
-      tagline: 'Run everything',
-      accounting_profile: {
-        primary_jurisdiction: 'ZA',
-        reporting_framework: 'IFRS_FULL',
-        functional_currency: 'ZAR',
-        presentation_currency: 'ZAR',
+    expect(companyService.updateCompany).toHaveBeenCalledWith(
+      'company-1',
+      {
+        tagline: 'Run everything',
+        accounting_profile: {
+          primary_jurisdiction: 'ZA',
+          reporting_framework: 'IFRS_FULL',
+          functional_currency: 'ZAR',
+          presentation_currency: 'ZAR',
+        },
       },
-    });
+      ['Super Admin'],
+    );
     expect(response.body).toEqual({ id: 'company-1', tagline: 'Run everything' });
   });
 

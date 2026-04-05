@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { apiFetch } from '@/lib/api';
+import { canManageAccountingSettings } from '@/lib/permissions';
 import { useAuthStore } from '@/store/authStore';
 import { 
   ArrowUpRight, 
@@ -15,7 +16,8 @@ import {
   Lock,
   Building2,
   Users,
-  RefreshCw
+  RefreshCw,
+  ShieldCheck
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -136,7 +138,8 @@ interface ReportLinkProps {
 }
 
 export default function AccountingDashboardPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const canManageSettings = canManageAccountingSettings(user);
   const [tb, setTb] = React.useState<TrialBalanceRow[]>([]);
   const [ap, setAp] = React.useState<ApDashboardData | null>(null);
   const [ar, setAr] = React.useState<ArDashboardData | null>(null);
@@ -680,6 +683,21 @@ export default function AccountingDashboardPage() {
             <DashboardMiniMetric label="Unmapped" value={`${reportingReadiness.unmappedCount}`} />
             <DashboardMiniMetric label="Invalid" value={`${reportingReadiness.invalidCount}`} />
           </div>
+        </Link>
+
+        <Link href="/accounting/settings" className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="p-3 rounded-2xl bg-slate-50"><ShieldCheck className="text-brand-gold" /></div>
+            <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-full ${
+              canManageSettings ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {canManageSettings ? 'Admin only' : 'Read only'}
+            </span>
+          </div>
+          <h3 className="text-xl font-heading text-brand-navy mb-2">Accounting Settings</h3>
+          <p className="text-sm text-slate-500">
+            Maintain jurisdiction, framework, and currency profile settings that shape template recommendation and future chart activation.
+          </p>
         </Link>
 
         <Link href={signoffPosture.label === 'Blocked' ? '/accounting/close' : '/accounting/reports'} className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm hover:shadow-xl transition-all">

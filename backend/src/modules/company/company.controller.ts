@@ -19,9 +19,10 @@ export class CompanyController {
   @Patch()
   async update(
     @CurrentUser('companyId') companyId: string,
+    @CurrentUser('roles') roles: string[],
     @Body() data: UpdateCompanyDto,
   ) {
-    return this.companyService.updateCompany(companyId, data);
+    return this.companyService.updateCompany(companyId, data, roles);
   }
 
   @Patch('setup')

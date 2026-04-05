@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../database/prisma.service';
 import { CompanyService } from './company.service';
@@ -146,7 +146,7 @@ describe('CompanyService', () => {
         functional_currency_justification: 'USD is the primary economic environment for revenue and treasury.',
         zw_ias29_applicable: true,
       },
-    });
+    }, ['Super Admin']);
 
     expect(prisma.company.update).toHaveBeenCalledWith({
       where: { id: 'company-1' },
@@ -172,6 +172,27 @@ describe('CompanyService', () => {
         setup: true,
       },
     });
+  });
+
+  it('blocks non-admin users from changing the accounting profile', async () => {
+    prisma.company.findFirst.mockResolvedValue({ id: 'company-1' });
+
+    await expect(
+      service.updateCompany(
+        'company-1',
+        {
+          accounting_profile: {
+            primary_jurisdiction: 'ZA',
+            reporting_framework: 'IFRS_FULL',
+            functional_currency: 'ZAR',
+            presentation_currency: 'ZAR',
+          },
+        },
+        ['Finance Manager'],
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(prisma.company.update).not.toHaveBeenCalled();
   });
 
   it('merges setup config and creates missing selected departments once', async () => {
