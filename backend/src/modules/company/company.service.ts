@@ -379,6 +379,26 @@ export class CompanyService {
     };
   }
 
+  async listAccountingProfileAuditHistory(companyId: string) {
+    await this.findOne(companyId);
+
+    return this.prisma.companyAccountingProfileAudit.findMany({
+      where: { company_id: companyId },
+      orderBy: { created_at: 'desc' },
+      take: 10,
+      include: {
+        actor: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+          },
+        },
+      },
+    });
+  }
+
   async updateSetupProgress(companyId: string, data: any) {
     return this.prisma.$transaction(async (tx) => {
       const existingSetup = await tx.companySetup.findUnique({
@@ -455,8 +475,42 @@ export class CompanyService {
     });
   }
 
-  async updateCompany(id: string, data: any, actorRoles?: string[] | null) {
-    await this.findOne(id);
+  private buildAccountingProfileChangeSummary(
+    previousProfile: Record<string, any> | null | undefined,
+    nextProfile: Record<string, any>,
+  ) {
+    const labels: Record<string, string> = {
+      primary_jurisdiction: 'Primary jurisdiction',
+      operating_jurisdictions: 'Operating jurisdictions',
+      reporting_framework: 'Reporting framework',
+      functional_currency: 'Functional currency',
+      presentation_currency: 'Presentation currency',
+      functional_currency_justification: 'Functional currency justification',
+      zw_ias29_applicable: 'IAS 29 applicability',
+      zw_prior_ias29_application: 'Prior IAS 29 application',
+      cross_border_operations: 'Cross-border operations',
+      consolidates_subsidiaries: 'Consolidation posture',
+      vat_registered: 'VAT registration',
+      pfma_entity: 'PFMA / public entity flag',
+      sdl_exempt: 'SDL exemption',
+      annual_payroll_estimate: 'Annual payroll estimate',
+    };
+
+    const changedFields = Object.keys(nextProfile).filter((key) => {
+      const previousValue = previousProfile?.[key] ?? null;
+      const nextValue = nextProfile[key] ?? null;
+      return JSON.stringify(previousValue) !== JSON.stringify(nextValue);
+    });
+
+    if (!changedFields.length) {
+      return 'Accounting profile was resubmitted with no effective field changes.';
+    }
+
+    return `Updated ${changedFields.map((field) => labels[field] || field).join(', ')}.`;
+  }
+
+  async updateCompany(id: string, data: any, actorRoles?: string[] | null, actorUserId?: string | null) {
+    const existingCompany = await this.findOne(id);
 
     if (Object.prototype.hasOwnProperty.call(data, 'accounting_profile')) {
       this.assertAccountingProfileAdminAccess(actorRoles);
@@ -466,26 +520,47 @@ export class CompanyService {
       data.accounting_profile as Record<string, any> | null | undefined,
     );
 
-    return this.prisma.company.update({
-      where: { id },
-      data: {
-        tagline: data.tagline,
-        industry: data.industry,
-        description: data.description,
-        brand_colors: data.brand_colors,
-        accounting_profile: accountingProfilePayload
-          ? {
-              upsert: {
-                update: accountingProfilePayload,
-                create: accountingProfilePayload,
-              },
-            }
-          : undefined,
-      },
-      include: {
-        accounting_profile: true,
-        setup: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updatedCompany = await tx.company.update({
+        where: { id },
+        data: {
+          tagline: data.tagline,
+          industry: data.industry,
+          description: data.description,
+          brand_colors: data.brand_colors,
+          accounting_profile: accountingProfilePayload
+            ? {
+                upsert: {
+                  update: accountingProfilePayload,
+                  create: accountingProfilePayload,
+                },
+              }
+            : undefined,
+        },
+        include: {
+          accounting_profile: true,
+          setup: true,
+        },
+      });
+
+      if (accountingProfilePayload) {
+        await tx.companyAccountingProfileAudit.create({
+          data: {
+            company_id: id,
+            profile_id: updatedCompany.accounting_profile?.id || existingCompany.accounting_profile?.id || null,
+            actor_user_id: actorUserId || null,
+            action: existingCompany.accounting_profile ? 'updated' : 'created',
+            change_summary: this.buildAccountingProfileChangeSummary(
+              existingCompany.accounting_profile as unknown as Record<string, any> | null | undefined,
+              accountingProfilePayload,
+            ),
+            previous_snapshot: existingCompany.accounting_profile ?? Prisma.JsonNull,
+            next_snapshot: updatedCompany.accounting_profile ?? Prisma.JsonNull,
+          },
+        });
+      }
+
+      return updatedCompany;
     });
   }
 }

@@ -13,6 +13,7 @@ describe('CompanyController integration', () => {
     updateCompany: jest.Mock;
     updateSetupProgress: jest.Mock;
     previewAccountingTemplateRecommendation: jest.Mock;
+    listAccountingProfileAuditHistory: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -21,6 +22,7 @@ describe('CompanyController integration', () => {
       updateCompany: jest.fn(),
       updateSetupProgress: jest.fn(),
       previewAccountingTemplateRecommendation: jest.fn(),
+      listAccountingProfileAuditHistory: jest.fn(),
     };
 
     guardSpy = jest
@@ -87,8 +89,20 @@ describe('CompanyController integration', () => {
         },
       },
       ['Super Admin'],
+      'user-1',
     );
     expect(response.body).toEqual({ id: 'company-1', tagline: 'Run everything' });
+  });
+
+  it('loads accounting profile audit history through company-scoped context', async () => {
+    companyService.listAccountingProfileAuditHistory.mockResolvedValue([{ id: 'audit-1' }]);
+
+    const response = await request(app.getHttpServer())
+      .get('/company/accounting-profile/history')
+      .expect(200);
+
+    expect(companyService.listAccountingProfileAuditHistory).toHaveBeenCalledWith('company-1');
+    expect(response.body).toEqual([{ id: 'audit-1' }]);
   });
 
   it('updates setup progress through company-scoped context', async () => {

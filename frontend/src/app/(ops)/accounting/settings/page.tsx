@@ -34,6 +34,19 @@ type Recommendation = {
   warnings: string[];
 };
 
+type AccountingProfileAudit = {
+  id: string;
+  action: string;
+  change_summary?: string | null;
+  created_at: string;
+  actor?: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    email?: string | null;
+  } | null;
+};
+
 type AccountingProfileForm = {
   primaryJurisdiction: 'ZA' | 'ZW';
   operatingJurisdictions: string[];
@@ -127,6 +140,7 @@ export default function AccountingSettingsPage() {
   const [form, setForm] = React.useState<AccountingProfileForm>(defaultForm());
   const [savedForm, setSavedForm] = React.useState<AccountingProfileForm>(defaultForm());
   const [templateRecommendation, setTemplateRecommendation] = React.useState<Recommendation | null>(null);
+  const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [recommendationLoading, setRecommendationLoading] = React.useState(false);
@@ -149,6 +163,12 @@ export default function AccountingSettingsPage() {
         setCompanyName(data.name || 'Company');
         setForm(nextForm);
         setSavedForm(nextForm);
+
+        const historyResponse = await apiFetch('/company/accounting-profile/history');
+        if (historyResponse.ok) {
+          const historyData = await historyResponse.json();
+          setHistory(Array.isArray(historyData) ? historyData : []);
+        }
       } catch (loadError) {
         console.error(loadError);
         setError('We could not load the company accounting profile just now.');
@@ -265,6 +285,11 @@ export default function AccountingSettingsPage() {
       setForm(nextForm);
       setSavedForm(nextForm);
       setMessage('Accounting settings updated. The jurisdiction and reporting foundation is now saved.');
+      const historyResponse = await apiFetch('/company/accounting-profile/history');
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        setHistory(Array.isArray(historyData) ? historyData : []);
+      }
     } catch (saveError) {
       console.error(saveError);
       setError(saveError instanceof Error ? saveError.message : 'Unable to save the accounting profile.');
@@ -447,6 +472,38 @@ export default function AccountingSettingsPage() {
             ) : (
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">Recommendation guidance will appear once the accounting profile is complete enough to evaluate.</div>
             )}
+          </div>
+
+          <div className="rounded-[28px] border border-slate-100 bg-white p-6 shadow-sm">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Governance history</div>
+            <h2 className="mt-2 text-xl font-heading text-brand-navy">Recent Accounting Profile Changes</h2>
+            <div className="mt-5 space-y-3">
+              {history.length > 0 ? history.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="text-sm font-semibold text-brand-navy">
+                      {item.change_summary || 'Accounting profile change recorded.'}
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                      {item.action}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {item.actor ? `${item.actor.first_name} ${item.actor.last_name}` : 'System or legacy actor'}
+                    {' · '}
+                    {new Date(item.created_at).toLocaleString('en-ZA', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                  Accounting profile audit history will appear here after the first governed change is saved.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

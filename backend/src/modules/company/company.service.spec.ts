@@ -10,6 +10,10 @@ describe('CompanyService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    companyAccountingProfileAudit: {
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
     coaTemplate: {
       findUnique: jest.fn(),
     },
@@ -26,6 +30,12 @@ describe('CompanyService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (callback) =>
+      callback({
+        company: prisma.company,
+        companyAccountingProfileAudit: prisma.companyAccountingProfileAudit,
+      }),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -80,6 +90,7 @@ describe('CompanyService', () => {
         setup: true,
       },
     });
+    expect(prisma.companyAccountingProfileAudit.create).not.toHaveBeenCalled();
   });
 
   it('recommends Zimbabwe integrated template with mandatory IAS 29 and cross-border modules', async () => {
@@ -130,10 +141,13 @@ describe('CompanyService', () => {
   });
 
   it('upserts accounting profile when jurisdiction settings are supplied', async () => {
-    prisma.company.findFirst.mockResolvedValue({ id: 'company-1' });
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: null,
+    });
     prisma.company.update.mockResolvedValue({
       id: 'company-1',
-      accounting_profile: { primary_jurisdiction: 'ZW' },
+      accounting_profile: { id: 'profile-1', primary_jurisdiction: 'ZW' },
     });
 
     await service.updateCompany('company-1', {
@@ -172,6 +186,15 @@ describe('CompanyService', () => {
         setup: true,
       },
     });
+    expect(prisma.companyAccountingProfileAudit.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        company_id: 'company-1',
+        profile_id: 'profile-1',
+        actor_user_id: null,
+        action: 'created',
+        change_summary: expect.stringContaining('Primary jurisdiction'),
+      }),
+    });
   });
 
   it('blocks non-admin users from changing the accounting profile', async () => {
@@ -193,6 +216,30 @@ describe('CompanyService', () => {
     ).rejects.toThrow(ForbiddenException);
 
     expect(prisma.company.update).not.toHaveBeenCalled();
+  });
+
+  it('lists recent accounting profile audit history', async () => {
+    prisma.company.findFirst.mockResolvedValue({ id: 'company-1' });
+    prisma.companyAccountingProfileAudit.findMany.mockResolvedValue([{ id: 'audit-1' }]);
+
+    const result = await service.listAccountingProfileAuditHistory('company-1');
+
+    expect(prisma.companyAccountingProfileAudit.findMany).toHaveBeenCalledWith({
+      where: { company_id: 'company-1' },
+      orderBy: { created_at: 'desc' },
+      take: 10,
+      include: {
+        actor: {
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+          },
+        },
+      },
+    });
+    expect(result).toEqual([{ id: 'audit-1' }]);
   });
 
   it('merges setup config and creates missing selected departments once', async () => {

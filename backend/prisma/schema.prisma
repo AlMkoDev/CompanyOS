@@ -127,6 +127,7 @@ model Company {
   apManualEntries      APManualEntry[]
   apMatchExceptions    APMatchException[]
   apAuditTrails        APAuditTrail[]
+  accountingProfileAudits CompanyAccountingProfileAudit[]
   glAccountChangeRequests GLAccountChangeRequest[]
   glAccountAuditTrails GLAccountAuditTrail[]
   glAccountRemediationStates GLAccountRemediationState[]
@@ -155,6 +156,23 @@ model CompanyAccountingProfile {
   updated_at                       DateTime @updatedAt
 
   company Company @relation(fields: [company_id], references: [id])
+  audits  CompanyAccountingProfileAudit[]
+}
+
+model CompanyAccountingProfileAudit {
+  id                String   @id @default(uuid()) @db.Uuid
+  company_id        String   @db.Uuid
+  profile_id        String?  @db.Uuid
+  actor_user_id     String?  @db.Uuid
+  action            String
+  change_summary    String?
+  previous_snapshot Json?
+  next_snapshot     Json?
+  created_at        DateTime @default(now())
+
+  company Company @relation(fields: [company_id], references: [id])
+  profile CompanyAccountingProfile? @relation(fields: [profile_id], references: [id])
+  actor   User? @relation("CompanyAccountingProfileAuditActor", fields: [actor_user_id], references: [id])
 }
 
 model CoaTemplate {
@@ -249,6 +267,7 @@ model User {
   apMatchExceptionsRaised APMatchException[] @relation("APMatchExceptionRaisedBy")
   apMatchExceptionsResolved APMatchException[] @relation("APMatchExceptionResolvedBy")
   apAuditTrails       APAuditTrail[] @relation("APAuditTrailActor")
+  companyAccountingProfileAudits CompanyAccountingProfileAudit[] @relation("CompanyAccountingProfileAuditActor")
   disputesAssigned    DisputeCase[] @relation("DisputeAssignee")
   disputesCreated     DisputeCase[] @relation("DisputeCreator")
   disputeActivities   DisputeActivity[] @relation("DisputeActivityActor")

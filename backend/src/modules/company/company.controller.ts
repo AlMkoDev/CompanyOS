@@ -20,9 +20,15 @@ export class CompanyController {
   async update(
     @CurrentUser('companyId') companyId: string,
     @CurrentUser('roles') roles: string[],
+    @CurrentUser('userId') userId: string,
     @Body() data: UpdateCompanyDto,
   ) {
-    return this.companyService.updateCompany(companyId, data, roles);
+    return this.companyService.updateCompany(companyId, data, roles, userId);
+  }
+
+  @Get('accounting-profile/history')
+  async listAccountingProfileAuditHistory(@CurrentUser('companyId') companyId: string) {
+    return this.companyService.listAccountingProfileAuditHistory(companyId);
   }
 
   @Patch('setup')
