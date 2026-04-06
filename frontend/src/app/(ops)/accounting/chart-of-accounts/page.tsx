@@ -359,6 +359,14 @@ function getRecommendedReconciliationCadence(account: GLAccount) {
   return "Monthly";
 }
 
+function prettifyActivationScope(scope?: string | null) {
+  if (!scope) return "Full recommended";
+  return scope
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function getDormancyAgeDays(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -905,6 +913,69 @@ export default function ChartOfAccountsPage() {
       })
       .slice(0, 6);
   }, [accounts, changeRequests]);
+  const activationWorkingSetAccounts = React.useMemo(() => {
+    if (!activationContext?.createdCodes.length) return [];
+    const createdSet = new Set(activationContext.createdCodes);
+    return accounts.filter((account) => createdSet.has(account.code));
+  }, [accounts, activationContext]);
+  const activationReviewChecklist = React.useMemo(() => {
+    const workingSet = activationWorkingSetAccounts;
+    const postingAccounts = workingSet.filter((account) => !account.is_header);
+    const missingOwners = postingAccounts.filter((account) => !account.account_owner_id);
+    const missingFsPlacement = postingAccounts.filter((account) => !account.fs_placement);
+    const invalidFsPlacement = postingAccounts.filter(
+      (account) => account.fs_placement && !hasValidFsPlacement(account),
+    );
+    const hierarchyAttention = workingSet.filter(
+      (account) => !account.is_header && !account.parent_id,
+    );
+    const restrictedAccounts = workingSet.filter((account) =>
+      ["T1", "T2"].includes(account.sensitivity_tier ?? ""),
+    );
+
+    return [
+      {
+        id: "owners",
+        label: "Assign owners",
+        count: missingOwners.length,
+        tone: missingOwners.length > 0 ? "amber" : "emerald",
+        detail:
+          missingOwners.length > 0
+            ? `${missingOwners.length} new posting account${missingOwners.length === 1 ? "" : "s"} still need ownership.`
+            : "All newly created posting accounts have owners assigned.",
+      },
+      {
+        id: "mapping",
+        label: "Validate FS placement",
+        count: missingFsPlacement.length + invalidFsPlacement.length,
+        tone: missingFsPlacement.length + invalidFsPlacement.length > 0 ? "rose" : "emerald",
+        detail:
+          missingFsPlacement.length + invalidFsPlacement.length > 0
+            ? `${missingFsPlacement.length} missing and ${invalidFsPlacement.length} invalid statement placement issue${missingFsPlacement.length + invalidFsPlacement.length === 1 ? "" : "s"} need review.`
+            : "Statement placement looks clean for the newly created set.",
+      },
+      {
+        id: "hierarchy",
+        label: "Confirm headers and parents",
+        count: hierarchyAttention.length,
+        tone: hierarchyAttention.length > 0 ? "amber" : "emerald",
+        detail:
+          hierarchyAttention.length > 0
+            ? `${hierarchyAttention.length} posting account${hierarchyAttention.length === 1 ? "" : "s"} should be checked for parent/header alignment.`
+            : "Parent-child structure looks consistent for the newly created set.",
+      },
+      {
+        id: "restricted",
+        label: "Review restricted accounts",
+        count: restrictedAccounts.length,
+        tone: restrictedAccounts.length > 0 ? "rose" : "emerald",
+        detail:
+          restrictedAccounts.length > 0
+            ? `${restrictedAccounts.length} newly created account${restrictedAccounts.length === 1 ? "" : "s"} carry T1/T2 sensitivity and should be reviewed first.`
+            : "No newly created accounts were seeded into restricted T1/T2 tiers.",
+      },
+    ] as const;
+  }, [activationWorkingSetAccounts]);
   const reportingReadiness = React.useMemo(() => {
     const postingAccounts = accounts.filter((account) => !account.is_header);
     const mapped = postingAccounts.filter((account) => hasValidFsPlacement(account));
@@ -1673,7 +1744,7 @@ export default function ChartOfAccountsPage() {
                     </div>
                     <div className="mt-2 text-sm text-emerald-800/90">
                       Template: {activationContext.templateCode || "Unknown"}
-                      {activationContext.scope ? ` · Scope: ${activationContext.scope.replaceAll("_", " ")}` : ""}
+                      {activationContext.scope ? ` · Scope: ${prettifyActivationScope(activationContext.scope)}` : ""}
                       {activationContext.createdCodes.length ? ` · ${activationContext.createdCodes.length} created account${activationContext.createdCodes.length === 1 ? "" : "s"}` : ""}
                     </div>
                   </div>
@@ -1690,6 +1761,29 @@ export default function ChartOfAccountsPage() {
                       {showActivationWorkingSetOnly ? "Show full chart" : "Show newly created only"}
                     </button>
                   </div>
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  {activationReviewChecklist.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`rounded-2xl border px-4 py-4 ${
+                        item.tone === "rose"
+                          ? "border-rose-200 bg-rose-50 text-rose-800"
+                          : item.tone === "amber"
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : "border-emerald-200 bg-white text-emerald-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-brand-navy">{item.label}</div>
+                        <StatusPill
+                          label={item.count === 0 ? "Clear" : `${item.count} review`}
+                          tone={item.tone === "rose" ? "rose" : item.tone === "amber" ? "amber" : "emerald"}
+                        />
+                      </div>
+                      <div className="mt-2 text-sm">{item.detail}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
