@@ -699,6 +699,7 @@ export class CompanyService {
             account_id: true,
             request_type: true,
             status: true,
+            title: true,
             created_at: true,
             reviewed_at: true,
             implemented_at: true,
@@ -729,6 +730,12 @@ export class CompanyService {
           trackedResolution?.existing_id
             ? latestLegacyRequestByAccountId.get(trackedResolution.existing_id) || null
             : null;
+        const remediation = this.resolveLegacyRemediationStatus({
+          templateCode: account.catalog_account.code,
+          existingCollision: existing,
+          trackedAccount: trackedLegacy,
+          latestRequest: latestLegacyRequest,
+        });
         return {
           code: account.catalog_account.code,
           template_name: account.catalog_account.name,
@@ -738,18 +745,15 @@ export class CompanyService {
           existing_id: trackedResolution?.existing_id || existing?.id || null,
           existing_active: existing?.is_active ?? null,
           resolution: collisionResolutionMap.get(normalizedCode) || null,
-          remediation_status: this.resolveLegacyRemediationStatus({
-            templateCode: account.catalog_account.code,
-            existingCollision: existing,
-            trackedAccount: trackedLegacy,
-            latestRequest: latestLegacyRequest,
-          }).status,
-          remediation_note: this.resolveLegacyRemediationStatus({
-            templateCode: account.catalog_account.code,
-            existingCollision: existing,
-            trackedAccount: trackedLegacy,
-            latestRequest: latestLegacyRequest,
-          }).note,
+          remediation_status: remediation.status,
+          remediation_note: remediation.note,
+          latest_change_request: latestLegacyRequest
+            ? {
+                request_type: latestLegacyRequest.request_type,
+                status: latestLegacyRequest.status,
+                title: latestLegacyRequest.title,
+              }
+            : null,
         };
       });
 
@@ -795,6 +799,13 @@ export class CompanyService {
             remediation.status === 'recoded'
               ? remediation.note
               : 'Legacy adoption is now clear because the original collision no longer occupies this code.',
+          latest_change_request: latestLegacyRequest
+            ? {
+                request_type: latestLegacyRequest.request_type,
+                status: latestLegacyRequest.status,
+                title: latestLegacyRequest.title,
+              }
+            : null,
         };
       });
 

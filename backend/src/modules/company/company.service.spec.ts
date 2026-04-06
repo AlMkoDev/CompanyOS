@@ -500,6 +500,17 @@ describe('CompanyService', () => {
     prisma.gLAccount.findMany.mockResolvedValue([
       { id: 'gl-1', code: '1000', name: 'Legacy Cash', type: 'asset', is_active: true },
     ]);
+    prisma.gLAccountChangeRequest.findMany.mockResolvedValue([
+      {
+        account_id: 'gl-1',
+        request_type: 'deactivate',
+        status: 'pending',
+        title: 'Deactivate legacy cash for template adoption',
+        created_at: new Date('2026-04-06T08:00:00Z'),
+        reviewed_at: null,
+        implemented_at: null,
+      },
+    ]);
 
     const result = await service.previewAccountingTemplateActivation('company-1', {
       collision_resolutions: [
@@ -559,6 +570,17 @@ describe('CompanyService', () => {
     prisma.gLAccount.findMany.mockResolvedValue([
       { id: 'gl-1', code: '1000', name: 'Legacy Cash', type: 'asset', is_active: true },
     ]);
+    prisma.gLAccountChangeRequest.findMany.mockResolvedValue([
+      {
+        account_id: 'gl-1',
+        request_type: 'deactivate',
+        status: 'pending',
+        title: 'Deactivate legacy cash for template adoption',
+        created_at: new Date('2026-04-06T08:00:00Z'),
+        reviewed_at: null,
+        implemented_at: null,
+      },
+    ]);
 
     const result = await service.previewAccountingTemplateActivation('company-1', {
       collision_resolutions: [
@@ -580,7 +602,16 @@ describe('CompanyService', () => {
     );
     expect(result.dry_run.pending_template_adoptions_sample).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash', remediation_status: 'active' }),
+        expect.objectContaining({
+          code: '1000',
+          existing_name: 'Legacy Cash',
+          remediation_status: 'active',
+          latest_change_request: expect.objectContaining({
+            request_type: 'deactivate',
+            status: 'pending',
+            title: 'Deactivate legacy cash for template adoption',
+          }),
+        }),
       ]),
     );
   });

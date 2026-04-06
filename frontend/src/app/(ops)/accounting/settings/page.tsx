@@ -98,6 +98,11 @@ type ActivationDryRun = {
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   resolved_collisions_sample?: Array<{
     code: string;
@@ -110,6 +115,11 @@ type ActivationDryRun = {
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   merged_collisions_sample?: Array<{
     code: string;
@@ -122,6 +132,11 @@ type ActivationDryRun = {
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   pending_template_adoptions_sample?: Array<{
     code: string;
@@ -134,6 +149,11 @@ type ActivationDryRun = {
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   auto_cleared_adoptions_sample?: Array<{
     code: string;
@@ -146,6 +166,11 @@ type ActivationDryRun = {
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
 };
 
@@ -1314,6 +1339,11 @@ function CollisionComparisonList({
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   autoClearedAdoptions: Array<{
     code: string;
@@ -1326,6 +1356,11 @@ function CollisionComparisonList({
     resolution?: string | null;
     remediation_status?: string | null;
     remediation_note?: string | null;
+    latest_change_request?: {
+      request_type: string;
+      status: string;
+      title: string;
+    } | null;
   }>;
   onResolve: (code: string, resolution: CollisionResolution['resolution'] | null, existingId?: string | null) => void;
 }) {
@@ -1542,6 +1577,17 @@ function CollisionComparisonList({
                 {collision.remediation_note ? (
                   <div className="mt-2 text-sm text-slate-600">{collision.remediation_note}</div>
                 ) : null}
+                {collision.latest_change_request ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <div>
+                      <span className="font-semibold text-brand-navy">Linked change request:</span> {collision.latest_change_request.title}
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-semibold text-brand-navy">Request posture:</span> {prettifyChangeRequestStatus(collision.latest_change_request.status)}
+                      {` · ${prettifyRequestType(collision.latest_change_request.request_type)}`}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-4 flex flex-wrap gap-3">
                   <Link
                     href={buildTemplateAdoptionHref(collision.code)}
@@ -1589,6 +1635,17 @@ function CollisionComparisonList({
                 {collision.remediation_note ? (
                   <div className="mt-2 text-sm text-slate-600">{collision.remediation_note}</div>
                 ) : null}
+                {collision.latest_change_request ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <div>
+                      <span className="font-semibold text-brand-navy">Linked change request:</span> {collision.latest_change_request.title}
+                    </div>
+                    <div className="mt-1">
+                      <span className="font-semibold text-brand-navy">Request posture:</span> {prettifyChangeRequestStatus(collision.latest_change_request.status)}
+                      {` · ${prettifyRequestType(collision.latest_change_request.request_type)}`}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -1615,6 +1672,22 @@ function prettifyAccountType(accountType: string) {
 function prettifyRemediationStatus(status?: string | null) {
   if (!status) return 'Active';
   return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function prettifyChangeRequestStatus(status?: string | null) {
+  if (!status) return 'Pending';
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function prettifyRequestType(type?: string | null) {
+  if (!type) return 'Request';
+  return type
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
