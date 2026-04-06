@@ -136,6 +136,8 @@ interface ActivationContext {
   createdCodes: string[];
 }
 
+type ActivationReviewFocus = "all" | "owners" | "mapping" | "hierarchy" | "restricted";
+
 interface AccountFormState {
   code: string;
   name: string;
@@ -684,6 +686,7 @@ export default function ChartOfAccountsPage() {
   const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
   const [activationContext, setActivationContext] = React.useState<ActivationContext | null>(null);
   const [showActivationWorkingSetOnly, setShowActivationWorkingSetOnly] = React.useState(false);
+  const [activationReviewFocus, setActivationReviewFocus] = React.useState<ActivationReviewFocus>("all");
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
   const [form, setForm] = React.useState<AccountFormState>(DEFAULT_FORM);
@@ -822,9 +825,11 @@ export default function ChartOfAccountsPage() {
         createdCodes,
       });
       setShowActivationWorkingSetOnly(createdCodes.length > 0);
+      setActivationReviewFocus("all");
     } else {
       setActivationContext(null);
       setShowActivationWorkingSetOnly(false);
+      setActivationReviewFocus("all");
     }
   }, []);
 
@@ -837,6 +842,26 @@ export default function ChartOfAccountsPage() {
         !activationContext.createdCodes.includes(account.code)
       ) {
         return false;
+      }
+      if (activationReviewFocus !== "all") {
+        if (activationReviewFocus === "owners" && (account.is_header || account.account_owner_id)) {
+          return false;
+        }
+        if (
+          activationReviewFocus === "mapping" &&
+          (account.is_header || (!!account.fs_placement && hasValidFsPlacement(account)))
+        ) {
+          return false;
+        }
+        if (activationReviewFocus === "hierarchy" && (account.is_header || account.parent_id)) {
+          return false;
+        }
+        if (
+          activationReviewFocus === "restricted" &&
+          !["T1", "T2"].includes(account.sensitivity_tier ?? "")
+        ) {
+          return false;
+        }
       }
       if (typeFilter !== "all" && account.type !== typeFilter) return false;
       if (!query) return true;
@@ -860,7 +885,7 @@ export default function ChartOfAccountsPage() {
       ...type,
       accounts: filtered.filter((account) => account.type === type.value),
     })).filter((group) => group.accounts.length > 0);
-  }, [accounts, search, typeFilter, showActivationWorkingSetOnly, activationContext]);
+  }, [accounts, search, typeFilter, showActivationWorkingSetOnly, activationContext, activationReviewFocus]);
 
   const availableParents = React.useMemo(() => {
     const currentId = editing?.id;
@@ -1760,6 +1785,15 @@ export default function ChartOfAccountsPage() {
                     >
                       {showActivationWorkingSetOnly ? "Show full chart" : "Show newly created only"}
                     </button>
+                    {activationReviewFocus !== "all" ? (
+                      <button
+                        type="button"
+                        onClick={() => setActivationReviewFocus("all")}
+                        className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        Clear review focus
+                      </button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1782,6 +1816,16 @@ export default function ChartOfAccountsPage() {
                         />
                       </div>
                       <div className="mt-2 text-sm">{item.detail}</div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActivationWorkingSetOnly(true);
+                          setActivationReviewFocus(item.id as ActivationReviewFocus);
+                        }}
+                        className="mt-3 inline-flex items-center justify-center rounded-2xl border border-current/20 bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-white/80"
+                      >
+                        Focus affected accounts
+                      </button>
                     </div>
                   ))}
                 </div>
