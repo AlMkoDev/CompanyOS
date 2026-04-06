@@ -85,7 +85,9 @@ type ActivationDryRun = {
   collisions_sample: Array<{
     code: string;
     template_name: string;
+    template_account_type?: string | null;
     existing_name?: string | null;
+    existing_type?: string | null;
     existing_id?: string | null;
     existing_active?: boolean | null;
   }>;
@@ -918,15 +920,7 @@ export default function AccountingSettingsPage() {
                   emptyState="The current company chart already covers this template sample."
                 />
 
-                <RecommendationList
-                  title="Code Collisions Against Current Chart"
-                  items={activationDryRun.collisions_sample.map((collision) => ({
-                    key: collision.code,
-                    label: `${collision.code} · ${collision.template_name}`,
-                    detail: `Existing company account: ${collision.existing_name || 'Unknown'}${collision.existing_active === false ? ' · inactive' : ''}`,
-                  }))}
-                  emptyState="No code collisions were detected in the dry-run sample."
-                />
+                <CollisionComparisonList collisions={activationDryRun.collisions_sample} />
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
@@ -1093,6 +1087,82 @@ function RecommendationList({ title, items, emptyState }: { title: string; items
           </div>
         )) : (
           <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">{emptyState}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollisionComparisonList({
+  collisions,
+}: {
+  collisions: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+  }>;
+}) {
+  return (
+    <div>
+      <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Queued vs existing COA collisions</div>
+      <div className="mt-2 text-sm text-slate-600">
+        These queued template accounts cannot be deployed into the operational chart until their matching code collisions are resolved.
+      </div>
+      <div className="mt-3 space-y-3">
+        {collisions.length > 0 ? collisions.map((collision) => (
+          <div key={collision.code} className="rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-brand-navy">Code {collision.code} is already in use</div>
+              <span className="rounded-full border border-rose-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-rose-600">
+                Collision
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Queued for deployment</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">
+                  {collision.code} · {collision.template_name}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {collision.template_account_type ? <AccountTypeBadge accountType={collision.template_account_type} /> : null}
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    Template account
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Existing operational COA</div>
+                <div className="mt-2 text-sm font-semibold text-brand-navy">
+                  {collision.code} · {collision.existing_name || 'Unknown account'}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {collision.existing_type ? <AccountTypeBadge accountType={collision.existing_type} /> : null}
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                      collision.existing_active === false
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    }`}
+                  >
+                    {collision.existing_active === false ? 'Inactive existing account' : 'Active existing account'}
+                  </span>
+                </div>
+                {collision.existing_id ? (
+                  <div className="mt-2 text-xs text-slate-500">Operational account ID: {collision.existing_id}</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )) : (
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+            No code collisions were detected in the dry-run sample.
+          </div>
         )}
       </div>
     </div>

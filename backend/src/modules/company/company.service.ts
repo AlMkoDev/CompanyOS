@@ -591,7 +591,9 @@ export class CompanyService {
         return {
           code: account.catalog_account.code,
           template_name: account.catalog_account.name,
+          template_account_type: this.inferCatalogAccountType(account.catalog_account),
           existing_name: existing?.name || null,
+          existing_type: existing?.type || null,
           existing_id: existing?.id || null,
           existing_active: existing?.is_active ?? null,
         };
