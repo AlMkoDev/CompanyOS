@@ -75,6 +75,7 @@ type ActivationDryRun = {
   skipped_existing_accounts?: number;
   merged_collisions?: number;
   pending_template_adoptions?: number;
+  auto_cleared_adoptions?: number;
   governance_warnings: string[];
   to_create_sample: Array<{
     code: string;
@@ -95,6 +96,8 @@ type ActivationDryRun = {
     existing_id?: string | null;
     existing_active?: boolean | null;
     resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
   }>;
   resolved_collisions_sample?: Array<{
     code: string;
@@ -105,6 +108,8 @@ type ActivationDryRun = {
     existing_id?: string | null;
     existing_active?: boolean | null;
     resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
   }>;
   merged_collisions_sample?: Array<{
     code: string;
@@ -115,6 +120,8 @@ type ActivationDryRun = {
     existing_id?: string | null;
     existing_active?: boolean | null;
     resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
   }>;
   pending_template_adoptions_sample?: Array<{
     code: string;
@@ -125,6 +132,20 @@ type ActivationDryRun = {
     existing_id?: string | null;
     existing_active?: boolean | null;
     resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
+  }>;
+  auto_cleared_adoptions_sample?: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
   }>;
 };
 
@@ -144,6 +165,7 @@ type ActivationResult = {
 
 type CollisionResolution = {
   code: string;
+  existing_id?: string | null;
   resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' | 'ADOPT_TEMPLATE_REMEDIATE_LEGACY' | 'MERGE_INTO_EXISTING_PRESERVE_DATA';
 };
 
@@ -449,6 +471,9 @@ export default function AccountingSettingsPage() {
       const liveCodes = new Set([
         ...activationDryRun.collisions_sample.map((item) => item.code.toUpperCase()),
         ...(activationDryRun.resolved_collisions_sample || []).map((item) => item.code.toUpperCase()),
+        ...(activationDryRun.merged_collisions_sample || []).map((item) => item.code.toUpperCase()),
+        ...(activationDryRun.pending_template_adoptions_sample || []).map((item) => item.code.toUpperCase()),
+        ...(activationDryRun.auto_cleared_adoptions_sample || []).map((item) => item.code.toUpperCase()),
       ]);
 
       const next = current.filter((item) => liveCodes.has(item.code.toUpperCase()));
@@ -465,6 +490,7 @@ export default function AccountingSettingsPage() {
   const setCollisionResolution = React.useCallback((
     code: string,
     resolution: CollisionResolution['resolution'] | null,
+    existingId?: string | null,
   ) => {
     const normalizedCode = code.trim().toUpperCase();
     setCollisionResolutions((current) => {
@@ -473,7 +499,7 @@ export default function AccountingSettingsPage() {
         return remaining;
       }
 
-      return [...remaining, { code: normalizedCode, resolution }];
+      return [...remaining, { code: normalizedCode, existing_id: existingId || null, resolution }];
     });
   }, []);
 
@@ -985,6 +1011,17 @@ export default function AccountingSettingsPage() {
                   </div>
                 ) : null}
 
+                {(activationDryRun.auto_cleared_adoptions ?? 0) > 0 ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+                    <div className="font-semibold">
+                      {activationDryRun.auto_cleared_adoptions} pending template adoption{activationDryRun.auto_cleared_adoptions === 1 ? '' : 's'} cleared automatically.
+                    </div>
+                    <div className="mt-2 text-emerald-700/90">
+                      The legacy account no longer blocks that code, so the queued template account is now ready to create on the next activation.
+                    </div>
+                  </div>
+                ) : null}
+
                 {activationResult ? (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
                     <div className="font-semibold">
@@ -1053,6 +1090,7 @@ export default function AccountingSettingsPage() {
                   resolvedCollisions={activationDryRun.resolved_collisions_sample || []}
                   mergedCollisions={activationDryRun.merged_collisions_sample || []}
                   pendingTemplateAdoptions={activationDryRun.pending_template_adoptions_sample || []}
+                  autoClearedAdoptions={activationDryRun.auto_cleared_adoptions_sample || []}
                   onResolve={setCollisionResolution}
                 />
               </div>
@@ -1232,6 +1270,7 @@ function CollisionComparisonList({
   resolvedCollisions,
   mergedCollisions,
   pendingTemplateAdoptions,
+  autoClearedAdoptions,
   onResolve,
 }: {
   collisions: Array<{
@@ -1273,8 +1312,22 @@ function CollisionComparisonList({
     existing_id?: string | null;
     existing_active?: boolean | null;
     resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
   }>;
-  onResolve: (code: string, resolution: CollisionResolution['resolution'] | null) => void;
+  autoClearedAdoptions: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+    remediation_status?: string | null;
+    remediation_note?: string | null;
+  }>;
+  onResolve: (code: string, resolution: CollisionResolution['resolution'] | null, existingId?: string | null) => void;
 }) {
   return (
     <div>
@@ -1332,7 +1385,7 @@ function CollisionComparisonList({
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => onResolve(collision.code, 'KEEP_EXISTING_SKIP_TEMPLATE')}
+                onClick={() => onResolve(collision.code, 'KEEP_EXISTING_SKIP_TEMPLATE', collision.existing_id)}
                 className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
               >
                 Keep existing and skip queued account
@@ -1345,14 +1398,14 @@ function CollisionComparisonList({
               </Link>
               <button
                 type="button"
-                onClick={() => onResolve(collision.code, 'ADOPT_TEMPLATE_REMEDIATE_LEGACY')}
+                onClick={() => onResolve(collision.code, 'ADOPT_TEMPLATE_REMEDIATE_LEGACY', collision.existing_id)}
                 className="inline-flex items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800 transition hover:bg-amber-100"
               >
                 Adopt template and remediate legacy account
               </button>
               <button
                 type="button"
-                onClick={() => onResolve(collision.code, 'MERGE_INTO_EXISTING_PRESERVE_DATA')}
+                onClick={() => onResolve(collision.code, 'MERGE_INTO_EXISTING_PRESERVE_DATA', collision.existing_id)}
                 className="inline-flex items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-800 transition hover:bg-sky-100"
               >
                 Merge into existing and preserve legacy data
@@ -1482,7 +1535,13 @@ function CollisionComparisonList({
                     <span className="font-semibold text-brand-navy">Legacy account to remediate:</span> {collision.existing_name || 'Unknown account'}
                     {collision.existing_active === false ? ' (inactive)' : ' (active)'}
                   </div>
+                  <div>
+                    <span className="font-semibold text-brand-navy">Remediation status:</span> {prettifyRemediationStatus(collision.remediation_status)}
+                  </div>
                 </div>
+                {collision.remediation_note ? (
+                  <div className="mt-2 text-sm text-slate-600">{collision.remediation_note}</div>
+                ) : null}
                 <div className="mt-4 flex flex-wrap gap-3">
                   <Link
                     href={buildTemplateAdoptionHref(collision.code)}
@@ -1498,6 +1557,38 @@ function CollisionComparisonList({
                     Reopen collision
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {autoClearedAdoptions.length > 0 ? (
+        <div className="mt-5">
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Pending adoption cleared</div>
+          <div className="mt-2 text-sm text-slate-600">
+            These template adoptions no longer collide with the live company chart and are now ready to create during activation.
+          </div>
+          <div className="mt-3 space-y-3">
+            {autoClearedAdoptions.map((collision) => (
+              <div key={`cleared-${collision.code}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-brand-navy">Code {collision.code} is now ready for template creation</div>
+                  <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+                    Cleared
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                  <div>
+                    <span className="font-semibold text-brand-navy">Template account now ready:</span> {collision.template_name}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-brand-navy">Legacy remediation outcome:</span> {prettifyRemediationStatus(collision.remediation_status)}
+                  </div>
+                </div>
+                {collision.remediation_note ? (
+                  <div className="mt-2 text-sm text-slate-600">{collision.remediation_note}</div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -1519,6 +1610,14 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
 function prettifyAccountType(accountType: string) {
   const normalized = accountType.trim().toLowerCase();
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function prettifyRemediationStatus(status?: string | null) {
+  if (!status) return 'Active';
+  return status
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function AccountTypeBadge({ accountType }: { accountType: string }) {

@@ -1,10 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { UpdateCompanyAccountingProfileDto } from './update-company.dto';
 
 export class AccountingTemplateCollisionResolutionDto {
   @IsString()
   code!: string;
+
+  @IsOptional()
+  @IsUUID()
+  existing_id?: string;
 
   @IsString()
   @IsIn(['KEEP_EXISTING_SKIP_TEMPLATE', 'ADOPT_TEMPLATE_REMEDIATE_LEGACY', 'MERGE_INTO_EXISTING_PRESERVE_DATA'])

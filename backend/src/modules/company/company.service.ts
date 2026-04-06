@@ -326,16 +326,61 @@ export class CompanyService {
               typeof item?.resolution === 'string'
                 ? item.resolution.trim().toUpperCase()
                 : '';
+            const existingId =
+              typeof item?.existing_id === 'string' && item.existing_id.trim()
+                ? item.existing_id.trim()
+                : null;
 
             if (!code || !this.supportedCollisionResolutions.has(resolution)) {
               return null;
             }
 
-            return [code, { code, resolution }] as const;
+            return [code, { code, resolution, existing_id: existingId }] as const;
           })
-          .filter((item): item is readonly [string, { code: string; resolution: string }] => Boolean(item)),
+          .filter((item): item is readonly [string, { code: string; resolution: string; existing_id: string | null }] => Boolean(item)),
       ).values(),
     );
+  }
+
+  private resolveLegacyRemediationStatus(options: {
+    templateCode: string;
+    existingCollision?: { is_active?: boolean | null } | null;
+    trackedAccount?: { code: string; is_active: boolean } | null;
+    latestRequest?: { request_type: string; status: string } | null;
+  }) {
+    const normalizedTemplateCode = options.templateCode.trim().toUpperCase();
+    const trackedCode = options.trackedAccount?.code?.trim().toUpperCase();
+    const latestRequestType = options.latestRequest?.request_type?.trim().toLowerCase();
+    const latestRequestStatus = options.latestRequest?.status?.trim().toLowerCase();
+
+    if (trackedCode && trackedCode !== normalizedTemplateCode) {
+      return {
+        status: 'recoded',
+        note: `Legacy account now uses ${trackedCode}, so the template code ${normalizedTemplateCode} is no longer occupied.`,
+      };
+    }
+
+    if (
+      latestRequestType === 'reclassify' &&
+      ['approved', 'implemented'].includes(latestRequestStatus || '')
+    ) {
+      return {
+        status: 'reclassified',
+        note: 'Legacy account has a reviewed reclassification record and should be checked before final template adoption.',
+      };
+    }
+
+    if (options.existingCollision?.is_active === false || options.trackedAccount?.is_active === false) {
+      return {
+        status: 'inactive',
+        note: `Legacy account is inactive but still occupies code ${normalizedTemplateCode}, so the template account cannot be created yet.`,
+      };
+    }
+
+    return {
+      status: 'active',
+      note: `Legacy account is still active on code ${normalizedTemplateCode}, so template adoption remains blocked.`,
+    };
   }
 
   private async buildTemplateRecommendationContext(companyId: string, data?: Record<string, any> | null) {
@@ -601,6 +646,9 @@ export class CompanyService {
     const collisionResolutionMap = new Map(
       collisionResolutions.map((item) => [item.code, item.resolution]),
     );
+    const collisionResolutionByCode = new Map(
+      collisionResolutions.map((item) => [item.code, item]),
+    );
     const scopedAccounts = this.filterTemplateAccountsByScope(
       context.templateAccounts,
       scope.activation_scope,
@@ -619,21 +667,89 @@ export class CompanyService {
       orderBy: { code: 'asc' },
     });
 
+    const trackedLegacyAccountIds = Array.from(
+      new Set(
+        collisionResolutions
+          .map((item) => item.existing_id)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const trackedLegacyAccounts = trackedLegacyAccountIds.length
+      ? await this.prisma.gLAccount.findMany({
+          where: {
+            company_id: companyId,
+            id: { in: trackedLegacyAccountIds },
+          },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            type: true,
+            is_active: true,
+          },
+        })
+      : [];
+    const legacyRequests = trackedLegacyAccountIds.length
+      ? await this.prisma.gLAccountChangeRequest.findMany({
+          where: {
+            company_id: companyId,
+            account_id: { in: trackedLegacyAccountIds },
+          },
+          select: {
+            account_id: true,
+            request_type: true,
+            status: true,
+            created_at: true,
+            reviewed_at: true,
+            implemented_at: true,
+          },
+          orderBy: [{ implemented_at: 'desc' }, { reviewed_at: 'desc' }, { created_at: 'desc' }],
+        })
+      : [];
+
     const existingByCode = new Map(existingAccounts.map((account) => [account.code.toUpperCase(), account]));
+    const trackedLegacyById = new Map(trackedLegacyAccounts.map((account) => [account.id, account]));
+    const latestLegacyRequestByAccountId = new Map<string, (typeof legacyRequests)[number]>();
+    for (const request of legacyRequests) {
+      if (!request.account_id || latestLegacyRequestByAccountId.has(request.account_id)) {
+        continue;
+      }
+      latestLegacyRequestByAccountId.set(request.account_id, request);
+    }
     const rawCollisions = scopedAccounts
       .filter((account) => existingByCode.has(account.catalog_account.code.toUpperCase()))
       .map((account) => {
         const existing = existingByCode.get(account.catalog_account.code.toUpperCase());
         const normalizedCode = account.catalog_account.code.toUpperCase();
+        const trackedResolution = collisionResolutionByCode.get(normalizedCode);
+        const trackedLegacy = trackedResolution?.existing_id
+          ? trackedLegacyById.get(trackedResolution.existing_id) || null
+          : null;
+        const latestLegacyRequest =
+          trackedResolution?.existing_id
+            ? latestLegacyRequestByAccountId.get(trackedResolution.existing_id) || null
+            : null;
         return {
           code: account.catalog_account.code,
           template_name: account.catalog_account.name,
           template_account_type: this.inferCatalogAccountType(account.catalog_account),
           existing_name: existing?.name || null,
           existing_type: existing?.type || null,
-          existing_id: existing?.id || null,
+          existing_id: trackedResolution?.existing_id || existing?.id || null,
           existing_active: existing?.is_active ?? null,
           resolution: collisionResolutionMap.get(normalizedCode) || null,
+          remediation_status: this.resolveLegacyRemediationStatus({
+            templateCode: account.catalog_account.code,
+            existingCollision: existing,
+            trackedAccount: trackedLegacy,
+            latestRequest: latestLegacyRequest,
+          }).status,
+          remediation_note: this.resolveLegacyRemediationStatus({
+            templateCode: account.catalog_account.code,
+            existingCollision: existing,
+            trackedAccount: trackedLegacy,
+            latestRequest: latestLegacyRequest,
+          }).note,
         };
       });
 
@@ -647,6 +763,40 @@ export class CompanyService {
       (collision) => collision.resolution === 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
     );
     const unresolvedCollisions = rawCollisions.filter((collision) => !collision.resolution);
+    const autoClearedAdoptions = collisionResolutions
+      .filter((item) => item.resolution === 'ADOPT_TEMPLATE_REMEDIATE_LEGACY')
+      .filter((item) => !existingByCode.has(item.code.toUpperCase()))
+      .map((item) => {
+        const trackedLegacy = item.existing_id ? trackedLegacyById.get(item.existing_id) || null : null;
+        const latestLegacyRequest = item.existing_id
+          ? latestLegacyRequestByAccountId.get(item.existing_id) || null
+          : null;
+        const matchingTemplate = scopedAccounts.find(
+          (account) => account.catalog_account.code.toUpperCase() === item.code.toUpperCase(),
+        );
+        const remediation = this.resolveLegacyRemediationStatus({
+          templateCode: item.code,
+          existingCollision: null,
+          trackedAccount: trackedLegacy,
+          latestRequest: latestLegacyRequest,
+        });
+
+        return {
+          code: item.code,
+          template_name: matchingTemplate?.catalog_account.name || item.code,
+          template_account_type: matchingTemplate ? this.inferCatalogAccountType(matchingTemplate.catalog_account) : null,
+          existing_name: trackedLegacy?.name || null,
+          existing_type: trackedLegacy?.type || null,
+          existing_id: item.existing_id || null,
+          existing_active: trackedLegacy?.is_active ?? null,
+          resolution: item.resolution,
+          remediation_status: remediation.status,
+          remediation_note:
+            remediation.status === 'recoded'
+              ? remediation.note
+              : 'Legacy adoption is now clear because the original collision no longer occupies this code.',
+        };
+      });
 
     const toCreate = scopedAccounts
       .filter((account) => {
@@ -704,6 +854,13 @@ export class CompanyService {
             } marked for template adoption still require legacy-account remediation before activation can continue.`,
           ]
         : []),
+      ...(autoClearedAdoptions.length > 0
+        ? [
+            `${autoClearedAdoptions.length} pending template adoption${
+              autoClearedAdoptions.length === 1 ? '' : 's'
+            } cleared automatically because the legacy collision no longer occupies that code.`,
+          ]
+        : []),
       ...(context.profile.primary_jurisdiction === 'ZW' && !context.profile.functional_currency_justification
         ? ['Zimbabwe activation still needs functional currency justification before chart load.']
         : []),
@@ -725,12 +882,14 @@ export class CompanyService {
         skipped_existing_accounts: resolvedCollisions.length + mergedCollisions.length,
         merged_collisions: mergedCollisions.length,
         pending_template_adoptions: pendingTemplateAdoptions.length,
+        auto_cleared_adoptions: autoClearedAdoptions.length,
         governance_warnings: governanceWarnings,
         to_create_sample: toCreate.slice(0, 12),
         collisions_sample: unresolvedCollisions.slice(0, 12),
         resolved_collisions_sample: resolvedCollisions.slice(0, 12),
         merged_collisions_sample: mergedCollisions.slice(0, 12),
         pending_template_adoptions_sample: pendingTemplateAdoptions.slice(0, 12),
+        auto_cleared_adoptions_sample: autoClearedAdoptions.slice(0, 12),
       },
     };
   }

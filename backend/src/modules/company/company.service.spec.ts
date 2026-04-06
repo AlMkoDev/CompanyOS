@@ -17,6 +17,9 @@ describe('CompanyService', () => {
     gLAccountAuditTrail: {
       create: jest.fn(),
     },
+    gLAccountChangeRequest: {
+      findMany: jest.fn(),
+    },
     companyAccountingProfileAudit: {
       findMany: jest.fn(),
       create: jest.fn(),
@@ -37,10 +40,12 @@ describe('CompanyService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prisma.gLAccountChangeRequest.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(async (callback) =>
       callback({
         company: prisma.company,
         gLAccount: prisma.gLAccount,
+        gLAccountChangeRequest: prisma.gLAccountChangeRequest,
         gLAccountAuditTrail: prisma.gLAccountAuditTrail,
         companyAccountingProfileAudit: prisma.companyAccountingProfileAudit,
       }),
@@ -560,6 +565,7 @@ describe('CompanyService', () => {
         {
           code: '1000',
           resolution: 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
+          existing_id: 'gl-1',
         },
       ],
     });
@@ -574,7 +580,7 @@ describe('CompanyService', () => {
     );
     expect(result.dry_run.pending_template_adoptions_sample).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash' }),
+        expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash', remediation_status: 'active' }),
       ]),
     );
   });
@@ -631,6 +637,7 @@ describe('CompanyService', () => {
         {
           code: '1000',
           resolution: 'MERGE_INTO_EXISTING_PRESERVE_DATA',
+          existing_id: 'gl-1',
         },
       ],
     });
@@ -647,6 +654,69 @@ describe('CompanyService', () => {
     expect(result.dry_run.merged_collisions_sample).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash' }),
+      ]),
+    );
+  });
+
+  it('automatically clears pending template adoption once the legacy account has been recoded off the template code', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 'gl-1', code: '1001', name: 'Legacy Cash Recode', type: 'asset', is_active: true },
+      ]);
+    prisma.gLAccountChangeRequest.findMany.mockResolvedValue([]);
+
+    const result = await service.previewAccountingTemplateActivation('company-1', {
+      collision_resolutions: [
+        {
+          code: '1000',
+          resolution: 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
+          existing_id: 'gl-1',
+        },
+      ],
+    });
+
+    expect(result.dry_run).toEqual(
+      expect.objectContaining({
+        accounts_to_create: 1,
+        collisions: 0,
+        pending_template_adoptions: 0,
+        auto_cleared_adoptions: 1,
+      }),
+    );
+    expect(result.dry_run.auto_cleared_adoptions_sample).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: '1000', remediation_status: 'recoded' }),
       ]),
     );
   });
