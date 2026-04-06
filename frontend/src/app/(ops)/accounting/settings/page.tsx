@@ -71,6 +71,8 @@ type ActivationDryRun = {
   template_accounts_considered: number;
   accounts_to_create: number;
   collisions: number;
+  resolved_collisions?: number;
+  skipped_existing_accounts?: number;
   governance_warnings: string[];
   to_create_sample: Array<{
     code: string;
@@ -90,6 +92,17 @@ type ActivationDryRun = {
     existing_type?: string | null;
     existing_id?: string | null;
     existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
+  resolved_collisions_sample?: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
   }>;
 };
 
@@ -105,6 +118,11 @@ type ActivationResult = {
     name: string;
     account_type: string;
   }>;
+};
+
+type CollisionResolution = {
+  code: string;
+  resolution: 'KEEP_EXISTING_SKIP_TEMPLATE';
 };
 
 type AccountingProfileAudit = {
@@ -226,6 +244,12 @@ function buildChartActivationHref(options: {
   return `/accounting/chart-of-accounts?${params.toString()}`;
 }
 
+function buildCollisionReviewHref(code: string) {
+  const params = new URLSearchParams();
+  params.set('q', code);
+  return `/accounting/chart-of-accounts?${params.toString()}`;
+}
+
 export default function AccountingSettingsPage() {
   const { user } = useAuthStore();
   const canEdit = canManageAccountingSettings(user);
@@ -237,6 +261,7 @@ export default function AccountingSettingsPage() {
   const [activationResult, setActivationResult] = React.useState<ActivationResult | null>(null);
   const [activationScope, setActivationScope] = React.useState<ActivationScope>('FULL_RECOMMENDED');
   const [selectedModuleCodes, setSelectedModuleCodes] = React.useState<string[]>([]);
+  const [collisionResolutions, setCollisionResolutions] = React.useState<CollisionResolution[]>([]);
   const [showActivationConfirmation, setShowActivationConfirmation] = React.useState(false);
   const [activationConfirmed, setActivationConfirmed] = React.useState(false);
   const [history, setHistory] = React.useState<AccountingProfileAudit[]>([]);
@@ -258,8 +283,9 @@ export default function AccountingSettingsPage() {
       accounting_profile: buildPayload(profileForm),
       activation_scope: activationScope,
       selected_module_codes: selectedModuleCodes,
+      collision_resolutions: collisionResolutions,
     }),
-    [activationScope, selectedModuleCodes],
+    [activationScope, selectedModuleCodes, collisionResolutions],
   );
 
   const loadHistory = React.useCallback(async () => {
@@ -386,10 +412,38 @@ export default function AccountingSettingsPage() {
   }, [templateRecommendation]);
 
   React.useEffect(() => {
+    setCollisionResolutions((current) => {
+      if (!activationDryRun) {
+        return current.length ? [] : current;
+      }
+
+      const liveCodes = new Set([
+        ...activationDryRun.collisions_sample.map((item) => item.code.toUpperCase()),
+        ...(activationDryRun.resolved_collisions_sample || []).map((item) => item.code.toUpperCase()),
+      ]);
+
+      const next = current.filter((item) => liveCodes.has(item.code.toUpperCase()));
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+  }, [activationDryRun]);
+
+  React.useEffect(() => {
     setActivationResult(null);
     setShowActivationConfirmation(false);
     setActivationConfirmed(false);
-  }, [activationScope, selectedModuleCodes, form]);
+  }, [activationScope, selectedModuleCodes, collisionResolutions, form]);
+
+  const setCollisionResolution = React.useCallback((code: string, keepExisting: boolean) => {
+    const normalizedCode = code.trim().toUpperCase();
+    setCollisionResolutions((current) => {
+      const remaining = current.filter((item) => item.code.toUpperCase() !== normalizedCode);
+      if (!keepExisting) {
+        return remaining;
+      }
+
+      return [...remaining, { code: normalizedCode, resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' }];
+    });
+  }, []);
 
   React.useEffect(() => {
     const loadRecommendation = async () => {
@@ -789,7 +843,7 @@ export default function AccountingSettingsPage() {
                       <SummaryMetric label="Scope" value={scopeLabel} />
                       <SummaryMetric label="To create" value={`${activationDryRun.accounts_to_create}`} />
                       <SummaryMetric label="Collisions" value={`${activationDryRun.collisions}`} />
-                      <SummaryMetric label="Modules" value={`${selectedModuleCodes.length}`} />
+                      <SummaryMetric label="Legacy kept" value={`${activationDryRun.resolved_collisions ?? 0}`} />
                     </div>
 
                     <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
@@ -810,6 +864,9 @@ export default function AccountingSettingsPage() {
                         </div>
                         <div>
                           <span className="font-semibold text-brand-navy">Code collisions:</span> {activationDryRun.collisions}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Legacy accounts kept:</span> {activationDryRun.resolved_collisions ?? 0}
                         </div>
                       </div>
                     </div>
@@ -856,6 +913,17 @@ export default function AccountingSettingsPage() {
                   <SummaryMetric label="To create" value={`${activationDryRun.accounts_to_create}`} />
                   <SummaryMetric label="Collisions" value={`${activationDryRun.collisions}`} />
                 </div>
+
+                {(activationDryRun.resolved_collisions ?? 0) > 0 ? (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+                    <div className="font-semibold">
+                      {activationDryRun.resolved_collisions} legacy collision{activationDryRun.resolved_collisions === 1 ? '' : 's'} marked to keep the existing operational account.
+                    </div>
+                    <div className="mt-2 text-emerald-700/90">
+                      The matching queued template accounts will be skipped during activation, while the rest of the recommended chart can still proceed.
+                    </div>
+                  </div>
+                ) : null}
 
                 {activationResult ? (
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
@@ -920,7 +988,11 @@ export default function AccountingSettingsPage() {
                   emptyState="The current company chart already covers this template sample."
                 />
 
-                <CollisionComparisonList collisions={activationDryRun.collisions_sample} />
+                <CollisionComparisonList
+                  collisions={activationDryRun.collisions_sample}
+                  resolvedCollisions={activationDryRun.resolved_collisions_sample || []}
+                  onResolve={setCollisionResolution}
+                />
               </div>
             ) : (
               <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
@@ -1095,6 +1167,8 @@ function RecommendationList({ title, items, emptyState }: { title: string; items
 
 function CollisionComparisonList({
   collisions,
+  resolvedCollisions,
+  onResolve,
 }: {
   collisions: Array<{
     code: string;
@@ -1104,13 +1178,25 @@ function CollisionComparisonList({
     existing_type?: string | null;
     existing_id?: string | null;
     existing_active?: boolean | null;
+    resolution?: string | null;
   }>;
+  resolvedCollisions: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
+  onResolve: (code: string, keepExisting: boolean) => void;
 }) {
   return (
     <div>
       <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Queued vs existing COA collisions</div>
       <div className="mt-2 text-sm text-slate-600">
-        These queued template accounts cannot be deployed into the operational chart until their matching code collisions are resolved.
+        Where a legacy account already uses the same code, choose whether to keep the operational account and skip the queued template duplicate.
       </div>
       <div className="mt-3 space-y-3">
         {collisions.length > 0 ? collisions.map((collision) => (
@@ -1158,6 +1244,22 @@ function CollisionComparisonList({
                 ) : null}
               </div>
             </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => onResolve(collision.code, true)}
+                className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
+              >
+                Keep existing and skip queued account
+              </button>
+              <Link
+                href={buildCollisionReviewHref(collision.code)}
+                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-brand-navy transition hover:bg-slate-50"
+              >
+                Review existing account in COA
+              </Link>
+            </div>
           </div>
         )) : (
           <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4 text-sm text-slate-500">
@@ -1165,6 +1267,51 @@ function CollisionComparisonList({
           </div>
         )}
       </div>
+
+      {resolvedCollisions.length > 0 ? (
+        <div className="mt-5">
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Resolved legacy collisions</div>
+          <div className="mt-2 text-sm text-slate-600">
+            These queued template accounts are now marked to be skipped while the existing operational account is kept.
+          </div>
+          <div className="mt-3 space-y-3">
+            {resolvedCollisions.map((collision) => (
+              <div key={`resolved-${collision.code}`} className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-brand-navy">Code {collision.code} will keep the existing operational account</div>
+                  <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+                    Resolved
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                  <div>
+                    <span className="font-semibold text-brand-navy">Queued template account:</span> {collision.template_name}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-brand-navy">Existing operational account:</span> {collision.existing_name || 'Unknown account'}
+                    {collision.existing_active === false ? ' (inactive)' : ' (active)'}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onResolve(collision.code, false)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Reopen collision
+                  </button>
+                  <Link
+                    href={buildCollisionReviewHref(collision.code)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-brand-navy transition hover:bg-slate-50"
+                  >
+                    Open in COA
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

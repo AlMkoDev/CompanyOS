@@ -2,6 +2,15 @@ import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { UpdateCompanyAccountingProfileDto } from './update-company.dto';
 
+export class AccountingTemplateCollisionResolutionDto {
+  @IsString()
+  code!: string;
+
+  @IsString()
+  @IsIn(['KEEP_EXISTING_SKIP_TEMPLATE'])
+  resolution!: string;
+}
+
 export class PreviewAccountingTemplateRecommendationDto {
   @IsOptional()
   @IsObject()
@@ -18,4 +27,10 @@ export class PreviewAccountingTemplateRecommendationDto {
   @IsArray()
   @IsString({ each: true })
   selected_module_codes?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AccountingTemplateCollisionResolutionDto)
+  collision_resolutions?: AccountingTemplateCollisionResolutionDto[];
 }

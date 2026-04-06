@@ -799,6 +799,7 @@ export default function ChartOfAccountsPage() {
     const template = params.get("template");
     const scope = params.get("scope");
     const created = params.get("created");
+    const query = params.get("q");
 
     if (status === "reviewed" || status === "open" || status === "cleared") {
       setBacklogStatusFilter(status);
@@ -830,6 +831,10 @@ export default function ChartOfAccountsPage() {
       setActivationContext(null);
       setShowActivationWorkingSetOnly(false);
       setActivationReviewFocus("all");
+    }
+
+    if (query) {
+      setSearch(query);
     }
   }, []);
 

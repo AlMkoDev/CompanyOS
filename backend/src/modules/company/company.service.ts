@@ -41,6 +41,9 @@ export class CompanyService {
     'CORE_AND_REGULATORY',
     'MODULE_SELECTED',
   ]);
+  private readonly supportedCollisionResolutions = new Set([
+    'KEEP_EXISTING_SKIP_TEMPLATE',
+  ]);
 
   private isSchemaDriftError(error: unknown) {
     return (
@@ -306,6 +309,33 @@ export class CompanyService {
     };
   }
 
+  private resolveCollisionResolutions(data?: Record<string, any> | null) {
+    const requestedResolutions = Array.isArray(data?.collision_resolutions)
+      ? data.collision_resolutions
+      : [];
+
+    return Array.from(
+      new Map(
+        requestedResolutions
+          .map((item) => {
+            const code =
+              typeof item?.code === 'string' ? item.code.trim().toUpperCase() : '';
+            const resolution =
+              typeof item?.resolution === 'string'
+                ? item.resolution.trim().toUpperCase()
+                : '';
+
+            if (!code || !this.supportedCollisionResolutions.has(resolution)) {
+              return null;
+            }
+
+            return [code, { code, resolution }] as const;
+          })
+          .filter((item): item is readonly [string, { code: string; resolution: string }] => Boolean(item)),
+      ).values(),
+    );
+  }
+
   private async buildTemplateRecommendationContext(companyId: string, data?: Record<string, any> | null) {
     const profile = await this.getResolvedAccountingProfile(companyId, this.extractAccountingProfileData(data));
 
@@ -565,6 +595,10 @@ export class CompanyService {
     const recommendation = await this.previewAccountingTemplateRecommendation(companyId, data);
     const context = await this.buildTemplateRecommendationContext(companyId, data);
     const scope = this.resolveActivationScope(data);
+    const collisionResolutions = this.resolveCollisionResolutions(data);
+    const collisionResolutionMap = new Map(
+      collisionResolutions.map((item) => [item.code, item.resolution]),
+    );
     const scopedAccounts = this.filterTemplateAccountsByScope(
       context.templateAccounts,
       scope.activation_scope,
@@ -584,10 +618,11 @@ export class CompanyService {
     });
 
     const existingByCode = new Map(existingAccounts.map((account) => [account.code.toUpperCase(), account]));
-    const collisions = scopedAccounts
+    const rawCollisions = scopedAccounts
       .filter((account) => existingByCode.has(account.catalog_account.code.toUpperCase()))
       .map((account) => {
         const existing = existingByCode.get(account.catalog_account.code.toUpperCase());
+        const normalizedCode = account.catalog_account.code.toUpperCase();
         return {
           code: account.catalog_account.code,
           template_name: account.catalog_account.name,
@@ -596,11 +631,24 @@ export class CompanyService {
           existing_type: existing?.type || null,
           existing_id: existing?.id || null,
           existing_active: existing?.is_active ?? null,
+          resolution: collisionResolutionMap.get(normalizedCode) || null,
         };
       });
 
+    const resolvedCollisions = rawCollisions.filter(
+      (collision) => collision.resolution === 'KEEP_EXISTING_SKIP_TEMPLATE',
+    );
+    const unresolvedCollisions = rawCollisions.filter((collision) => !collision.resolution);
+
     const toCreate = scopedAccounts
-      .filter((account) => !existingByCode.has(account.catalog_account.code.toUpperCase()))
+      .filter((account) => {
+        const normalizedCode = account.catalog_account.code.toUpperCase();
+        if (!existingByCode.has(normalizedCode)) {
+          return true;
+        }
+
+        return false;
+      })
       .map((account) => ({
         code: account.catalog_account.code,
         name: account.catalog_account.name,
@@ -614,13 +662,26 @@ export class CompanyService {
 
     const governanceWarnings = [
       ...recommendation.recommendation.warnings,
-      ...(collisions.length > 0
+      ...(unresolvedCollisions.length > 0
         ? [
-            `${collisions.length} template account code collision${
-              collisions.length === 1 ? '' : 's'
+            `${unresolvedCollisions.length} template account code collision${
+              unresolvedCollisions.length === 1 ? '' : 's'
             } detected against the current company chart.`,
           ]
         : []),
+      ...(resolvedCollisions.length > 0
+        ? [
+            `${resolvedCollisions.length} legacy collision${
+              resolvedCollisions.length === 1 ? '' : 's'
+            } marked to keep the existing operational account and skip the queued template duplicate.`,
+          ]
+        : []),
+      ...resolvedCollisions
+        .filter((collision) => collision.existing_active === false)
+        .map(
+          (collision) =>
+            `${collision.code} is being kept as a legacy account, but the existing operational account is inactive and should be reviewed before go-live.`,
+        ),
       ...(context.profile.primary_jurisdiction === 'ZW' && !context.profile.functional_currency_justification
         ? ['Zimbabwe activation still needs functional currency justification before chart load.']
         : []),
@@ -637,10 +698,13 @@ export class CompanyService {
         existing_company_accounts: existingAccounts.length,
         template_accounts_considered: scopedAccounts.length,
         accounts_to_create: toCreate.length,
-        collisions: collisions.length,
+        collisions: unresolvedCollisions.length,
+        resolved_collisions: resolvedCollisions.length,
+        skipped_existing_accounts: resolvedCollisions.length,
         governance_warnings: governanceWarnings,
         to_create_sample: toCreate.slice(0, 12),
-        collisions_sample: collisions.slice(0, 12),
+        collisions_sample: unresolvedCollisions.slice(0, 12),
+        resolved_collisions_sample: resolvedCollisions.slice(0, 12),
       },
     };
   }
@@ -670,6 +734,10 @@ export class CompanyService {
 
     const context = await this.buildTemplateRecommendationContext(companyId, data);
     const scope = this.resolveActivationScope(data);
+    const collisionResolutions = this.resolveCollisionResolutions(data);
+    const collisionResolutionMap = new Map(
+      collisionResolutions.map((item) => [item.code, item.resolution]),
+    );
     const scopedAccounts = this.filterTemplateAccountsByScope(
       context.templateAccounts,
       scope.activation_scope,
@@ -697,6 +765,9 @@ export class CompanyService {
 
       for (const templateAccount of scopedAccounts) {
         const code = templateAccount.catalog_account.code.toUpperCase();
+        if (collisionResolutionMap.get(code) === 'KEEP_EXISTING_SKIP_TEMPLATE') {
+          continue;
+        }
         if (accountIndex.has(code)) {
           continue;
         }
@@ -779,6 +850,7 @@ export class CompanyService {
             template_code: preview.recommendation.template_code,
             activation_scope: scope.activation_scope,
             selected_module_codes: scope.selected_module_codes,
+            collision_resolutions: collisionResolutions,
             created_count: createdAccounts.length,
             created_codes: createdAccounts.map((account) => account.code),
           },
