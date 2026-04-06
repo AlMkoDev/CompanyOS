@@ -579,6 +579,78 @@ describe('CompanyService', () => {
     );
   });
 
+  it('supports merging into the existing account while preserving legacy data and skipping the queued duplicate', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [{ module_code: 'SA_TAX', module_name: 'South Africa Tax Pack', is_required: true }],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+        {
+          module_dependency: 'SA_TAX',
+          catalog_account: {
+            code: '2310',
+            name: 'SARS VAT Output',
+            account_type: 'liability',
+            jurisdiction: 'ZA',
+            is_core: true,
+            is_regulatory: true,
+            is_optional: false,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany.mockResolvedValue([
+      { id: 'gl-1', code: '1000', name: 'Legacy Cash', type: 'asset', is_active: true },
+    ]);
+
+    const result = await service.previewAccountingTemplateActivation('company-1', {
+      collision_resolutions: [
+        {
+          code: '1000',
+          resolution: 'MERGE_INTO_EXISTING_PRESERVE_DATA',
+        },
+      ],
+    });
+
+    expect(result.dry_run).toEqual(
+      expect.objectContaining({
+        accounts_to_create: 1,
+        collisions: 0,
+        merged_collisions: 1,
+        resolved_collisions: 1,
+        skipped_existing_accounts: 1,
+      }),
+    );
+    expect(result.dry_run.merged_collisions_sample).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash' }),
+      ]),
+    );
+  });
+
   it('activates the recommended template into the company chart when no collisions exist', async () => {
     prisma.company.findFirst.mockResolvedValue({
       id: 'company-1',

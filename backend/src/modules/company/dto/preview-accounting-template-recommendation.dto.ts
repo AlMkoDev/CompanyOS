@@ -7,7 +7,7 @@ export class AccountingTemplateCollisionResolutionDto {
   code!: string;
 
   @IsString()
-  @IsIn(['KEEP_EXISTING_SKIP_TEMPLATE', 'ADOPT_TEMPLATE_REMEDIATE_LEGACY'])
+  @IsIn(['KEEP_EXISTING_SKIP_TEMPLATE', 'ADOPT_TEMPLATE_REMEDIATE_LEGACY', 'MERGE_INTO_EXISTING_PRESERVE_DATA'])
   resolution!: string;
 }
 

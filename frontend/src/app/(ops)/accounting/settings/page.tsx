@@ -73,6 +73,7 @@ type ActivationDryRun = {
   collisions: number;
   resolved_collisions?: number;
   skipped_existing_accounts?: number;
+  merged_collisions?: number;
   pending_template_adoptions?: number;
   governance_warnings: string[];
   to_create_sample: Array<{
@@ -96,6 +97,16 @@ type ActivationDryRun = {
     resolution?: string | null;
   }>;
   resolved_collisions_sample?: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
+  merged_collisions_sample?: Array<{
     code: string;
     template_name: string;
     template_account_type?: string | null;
@@ -133,7 +144,7 @@ type ActivationResult = {
 
 type CollisionResolution = {
   code: string;
-  resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' | 'ADOPT_TEMPLATE_REMEDIATE_LEGACY';
+  resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' | 'ADOPT_TEMPLATE_REMEDIATE_LEGACY' | 'MERGE_INTO_EXISTING_PRESERVE_DATA';
 };
 
 type AccountingProfileAudit = {
@@ -890,6 +901,9 @@ export default function AccountingSettingsPage() {
                           <span className="font-semibold text-brand-navy">Legacy accounts kept:</span> {activationDryRun.resolved_collisions ?? 0}
                         </div>
                         <div>
+                          <span className="font-semibold text-brand-navy">Merged into existing:</span> {activationDryRun.merged_collisions ?? 0}
+                        </div>
+                        <div>
                           <span className="font-semibold text-brand-navy">Pending template adoptions:</span> {activationDryRun.pending_template_adoptions ?? 0}
                         </div>
                       </div>
@@ -945,6 +959,17 @@ export default function AccountingSettingsPage() {
                     </div>
                     <div className="mt-2 text-emerald-700/90">
                       The matching queued template accounts will be skipped during activation, while the rest of the recommended chart can still proceed.
+                    </div>
+                  </div>
+                ) : null}
+
+                {(activationDryRun.merged_collisions ?? 0) > 0 ? (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-4 text-sm text-sky-800">
+                    <div className="font-semibold">
+                      {activationDryRun.merged_collisions} collision{activationDryRun.merged_collisions === 1 ? '' : 's'} marked to merge into the existing operational account.
+                    </div>
+                    <div className="mt-2 text-sky-800/90">
+                      Historical data stays on the legacy account. The queued template duplicate is skipped, and the existing account is treated as the live operational line for that code.
                     </div>
                   </div>
                 ) : null}
@@ -1026,6 +1051,7 @@ export default function AccountingSettingsPage() {
                 <CollisionComparisonList
                   collisions={activationDryRun.collisions_sample}
                   resolvedCollisions={activationDryRun.resolved_collisions_sample || []}
+                  mergedCollisions={activationDryRun.merged_collisions_sample || []}
                   pendingTemplateAdoptions={activationDryRun.pending_template_adoptions_sample || []}
                   onResolve={setCollisionResolution}
                 />
@@ -1204,6 +1230,7 @@ function RecommendationList({ title, items, emptyState }: { title: string; items
 function CollisionComparisonList({
   collisions,
   resolvedCollisions,
+  mergedCollisions,
   pendingTemplateAdoptions,
   onResolve,
 }: {
@@ -1218,6 +1245,16 @@ function CollisionComparisonList({
     resolution?: string | null;
   }>;
   resolvedCollisions: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
+  mergedCollisions: Array<{
     code: string;
     template_name: string;
     template_account_type?: string | null;
@@ -1243,7 +1280,7 @@ function CollisionComparisonList({
     <div>
       <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Queued vs existing COA collisions</div>
       <div className="mt-2 text-sm text-slate-600">
-        Where a legacy account already uses the same code, choose whether to keep the operational account and skip the queued template duplicate.
+        Where a legacy account already uses the same code, choose whether to keep it, merge the template intent into it while preserving historical data, or adopt the template only after the legacy account is remediated.
       </div>
       <div className="mt-3 space-y-3">
         {collisions.length > 0 ? collisions.map((collision) => (
@@ -1313,6 +1350,13 @@ function CollisionComparisonList({
               >
                 Adopt template and remediate legacy account
               </button>
+              <button
+                type="button"
+                onClick={() => onResolve(collision.code, 'MERGE_INTO_EXISTING_PRESERVE_DATA')}
+                className="inline-flex items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-bold text-sky-800 transition hover:bg-sky-100"
+              >
+                Merge into existing and preserve legacy data
+              </button>
             </div>
           </div>
         )) : (
@@ -1367,11 +1411,59 @@ function CollisionComparisonList({
         </div>
       ) : null}
 
+      {mergedCollisions.length > 0 ? (
+        <div className="mt-5">
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Merged with existing account</div>
+          <div className="mt-2 text-sm text-slate-600">
+            These codes will use the existing operational account as the live line while preserving all historical data already posted there.
+          </div>
+          <div className="mt-3 space-y-3">
+            {mergedCollisions.map((collision) => (
+              <div key={`merged-${collision.code}`} className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-brand-navy">Code {collision.code} will merge into the existing operational account</div>
+                  <span className="rounded-full border border-sky-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-sky-700">
+                    Data preserved
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                  <div>
+                    <span className="font-semibold text-brand-navy">Queued template account:</span> {collision.template_name}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-brand-navy">Existing operational account retained:</span> {collision.existing_name || 'Unknown account'}
+                    {collision.existing_active === false ? ' (inactive)' : ' (active)'}
+                  </div>
+                </div>
+                <div className="mt-2 text-sm text-slate-600">
+                  No historical postings are moved or deleted. The queued duplicate is skipped and the existing account remains the live operational record for this code.
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onResolve(collision.code, null)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Reopen collision
+                  </button>
+                  <Link
+                    href={buildCollisionReviewHref(collision.code)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-brand-navy transition hover:bg-slate-50"
+                  >
+                    Open in COA
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {pendingTemplateAdoptions.length > 0 ? (
         <div className="mt-5">
           <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Pending template adoption</div>
           <div className="mt-2 text-sm text-slate-600">
-            These codes are marked to adopt the template account, but the current legacy account still needs remediation in the live company chart before activation can continue.
+            These codes are marked to adopt the template account, but the current legacy account still needs remediation in the live company chart before activation can continue. Once the legacy account no longer occupies that code, the next dry-run will clear the block automatically.
           </div>
           <div className="mt-3 space-y-3">
             {pendingTemplateAdoptions.map((collision) => (

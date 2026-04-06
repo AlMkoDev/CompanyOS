@@ -44,6 +44,7 @@ export class CompanyService {
   private readonly supportedCollisionResolutions = new Set([
     'KEEP_EXISTING_SKIP_TEMPLATE',
     'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
+    'MERGE_INTO_EXISTING_PRESERVE_DATA',
   ]);
 
   private isSchemaDriftError(error: unknown) {
@@ -639,6 +640,9 @@ export class CompanyService {
     const resolvedCollisions = rawCollisions.filter(
       (collision) => collision.resolution === 'KEEP_EXISTING_SKIP_TEMPLATE',
     );
+    const mergedCollisions = rawCollisions.filter(
+      (collision) => collision.resolution === 'MERGE_INTO_EXISTING_PRESERVE_DATA',
+    );
     const pendingTemplateAdoptions = rawCollisions.filter(
       (collision) => collision.resolution === 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
     );
@@ -686,6 +690,13 @@ export class CompanyService {
           (collision) =>
             `${collision.code} is being kept as a legacy account, but the existing operational account is inactive and should be reviewed before go-live.`,
         ),
+      ...(mergedCollisions.length > 0
+        ? [
+            `${mergedCollisions.length} collision${
+              mergedCollisions.length === 1 ? '' : 's'
+            } marked to merge into the existing operational account while preserving legacy data and skipping the queued duplicate.`,
+          ]
+        : []),
       ...(pendingTemplateAdoptions.length > 0
         ? [
             `${pendingTemplateAdoptions.length} collision${
@@ -710,13 +721,15 @@ export class CompanyService {
         template_accounts_considered: scopedAccounts.length,
         accounts_to_create: toCreate.length,
         collisions: unresolvedCollisions.length + pendingTemplateAdoptions.length,
-        resolved_collisions: resolvedCollisions.length,
-        skipped_existing_accounts: resolvedCollisions.length,
+        resolved_collisions: resolvedCollisions.length + mergedCollisions.length,
+        skipped_existing_accounts: resolvedCollisions.length + mergedCollisions.length,
+        merged_collisions: mergedCollisions.length,
         pending_template_adoptions: pendingTemplateAdoptions.length,
         governance_warnings: governanceWarnings,
         to_create_sample: toCreate.slice(0, 12),
         collisions_sample: unresolvedCollisions.slice(0, 12),
         resolved_collisions_sample: resolvedCollisions.slice(0, 12),
+        merged_collisions_sample: mergedCollisions.slice(0, 12),
         pending_template_adoptions_sample: pendingTemplateAdoptions.slice(0, 12),
       },
     };
@@ -778,7 +791,10 @@ export class CompanyService {
 
       for (const templateAccount of scopedAccounts) {
         const code = templateAccount.catalog_account.code.toUpperCase();
-        if (collisionResolutionMap.get(code) === 'KEEP_EXISTING_SKIP_TEMPLATE') {
+        if (
+          collisionResolutionMap.get(code) === 'KEEP_EXISTING_SKIP_TEMPLATE' ||
+          collisionResolutionMap.get(code) === 'MERGE_INTO_EXISTING_PRESERVE_DATA'
+        ) {
           continue;
         }
         if (accountIndex.has(code)) {
