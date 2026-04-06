@@ -211,6 +211,19 @@ function buildPayload(form: AccountingProfileForm) {
   };
 }
 
+function buildChartActivationHref(options: {
+  templateCode?: string;
+  activationScope?: ActivationScope;
+  createdCodes?: string[];
+}) {
+  const params = new URLSearchParams();
+  params.set("activation", "1");
+  if (options.templateCode) params.set("template", options.templateCode);
+  if (options.activationScope) params.set("scope", options.activationScope);
+  if (options.createdCodes?.length) params.set("created", options.createdCodes.join(","));
+  return `/accounting/chart-of-accounts?${params.toString()}`;
+}
+
 export default function AccountingSettingsPage() {
   const { user } = useAuthStore();
   const canEdit = canManageAccountingSettings(user);
@@ -867,7 +880,11 @@ export default function AccountingSettingsPage() {
                         </div>
                         <div className="mt-4 flex flex-wrap gap-3">
                           <Link
-                            href="/accounting/chart-of-accounts"
+                            href={buildChartActivationHref({
+                              templateCode: activationResult.template_code,
+                              activationScope: activationResult.activation_scope,
+                              createdCodes: activationResult.created_accounts?.map((account) => account.code) || [],
+                            })}
                             className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-3 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
                           >
                             Open Chart Of Accounts
@@ -977,7 +994,11 @@ export default function AccountingSettingsPage() {
                     </div>
                     <div className="mt-3">
                       <Link
-                        href="/accounting/chart-of-accounts"
+                        href={buildChartActivationHref({
+                          templateCode: snapshot.template_code,
+                          activationScope: snapshot.activation_scope,
+                          createdCodes: snapshot.created_codes || [],
+                        })}
                         className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-brand-navy transition hover:bg-slate-50"
                       >
                         Open Chart Of Accounts

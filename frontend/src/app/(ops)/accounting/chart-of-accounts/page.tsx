@@ -130,6 +130,12 @@ interface RemediationState {
   } | null;
 }
 
+interface ActivationContext {
+  templateCode: string | null;
+  scope: string | null;
+  createdCodes: string[];
+}
+
 interface AccountFormState {
   code: string;
   name: string;
@@ -668,6 +674,8 @@ export default function ChartOfAccountsPage() {
   const [backlogStatusFilter, setBacklogStatusFilter] = React.useState<"all" | "open" | "reviewed" | "cleared">("all");
   const [backlogAgeFilter, setBacklogAgeFilter] = React.useState<"all" | "new" | "aging" | "long-standing">("all");
   const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
+  const [activationContext, setActivationContext] = React.useState<ActivationContext | null>(null);
+  const [showActivationWorkingSetOnly, setShowActivationWorkingSetOnly] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState<"all" | AccountType>("all");
   const [form, setForm] = React.useState<AccountFormState>(DEFAULT_FORM);
@@ -776,6 +784,10 @@ export default function ChartOfAccountsPage() {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("status");
     const age = params.get("age");
+    const activation = params.get("activation");
+    const template = params.get("template");
+    const scope = params.get("scope");
+    const created = params.get("created");
 
     if (status === "reviewed" || status === "open" || status === "cleared") {
       setBacklogStatusFilter(status);
@@ -788,11 +800,36 @@ export default function ChartOfAccountsPage() {
     } else {
       setBacklogAgeFilter("all");
     }
+
+    if (activation === "1") {
+      const createdCodes = created
+        ? created
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : [];
+      setActivationContext({
+        templateCode: template,
+        scope,
+        createdCodes,
+      });
+      setShowActivationWorkingSetOnly(createdCodes.length > 0);
+    } else {
+      setActivationContext(null);
+      setShowActivationWorkingSetOnly(false);
+    }
   }, []);
 
   const groupedAccounts = React.useMemo(() => {
     const query = search.trim().toLowerCase();
     const filtered = accounts.filter((account) => {
+      if (
+        showActivationWorkingSetOnly &&
+        activationContext?.createdCodes.length &&
+        !activationContext.createdCodes.includes(account.code)
+      ) {
+        return false;
+      }
       if (typeFilter !== "all" && account.type !== typeFilter) return false;
       if (!query) return true;
 
@@ -815,7 +852,7 @@ export default function ChartOfAccountsPage() {
       ...type,
       accounts: filtered.filter((account) => account.type === type.value),
     })).filter((group) => group.accounts.length > 0);
-  }, [accounts, search, typeFilter]);
+  }, [accounts, search, typeFilter, showActivationWorkingSetOnly, activationContext]);
 
   const availableParents = React.useMemo(() => {
     const currentId = editing?.id;
@@ -1626,6 +1663,37 @@ export default function ChartOfAccountsPage() {
 
         <div className="space-y-6">
           <div className="rounded-[32px] border border-slate-100 bg-white px-6 py-6 shadow-sm">
+            {activationContext ? (
+              <div className="mb-6 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600">Activation handoff</div>
+                    <div className="mt-2 font-semibold text-brand-navy">
+                      Recently activated chart accounts are ready for review.
+                    </div>
+                    <div className="mt-2 text-sm text-emerald-800/90">
+                      Template: {activationContext.templateCode || "Unknown"}
+                      {activationContext.scope ? ` · Scope: ${activationContext.scope.replaceAll("_", " ")}` : ""}
+                      {activationContext.createdCodes.length ? ` · ${activationContext.createdCodes.length} created account${activationContext.createdCodes.length === 1 ? "" : "s"}` : ""}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowActivationWorkingSetOnly((current) => !current)}
+                      className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
+                        showActivationWorkingSetOnly
+                          ? "border-emerald-300 bg-white text-emerald-700"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      {showActivationWorkingSetOnly ? "Show full chart" : "Show newly created only"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Ledger structure</div>
