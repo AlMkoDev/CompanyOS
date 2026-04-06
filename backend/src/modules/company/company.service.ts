@@ -43,6 +43,7 @@ export class CompanyService {
   ]);
   private readonly supportedCollisionResolutions = new Set([
     'KEEP_EXISTING_SKIP_TEMPLATE',
+    'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
   ]);
 
   private isSchemaDriftError(error: unknown) {
@@ -638,6 +639,9 @@ export class CompanyService {
     const resolvedCollisions = rawCollisions.filter(
       (collision) => collision.resolution === 'KEEP_EXISTING_SKIP_TEMPLATE',
     );
+    const pendingTemplateAdoptions = rawCollisions.filter(
+      (collision) => collision.resolution === 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
+    );
     const unresolvedCollisions = rawCollisions.filter((collision) => !collision.resolution);
 
     const toCreate = scopedAccounts
@@ -682,6 +686,13 @@ export class CompanyService {
           (collision) =>
             `${collision.code} is being kept as a legacy account, but the existing operational account is inactive and should be reviewed before go-live.`,
         ),
+      ...(pendingTemplateAdoptions.length > 0
+        ? [
+            `${pendingTemplateAdoptions.length} collision${
+              pendingTemplateAdoptions.length === 1 ? '' : 's'
+            } marked for template adoption still require legacy-account remediation before activation can continue.`,
+          ]
+        : []),
       ...(context.profile.primary_jurisdiction === 'ZW' && !context.profile.functional_currency_justification
         ? ['Zimbabwe activation still needs functional currency justification before chart load.']
         : []),
@@ -698,13 +709,15 @@ export class CompanyService {
         existing_company_accounts: existingAccounts.length,
         template_accounts_considered: scopedAccounts.length,
         accounts_to_create: toCreate.length,
-        collisions: unresolvedCollisions.length,
+        collisions: unresolvedCollisions.length + pendingTemplateAdoptions.length,
         resolved_collisions: resolvedCollisions.length,
         skipped_existing_accounts: resolvedCollisions.length,
+        pending_template_adoptions: pendingTemplateAdoptions.length,
         governance_warnings: governanceWarnings,
         to_create_sample: toCreate.slice(0, 12),
         collisions_sample: unresolvedCollisions.slice(0, 12),
         resolved_collisions_sample: resolvedCollisions.slice(0, 12),
+        pending_template_adoptions_sample: pendingTemplateAdoptions.slice(0, 12),
       },
     };
   }

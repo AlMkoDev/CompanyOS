@@ -520,6 +520,65 @@ describe('CompanyService', () => {
     );
   });
 
+  it('keeps activation blocked when a collision is marked for template adoption until the legacy account is remediated', async () => {
+    prisma.company.findFirst.mockResolvedValue({
+      id: 'company-1',
+      accounting_profile: {
+        primary_jurisdiction: 'ZA',
+        operating_jurisdictions: ['ZA'],
+        reporting_framework: 'IFRS_FULL',
+        functional_currency: 'ZAR',
+        presentation_currency: 'ZAR',
+      },
+    });
+    prisma.coaTemplate.findUnique.mockResolvedValue({
+      code: 'FULL_INTEGRATED',
+      name: 'Full Integrated Chart',
+      description: 'Integrated chart',
+      modules: [{ module_code: 'SA_TAX', module_name: 'South Africa Tax Pack', is_required: true }],
+      accounts: [
+        {
+          module_dependency: null,
+          catalog_account: {
+            code: '1000',
+            name: 'Cash and Cash Equivalents',
+            account_type: 'asset',
+            jurisdiction: null,
+            is_core: true,
+            is_regulatory: false,
+            is_optional: false,
+          },
+        },
+      ],
+    });
+    prisma.gLAccount.findMany.mockResolvedValue([
+      { id: 'gl-1', code: '1000', name: 'Legacy Cash', type: 'asset', is_active: true },
+    ]);
+
+    const result = await service.previewAccountingTemplateActivation('company-1', {
+      collision_resolutions: [
+        {
+          code: '1000',
+          resolution: 'ADOPT_TEMPLATE_REMEDIATE_LEGACY',
+        },
+      ],
+    });
+
+    expect(result.dry_run).toEqual(
+      expect.objectContaining({
+        accounts_to_create: 0,
+        collisions: 1,
+        pending_template_adoptions: 1,
+        resolved_collisions: 0,
+      }),
+    );
+    expect(result.dry_run.pending_template_adoptions_sample).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: '1000', existing_name: 'Legacy Cash' }),
+      ]),
+    );
+  });
+
   it('activates the recommended template into the company chart when no collisions exist', async () => {
     prisma.company.findFirst.mockResolvedValue({
       id: 'company-1',

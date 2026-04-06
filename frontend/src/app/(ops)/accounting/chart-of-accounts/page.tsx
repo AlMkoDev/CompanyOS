@@ -136,6 +136,11 @@ interface ActivationContext {
   createdCodes: string[];
 }
 
+interface PendingLegacyCollisionAction {
+  code: string;
+  mode: "adopt-template";
+}
+
 type ActivationReviewFocus = "all" | "owners" | "mapping" | "hierarchy" | "restricted";
 
 interface AccountFormState {
@@ -685,6 +690,7 @@ export default function ChartOfAccountsPage() {
   const [backlogAgeFilter, setBacklogAgeFilter] = React.useState<"all" | "new" | "aging" | "long-standing">("all");
   const [backlogActionFeedback, setBacklogActionFeedback] = React.useState<string | null>(null);
   const [activationContext, setActivationContext] = React.useState<ActivationContext | null>(null);
+  const [pendingLegacyCollisionAction, setPendingLegacyCollisionAction] = React.useState<PendingLegacyCollisionAction | null>(null);
   const [showActivationWorkingSetOnly, setShowActivationWorkingSetOnly] = React.useState(false);
   const [activationReviewFocus, setActivationReviewFocus] = React.useState<ActivationReviewFocus>("all");
   const [search, setSearch] = React.useState("");
@@ -800,6 +806,7 @@ export default function ChartOfAccountsPage() {
     const scope = params.get("scope");
     const created = params.get("created");
     const query = params.get("q");
+    const legacyCollision = params.get("legacyCollision");
 
     if (status === "reviewed" || status === "open" || status === "cleared") {
       setBacklogStatusFilter(status);
@@ -835,6 +842,15 @@ export default function ChartOfAccountsPage() {
 
     if (query) {
       setSearch(query);
+    }
+
+    if (query && legacyCollision === "adopt-template") {
+      setPendingLegacyCollisionAction({
+        code: query.trim().toUpperCase(),
+        mode: "adopt-template",
+      });
+    } else {
+      setPendingLegacyCollisionAction(null);
     }
   }, []);
 
@@ -1409,6 +1425,24 @@ export default function ChartOfAccountsPage() {
     setBacklogActionFeedback(`Drafted a ${requestType} request for ${account.code} · ${account.name}.`);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
+
+  React.useEffect(() => {
+    if (!pendingLegacyCollisionAction) return;
+    const account = accounts.find(
+      (item) => item.code.trim().toUpperCase() === pendingLegacyCollisionAction.code,
+    );
+    if (!account) return;
+
+    startChangeRequest(
+      account,
+      "deactivate",
+      `Deactivate legacy ${account.code} · ${account.name} for template adoption`,
+    );
+    setMessage(
+      `Legacy collision workflow loaded for ${account.code}. Review the live account and raise the deactivation or reclassification request needed before template adoption.`,
+    );
+    setPendingLegacyCollisionAction(null);
+  }, [accounts, pendingLegacyCollisionAction, startChangeRequest]);
 
   const handleReviewRemediation = React.useCallback(
     async (stateId: string, decision: "reviewed" | "reopen") => {

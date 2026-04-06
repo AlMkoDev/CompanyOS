@@ -73,6 +73,7 @@ type ActivationDryRun = {
   collisions: number;
   resolved_collisions?: number;
   skipped_existing_accounts?: number;
+  pending_template_adoptions?: number;
   governance_warnings: string[];
   to_create_sample: Array<{
     code: string;
@@ -104,6 +105,16 @@ type ActivationDryRun = {
     existing_active?: boolean | null;
     resolution?: string | null;
   }>;
+  pending_template_adoptions_sample?: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
 };
 
 type ActivationResult = {
@@ -122,7 +133,7 @@ type ActivationResult = {
 
 type CollisionResolution = {
   code: string;
-  resolution: 'KEEP_EXISTING_SKIP_TEMPLATE';
+  resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' | 'ADOPT_TEMPLATE_REMEDIATE_LEGACY';
 };
 
 type AccountingProfileAudit = {
@@ -247,6 +258,13 @@ function buildChartActivationHref(options: {
 function buildCollisionReviewHref(code: string) {
   const params = new URLSearchParams();
   params.set('q', code);
+  return `/accounting/chart-of-accounts?${params.toString()}`;
+}
+
+function buildTemplateAdoptionHref(code: string) {
+  const params = new URLSearchParams();
+  params.set('q', code);
+  params.set('legacyCollision', 'adopt-template');
   return `/accounting/chart-of-accounts?${params.toString()}`;
 }
 
@@ -433,15 +451,18 @@ export default function AccountingSettingsPage() {
     setActivationConfirmed(false);
   }, [activationScope, selectedModuleCodes, collisionResolutions, form]);
 
-  const setCollisionResolution = React.useCallback((code: string, keepExisting: boolean) => {
+  const setCollisionResolution = React.useCallback((
+    code: string,
+    resolution: CollisionResolution['resolution'] | null,
+  ) => {
     const normalizedCode = code.trim().toUpperCase();
     setCollisionResolutions((current) => {
       const remaining = current.filter((item) => item.code.toUpperCase() !== normalizedCode);
-      if (!keepExisting) {
+      if (!resolution) {
         return remaining;
       }
 
-      return [...remaining, { code: normalizedCode, resolution: 'KEEP_EXISTING_SKIP_TEMPLATE' }];
+      return [...remaining, { code: normalizedCode, resolution }];
     });
   }, []);
 
@@ -868,6 +889,9 @@ export default function AccountingSettingsPage() {
                         <div>
                           <span className="font-semibold text-brand-navy">Legacy accounts kept:</span> {activationDryRun.resolved_collisions ?? 0}
                         </div>
+                        <div>
+                          <span className="font-semibold text-brand-navy">Pending template adoptions:</span> {activationDryRun.pending_template_adoptions ?? 0}
+                        </div>
                       </div>
                     </div>
 
@@ -921,6 +945,17 @@ export default function AccountingSettingsPage() {
                     </div>
                     <div className="mt-2 text-emerald-700/90">
                       The matching queued template accounts will be skipped during activation, while the rest of the recommended chart can still proceed.
+                    </div>
+                  </div>
+                ) : null}
+
+                {(activationDryRun.pending_template_adoptions ?? 0) > 0 ? (
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                    <div className="font-semibold">
+                      {activationDryRun.pending_template_adoptions} collision{activationDryRun.pending_template_adoptions === 1 ? '' : 's'} marked for template adoption still need legacy-account remediation.
+                    </div>
+                    <div className="mt-2 text-amber-800/90">
+                      Activation stays blocked for these codes until the legacy account is reclassified, deactivated, or otherwise remediated in the live Chart of Accounts.
                     </div>
                   </div>
                 ) : null}
@@ -991,6 +1026,7 @@ export default function AccountingSettingsPage() {
                 <CollisionComparisonList
                   collisions={activationDryRun.collisions_sample}
                   resolvedCollisions={activationDryRun.resolved_collisions_sample || []}
+                  pendingTemplateAdoptions={activationDryRun.pending_template_adoptions_sample || []}
                   onResolve={setCollisionResolution}
                 />
               </div>
@@ -1168,6 +1204,7 @@ function RecommendationList({ title, items, emptyState }: { title: string; items
 function CollisionComparisonList({
   collisions,
   resolvedCollisions,
+  pendingTemplateAdoptions,
   onResolve,
 }: {
   collisions: Array<{
@@ -1190,7 +1227,17 @@ function CollisionComparisonList({
     existing_active?: boolean | null;
     resolution?: string | null;
   }>;
-  onResolve: (code: string, keepExisting: boolean) => void;
+  pendingTemplateAdoptions: Array<{
+    code: string;
+    template_name: string;
+    template_account_type?: string | null;
+    existing_name?: string | null;
+    existing_type?: string | null;
+    existing_id?: string | null;
+    existing_active?: boolean | null;
+    resolution?: string | null;
+  }>;
+  onResolve: (code: string, resolution: CollisionResolution['resolution'] | null) => void;
 }) {
   return (
     <div>
@@ -1248,7 +1295,7 @@ function CollisionComparisonList({
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => onResolve(collision.code, true)}
+                onClick={() => onResolve(collision.code, 'KEEP_EXISTING_SKIP_TEMPLATE')}
                 className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
               >
                 Keep existing and skip queued account
@@ -1259,6 +1306,13 @@ function CollisionComparisonList({
               >
                 Review existing account in COA
               </Link>
+              <button
+                type="button"
+                onClick={() => onResolve(collision.code, 'ADOPT_TEMPLATE_REMEDIATE_LEGACY')}
+                className="inline-flex items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800 transition hover:bg-amber-100"
+              >
+                Adopt template and remediate legacy account
+              </button>
             </div>
           </div>
         )) : (
@@ -1295,7 +1349,7 @@ function CollisionComparisonList({
                 <div className="mt-4 flex flex-wrap gap-3">
                   <button
                     type="button"
-                    onClick={() => onResolve(collision.code, false)}
+                    onClick={() => onResolve(collision.code, null)}
                     className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
                   >
                     Reopen collision
@@ -1306,6 +1360,51 @@ function CollisionComparisonList({
                   >
                     Open in COA
                   </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {pendingTemplateAdoptions.length > 0 ? (
+        <div className="mt-5">
+          <div className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Pending template adoption</div>
+          <div className="mt-2 text-sm text-slate-600">
+            These codes are marked to adopt the template account, but the current legacy account still needs remediation in the live company chart before activation can continue.
+          </div>
+          <div className="mt-3 space-y-3">
+            {pendingTemplateAdoptions.map((collision) => (
+              <div key={`pending-${collision.code}`} className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-brand-navy">Code {collision.code} is queued for template adoption</div>
+                  <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">
+                    Pending remediation
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                  <div>
+                    <span className="font-semibold text-brand-navy">Template account to adopt:</span> {collision.template_name}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-brand-navy">Legacy account to remediate:</span> {collision.existing_name || 'Unknown account'}
+                    {collision.existing_active === false ? ' (inactive)' : ' (active)'}
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link
+                    href={buildTemplateAdoptionHref(collision.code)}
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand-navy px-4 py-2 text-sm font-bold text-white shadow-md transition hover:bg-brand-navy/90"
+                  >
+                    Open legacy remediation workflow
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => onResolve(collision.code, null)}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Reopen collision
+                  </button>
                 </div>
               </div>
             ))}
