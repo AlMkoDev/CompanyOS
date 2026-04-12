@@ -1,0 +1,6 @@
+﻿Channel,Best For,Key Design Requirements
+Self-Service Portal,"B2B customers, repeat buyers",• Login/auth integration<br>• Invoice lookup by number/PO/date<br>• Pre-populated dispute form with invoice line items<br>• File upload with size/type validation
+Email-to-Case,Customers who prefer email,• Dedicated dispute@ email address<br>"• Auto-parse subject/body for invoice #, amount, reason"<br>• Auto-reply with case ID + next steps<br>• Flag attachments for evidence processing
+Phone/IVR,"Urgent issues, non-digital customers",• Scripted intake questions to capture structured data<br>"• Auto-create case in system with ""Phone Intake"" source tag"<br>• Follow-up email/SMS with case summary for confirmation
+In-App/Chat Widget,"SaaS, e-commerce, mobile-first businesses",• Context-aware: trigger dispute option only on paid/order history pages<br>• Guided workflow: reason → affected items → evidence upload<br>• Real-time case ID display + status tracking link
+EDI/API Integration,Enterprise B2B partners,"• Standardized dispute message format (e.g., ANSI X12 824)"<br>• Auto-validation against invoice/PO data<br>• Acknowledgement receipt with case reference

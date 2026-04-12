@@ -1,0 +1,86 @@
+69 previous messages
+I’m going to inspect the codebase against this list first so we can separate confirmed issues from false alarms, then I’ll fix anything straightforward and call out the higher-risk items with file references.
+
+
+Ran 3 commands
+I’ve confirmed there’s an untracked doc in the worktree, so I’m leaving that alone and checking the actual code paths behind each item now: file sizes, oversized services/pages, auth scoping, and test coverage.
+
+
+Ran 5 commands
+The “100KB page” claim doesn’t match the source tree as-is; the largest page.tsx I found is about 30KB. I’m checking whether that issue is really about bundle output instead of raw source, and whether the empty PO service stub is actually wired into the module graph.
+
+
+Ran 5 commands
+I’ve confirmed the empty stub is real and unused, and there’s no Playwright/Cypress setup in the frontend package at all. Next I’m checking the auth and routing patterns more carefully so we can distinguish “architectural risk” from an actual current bug.
+
+
+Ran 5 commands
+I found something more concrete than “drift risk”: a few supply-chain controllers appear to be using inconsistent JWT import paths and inconsistent req.user field names. I’m opening those next because they’re the kind of issue that turns into real route breakage.
+
+
+Ran 5 commands
+I’ve got a concrete fix set now: a few supply-chain controllers are out of sync with the actual JWT payload shape, and two of them point at JWT guard files that don’t exist in this repo. I’m patching those along with the empty PO service stub so the “critical” items become actionable instead of just noted.
+
+
+Ran 3 commands
+I’m widening the auth-pass just a bit because the same JWT field mismatch shows up in more than one controller. That’s worth fixing consistently now; otherwise we’d only be patching one symptom.
+
+
+Ran 3 commands
+One more concrete inconsistency popped up outside supply-chain: the performance controller expects employee_id in JWT, but the guard only populates userId, companyId, email, and roles. I’m checking the service contract before I touch that one so we don’t paper over a deeper model mismatch.
+
+
+Ran 3 commands
+There’s a cleaner way to reduce the controller drift without chasing every call site: make the JWT guard expose backward-compatible aliases for the old field names, then fix the obviously broken import paths on top. I’m checking token issuance now to see whether we can safely add those aliases.
+
+
+Ran 3 commands
+I’ve got enough context to patch safely now. I’m making three targeted changes: fix broken JWT guard imports, add backward-compatible JWT user aliases to reduce route breakage, and replace the 0-byte PO service stub with a compatibility re-export.
+
+
+Edited 7 files, ran 2 commands
+The patches are in. I’m running a focused verification pass now so we can tell the difference between “fixed” and “still a recommendation,” especially around the JWT/controller contract.
+
+
+Ran 4 commands
+The focused JWT test exposed exactly what we changed, which is good. The full backend build is already red for many unrelated pre-existing TypeScript issues, so I’m keeping verification scoped to the auth contract I touched and updating that test expectation to match the new compatibility layer.
+
+
+Edited 1 file, ran 14 commands
+I checked the list against the repo and there are a few things we can now treat as confirmed findings instead of general recommendations.
+
+Most important: there is a real auth-contract mismatch still left in performance.controller.ts (line 37). Those endpoints depend on req.user.employee_id, but the JWT guard only guarantees userId and companyId today in jwt.strategy.ts (line 44). I added backward-compatible aliases for the old user fields and fixed several supply-chain controllers that were using broken JWT import paths or stale req.user keys, but the performance flow still needs a proper employee-claim decision.
+
+I also confirmed:
+
+The empty stub was real. enhanced-po-document.service.ts (line 1) is no longer 0 bytes; it now re-exports PODocumentService as a compatibility shim.
+Frontend E2E coverage is genuinely missing. frontend/package.json (line 5) has no Playwright/Cypress deps or scripts.
+API versioning is not in place. backend/src/main.ts (line 33) sets up Swagger, but there’s no setGlobalPrefix('api/v1') or similar.
+Observability is still minimal. There are many console.error/console.log calls and no matches for Pino, Winston, Sentry, Datadog, or OpenTelemetry in the codebase.
+Redis caching also appears absent; I found no Redis/cache module wiring.
+A couple of the original items need refinement:
+
+The “pages exceed 100KB” claim is not supported by the current source tree. The largest page.tsx I found was roughly 30KB, not 100KB, and I found no next/dynamic usage. That means “code-splitting could help” is fair, but “critical 100KB monoliths” is not currently proven from source.
+File upload handling is better than the issue list suggests. Both compliance and PO document flows validate MIME type, extension, and size through upload-policy.ts (line 1), so this is more “keep reviewing” than “known gap”.
+What I changed:
+
+Fixed stale/broken JWT guard imports in supply-chain controllers.
+Normalized several supply-chain controllers to use req.user.companyId and req.user.userId.
+Added compatibility aliases in jwt.strategy.ts (line 44) so older handlers expecting company_id, sub, or id don’t break immediately.
+Replaced the empty PO stub with a compatibility export.
+Updated the JWT unit test, and src/modules/auth/jwt.strategy.spec.ts now passes.
+Verification: the focused JWT spec passes. A full backend build still fails, but due to many pre-existing TypeScript/schema issues elsewhere in the repo, not from these patches.
+
+
+8 files changed
++134
+-119
+Undo
+backend/src/modules/auth/jwt.strategy.ts
+backend/src/modules/supply-chain/controllers/po-amendment.controller.ts
+backend/src/modules/supply-chain/controllers/supplier-bank-security.controller.ts
+backend/src/modules/supply-chain/controllers/supply-chain-audit.controller.ts
+backend/src/modules/supply-chain/enhanced-po-document.service.ts
+backend/src/modules/supply-chain/goods-receipt.controller.ts
+backend/src/modules/supply-chain/supplier-performance.controller.ts
+backend/src/modules/auth/jwt.strategy.spec.ts

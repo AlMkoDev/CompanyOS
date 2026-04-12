@@ -1,0 +1,6 @@
+﻿Evidence Type,When to Request,Format Guidance,Validation Rule
+Photo/Video,"Quality, damage, condition disputes",JPG/PNG/MP4; max 10MB; auto-compress,Must contain timestamp or geotag if possible
+Document Upload,"Contracts, POs, emails, policies",PDF preferred; OCR-enabled for text extraction,File name should include invoice # or case ID
+Screenshots,"Pricing errors, website discrepancies",PNG/JPG; highlight relevant section with annotation,Redact sensitive personal data automatically
+Delivery Proof,"""Not received"" claims","POD signature, tracking screenshot, carrier confirmation",Must show full delivery address (not just city)
+Communication Logs,Misunderstanding claims,"Exported email thread, chat transcript",Redact internal notes; keep customer-facing content only

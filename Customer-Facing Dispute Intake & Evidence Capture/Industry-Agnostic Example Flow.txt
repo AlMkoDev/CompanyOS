@@ -1,0 +1,21 @@
+Customer submits dispute via portal
+  ↓
+System validates invoice #, auto-attaches invoice/PO/shipping record
+  ↓
+Customer uploads photo of damaged goods + brief description
+  ↓
+Case created: DSP-2026-1042 | Status: OPEN | SLA: 48h response
+  ↓
+Auto-routed to Operations team (reason = "Quality")
+  ↓
+Ops specialist reviews evidence, contacts warehouse for harvest/dispatch logs
+  ↓
+Resolution proposed: 20% credit for verified damage
+  ↓
+Manager approves (amount <$200 threshold)
+  ↓
+System auto-generates credit note, updates AR ledger
+  ↓
+Customer receives email: "Your dispute DSP-2026-1042 is resolved. Credit of $XX applied."
+  ↓
+Case closed; CSAT survey sent; metrics updated

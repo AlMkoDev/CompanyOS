@@ -61,6 +61,7 @@ export default function ArCollectionsPage() {
   const { isAuthenticated } = useAuthStore();
   const [cases, setCases] = React.useState<CollectionCase[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [currentTimeMs, setCurrentTimeMs] = React.useState<number | null>(null);
   const [showBlastPreview, setShowBlastPreview] = React.useState(false);
   const [selectedCase, setSelectedCase] = React.useState<CollectionCase | null>(null);
   const [showActionModal, setShowActionModal] = React.useState(false);
@@ -94,6 +95,16 @@ export default function ArCollectionsPage() {
   React.useEffect(() => {
     if (isAuthenticated) fetchCases();
   }, [fetchCases, isAuthenticated]);
+
+  React.useEffect(() => {
+    setCurrentTimeMs(Date.now());
+
+    const intervalId = window.setInterval(() => {
+      setCurrentTimeMs(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const openActionModal = (collectionCase: CollectionCase, type: 'log_follow_up' | 'escalate' | 'resolve') => {
     setSelectedCase(collectionCase);
@@ -190,6 +201,7 @@ export default function ArCollectionsPage() {
               <CollectionItem
                 key={c.id}
                 data={c}
+                currentTimeMs={currentTimeMs}
                 onLogAction={() => openActionModal(c, 'log_follow_up')}
                 onEscalate={() => openActionModal(c, 'escalate')}
                 onResolve={() => openActionModal(c, 'resolve')}
@@ -337,20 +349,21 @@ function RiskCard({ level, label, count, bg, text, desc }: RiskCardProps) {
 
 function CollectionItem({
   data,
+  currentTimeMs,
   onLogAction,
   onEscalate,
   onResolve,
 }: CollectionItemProps & {
+  currentTimeMs: number | null;
   onLogAction: () => void;
   onEscalate: () => void;
   onResolve: () => void;
 }) {
-   const overdueDays = React.useMemo(() => {
-      const dueDate = data.invoice?.due_date ? new Date(data.invoice.due_date) : null;
-      if (!dueDate || Number.isNaN(dueDate.getTime())) return null;
-      const diff = Date.now() - dueDate.getTime();
-      return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-   }, [data.invoice?.due_date]);
+   const dueDate = data.invoice?.due_date ? new Date(data.invoice.due_date) : null;
+   const overdueDays =
+      !dueDate || Number.isNaN(dueDate.getTime()) || currentTimeMs === null
+        ? null
+        : Math.max(0, Math.ceil((currentTimeMs - dueDate.getTime()) / (1000 * 60 * 60 * 24)));
 
    return (
       <div className="bg-white rounded-[40px] border border-slate-100 p-10 shadow-sm hover:shadow-2xl transition-all group">

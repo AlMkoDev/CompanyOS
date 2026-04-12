@@ -1,0 +1,5 @@
+[Timestamp] [User/System] [Action] [Details]
+2026-03-29 14:22:01 | customer_jones | Dispute Submitted | Case DSP-2026-0881 created
+2026-03-29 14:22:03 | system | Evidence Uploaded | photo_damage_001.jpg (2.1MB)
+2026-03-29 15:10:44 | ar_specialist_k | Status Changed | OPEN → UNDER_REVIEW
+2026-03-30 09:15:22 | logistics_mgr_p | Comment Added | "POD confirms delivery to dock B"

@@ -1,0 +1,5 @@
+credit_approval_limits:
+  AR_Officer: "$0 - $50"
+  Finance_Manager: "$51 - $200" 
+  Operations_Director: "$201 - $500"
+  CEO: "$501+"

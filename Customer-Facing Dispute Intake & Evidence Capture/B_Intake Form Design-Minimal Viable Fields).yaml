@@ -1,0 +1,21 @@
+Required Fields:
+  - Invoice Number (with lookup/validation)
+  - Dispute Reason (dropdown: Pricing, Quality, Quantity, Delivery, Duplicate, Other)
+  - Disputed Amount (auto-calculated from line items when possible)
+  - Customer Contact (auto-filled if authenticated; else required)
+  - Brief Description (free text, 200-char limit for clarity)
+
+Conditional Fields (based on reason):
+  - If "Quality": 
+      * Photo upload (required)
+      * Defect description
+  - If "Quantity": 
+      * Received quantity vs. invoiced quantity
+      * POD reference (if available)
+  - If "Pricing": 
+      * Agreed price (contract/PO reference)
+      * Invoice price screenshot (optional)
+
+Optional but Recommended:
+  - Preferred resolution (refund, credit, replacement, price adjustment)
+  - Urgency indicator (affects SLA routing)
