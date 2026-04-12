@@ -23,7 +23,7 @@ export class SupplierPerformanceController {
   @ApiOperation({ summary: 'Get supplier performance dashboard summary' })
   @ApiResponse({ status: 200, description: 'Dashboard data retrieved' })
   async getPerformanceDashboard(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.performanceService.getPerformanceDashboard(companyId);
   }
 
@@ -31,7 +31,7 @@ export class SupplierPerformanceController {
   @ApiOperation({ summary: 'Get all supplier scorecards' })
   @ApiResponse({ status: 200, description: 'Supplier scorecards retrieved' })
   async getAllScorecards(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.performanceService.getAllSupplierScorecards(companyId);
   }
 
@@ -43,7 +43,7 @@ export class SupplierPerformanceController {
     @Request() req: any,
     @Param('supplierId') supplierId: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.performanceService.getSupplierScorecard(companyId, supplierId);
   }
 
@@ -56,7 +56,7 @@ export class SupplierPerformanceController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     
     const period = {
       from: from ? new Date(from) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
@@ -77,7 +77,7 @@ export class SupplierPerformanceController {
     @Request() req: any,
     @Param('riskLevel') riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.performanceService.getSuppliersByRiskLevel(companyId, riskLevel);
   }
 
@@ -85,7 +85,7 @@ export class SupplierPerformanceController {
   @ApiOperation({ summary: 'Send performance alerts for critical suppliers' })
   @ApiResponse({ status: 200, description: 'Alerts sent successfully' })
   async sendPerformanceAlerts(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     await this.performanceService.sendPerformanceAlerts(companyId);
     return { message: 'Performance alerts sent successfully' };
   }

@@ -1,6 +1,20 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PerformanceService } from './performance.service';
 import { JwtAuthGuard } from '../auth/jwt.strategy';
+import { PrismaService } from '../../database/prisma.service';
+import { AuthenticatedUser } from '../../common/authenticated-user';
+import { CurrentUser } from '../../common/decorators/user.decorator';
 import {
   CreateReviewCycleDto,
   RequestFeedbackDto,
@@ -12,60 +26,128 @@ import {
 @Controller('performance')
 @UseGuards(JwtAuthGuard)
 export class PerformanceController {
-  constructor(private performanceService: PerformanceService) {}
+  constructor(
+    private performanceService: PerformanceService,
+    private prisma: PrismaService,
+  ) {}
+
+  private async getEmployeeId(user: AuthenticatedUser) {
+    const directEmployeeId = user.employeeId;
+    if (directEmployeeId) {
+      return directEmployeeId;
+    }
+
+    const companyId = user.companyId;
+    const email = user.email;
+
+    if (!companyId || !email) {
+      throw new UnauthorizedException('Authenticated employee context is unavailable.');
+    }
+
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        company_id: companyId,
+        email,
+      },
+      select: { id: true },
+    });
+
+    if (!employee) {
+      throw new UnauthorizedException('No employee profile is linked to this account.');
+    }
+
+    return employee.id;
+  }
 
   @Post('cycles')
-  createCycle(@Request() req: any, @Body() data: CreateReviewCycleDto) {
-    return this.performanceService.createCycle(req.user.company_id, data);
+  createCycle(@CurrentUser() user: AuthenticatedUser, @Body() data: CreateReviewCycleDto) {
+    return this.performanceService.createCycle(user.companyId, data);
   }
 
   @Get('cycles')
-  getCycles(@Request() req: any) {
-    return this.performanceService.getCycles(req.user.company_id);
+  getCycles(@CurrentUser() user: AuthenticatedUser) {
+    return this.performanceService.getCycles(user.companyId);
   }
 
   @Get('cycles/:id')
-  getCycleDetail(@Request() req: any, @Param('id') id: string) {
-    return this.performanceService.getCycleDetail(req.user.company_id, id);
+  getCycleDetail(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.performanceService.getCycleDetail(user.companyId, id);
   }
 
   @Post('cycles/:id/start')
-  startCycle(@Request() req: any, @Param('id') id: string) {
-    return this.performanceService.startCycleReviews(id, req.user.company_id);
+  startCycle(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.performanceService.startCycleReviews(id, user.companyId);
   }
 
   @Get('reviews/my')
-  getMyReview(@Request() req: any, @Query('cycleId') cycleId: string) {
-    return this.performanceService.getEmployeeReview(req.user.employee_id, cycleId);
+  async getMyReview(@CurrentUser() user: AuthenticatedUser, @Query('cycleId') cycleId: string) {
+    return this.performanceService.getEmployeeReview(await this.getEmployeeId(user), cycleId);
   }
 
   @Patch('reviews/:id/self')
-  submitSelfAssessment(@Request() req: any, @Param('id') id: string, @Body() body: SubmitSelfAssessmentDto) {
-    return this.performanceService.submitSelfAssessment(req.user.company_id, req.user.employee_id, id, body.assessment);
+  async submitSelfAssessment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: SubmitSelfAssessmentDto,
+  ) {
+    return this.performanceService.submitSelfAssessment(
+      user.companyId,
+      await this.getEmployeeId(user),
+      id,
+      body.assessment,
+    );
   }
 
   @Patch('reviews/:id/manager')
-  submitManagerAssessment(@Request() req: any, @Param('id') id: string, @Body() data: SubmitManagerAssessmentDto) {
-    return this.performanceService.submitManagerAssessment(req.user.company_id, req.user.employee_id, id, data.assessment, data.rating);
+  async submitManagerAssessment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() data: SubmitManagerAssessmentDto,
+  ) {
+    return this.performanceService.submitManagerAssessment(
+      user.companyId,
+      await this.getEmployeeId(user),
+      id,
+      data.assessment,
+      data.rating,
+    );
   }
 
   @Post('reviews/:id/feedback-request')
-  requestFeedback(@Request() req: any, @Param('id') id: string, @Body() body: RequestFeedbackDto) {
-    return this.performanceService.requestFeedback(req.user.company_id, req.user.employee_id, id, body.providerId);
+  async requestFeedback(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: RequestFeedbackDto,
+  ) {
+    return this.performanceService.requestFeedback(
+      user.companyId,
+      await this.getEmployeeId(user),
+      id,
+      body.providerId,
+    );
   }
 
   @Get('feedback/pending')
-  getPendingFeedback(@Request() req: any) {
-    return this.performanceService.getPendingFeedback(req.user.employee_id);
+  async getPendingFeedback(@CurrentUser() user: AuthenticatedUser) {
+    return this.performanceService.getPendingFeedback(await this.getEmployeeId(user));
   }
 
   @Patch('feedback/:id/submit')
-  submitFeedback(@Request() req: any, @Param('id') id: string, @Body() body: SubmitFeedbackDto) {
-    return this.performanceService.submitFeedback(req.user.company_id, req.user.employee_id, id, body.answers);
+  async submitFeedback(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: SubmitFeedbackDto,
+  ) {
+    return this.performanceService.submitFeedback(
+      user.companyId,
+      await this.getEmployeeId(user),
+      id,
+      body.answers,
+    );
   }
 
   @Get('cycles/:id/stats')
-  getStats(@Request() req: any, @Param('id') id: string) {
-    return this.performanceService.getCompletionStats(req.user.company_id, id);
+  getStats(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.performanceService.getCompletionStats(user.companyId, id);
   }
 }

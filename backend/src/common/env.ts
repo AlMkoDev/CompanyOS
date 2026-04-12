@@ -161,6 +161,10 @@ export function getEnableHsts() {
   return getOptionalBooleanEnv('ENABLE_HSTS') ?? false;
 }
 
+export function getEnableSwagger() {
+  return getOptionalBooleanEnv('ENABLE_SWAGGER') ?? process.env.NODE_ENV !== 'production';
+}
+
 export function getS3Config() {
   const region = getOptionalEnv('S3_REGION');
   const accessKeyId = getOptionalEnv('S3_ACCESS_KEY');

@@ -56,8 +56,8 @@ export class SupplyChainAuditInterceptor implements NestInterceptor {
     } = request;
 
     const userAgent = request.get('User-Agent');
-    const companyId = user?.company_id;
-    const userId = user?.sub;
+    const companyId = user?.companyId;
+    const userId = user?.userId;
 
     // Determine if this is a supply chain operation that needs auditing
     const shouldAudit = this.shouldAuditOperation(method, url);

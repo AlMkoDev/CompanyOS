@@ -161,5 +161,6 @@ export function validateEnvironment() {
   validateOptionalBooleanEnv('ENABLE_PPM');
   validateOptionalBooleanEnv('ENABLE_ANALYTICS');
   validateOptionalBooleanEnv('ENABLE_HSTS');
+  validateOptionalBooleanEnv('ENABLE_SWAGGER');
   validateOptionalRoleListEnv('REQUIRED_MFA_ROLES');
 }

@@ -15,7 +15,7 @@ export class AuditLogMiddleware implements NestMiddleware {
       res.on('finish', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           const companyId = user?.companyId;
-          const userId = user?.sub;
+          const userId = user?.userId;
 
           if (companyId) {
             this.auditService.log({

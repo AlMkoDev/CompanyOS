@@ -7,6 +7,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { getAuthCookieName, getJwtSecret } from '../../common/env';
+import { AuthenticatedUser } from '../../common/authenticated-user';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -40,7 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: any): Promise<AuthenticatedUser> {
     // This payload is the decoded JWT
     return {
       userId: payload.sub,

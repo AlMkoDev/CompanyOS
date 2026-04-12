@@ -33,8 +33,8 @@ export class GoodsReceiptController {
     @Request() req: any,
     @Body() createGRDto: CreateGoodsReceiptDto,
   ) {
-    const companyId = req.user.company_id;
-    const userId = req.user.sub;
+    const companyId = req.user.companyId;
+    const userId = req.user.userId;
     
     return this.goodsReceiptService.createGoodsReceipt(companyId, userId, createGRDto);
   }
@@ -47,7 +47,7 @@ export class GoodsReceiptController {
     @Request() req: any,
     @Param('id') grId: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.goodsReceiptService.getGoodsReceipt(companyId, grId);
   }
 
@@ -59,8 +59,8 @@ export class GoodsReceiptController {
     @Request() req: any,
     @Param('id') grId: string,
   ) {
-    const companyId = req.user.company_id;
-    const userId = req.user.sub;
+    const companyId = req.user.companyId;
+    const userId = req.user.userId;
     
     return this.goodsReceiptService.completeGoodsReceipt(companyId, grId, userId);
   }
@@ -74,8 +74,8 @@ export class GoodsReceiptController {
     @Param('id') grId: string,
     @Body() resolution: ResolveGoodsReceiptDto,
   ) {
-    const companyId = req.user.company_id;
-    const userId = req.user.sub;
+    const companyId = req.user.companyId;
+    const userId = req.user.userId;
     
     return this.goodsReceiptService.resolveDiscrepancy(companyId, grId, userId, resolution);
   }
@@ -87,7 +87,7 @@ export class GoodsReceiptController {
     @Request() req: any,
     @Param('poId') poId: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.goodsReceiptService.getGoodsReceiptsForPO(companyId, poId);
   }
 
@@ -95,7 +95,7 @@ export class GoodsReceiptController {
   @ApiOperation({ summary: 'Get pending goods receipts with discrepancies' })
   @ApiResponse({ status: 200, description: 'Pending goods receipts retrieved' })
   async getPendingGoodsReceipts(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.goodsReceiptService.getPendingGoodsReceipts(companyId);
   }
 
@@ -107,7 +107,7 @@ export class GoodsReceiptController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     
     const dateRange = from && to ? {
       from: new Date(from),

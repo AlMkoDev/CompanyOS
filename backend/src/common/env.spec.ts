@@ -5,6 +5,7 @@ import {
   getAuthCookieSecure,
   getComplianceUploadMaxBytes,
   getEnableHsts,
+  getEnableSwagger,
   getFeatureFlagValue,
   getFrontendOrigins,
   getPoDocumentUploadMaxBytes,
@@ -115,6 +116,26 @@ describe('env helpers', () => {
 
     process.env.ENABLE_HSTS = 'true';
     expect(getEnableHsts()).toBe(true);
+  });
+
+  it('enables swagger by default outside production and disables it in production by default', () => {
+    delete process.env.ENABLE_SWAGGER;
+
+    process.env.NODE_ENV = 'development';
+    expect(getEnableSwagger()).toBe(true);
+
+    process.env.NODE_ENV = 'production';
+    expect(getEnableSwagger()).toBe(false);
+  });
+
+  it('allows explicit swagger overrides', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ENABLE_SWAGGER = 'true';
+    expect(getEnableSwagger()).toBe(true);
+
+    process.env.NODE_ENV = 'development';
+    process.env.ENABLE_SWAGGER = 'false';
+    expect(getEnableSwagger()).toBe(false);
   });
 
   it('returns null config objects when infra settings are absent', () => {

@@ -31,7 +31,7 @@ export class SupplyChainAuditController {
     @Query('to') to?: string,
     @Query('type') type?: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM',
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     
     // Default to last 30 days if no dates provided
     const defaultFrom = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -56,7 +56,7 @@ export class SupplyChainAuditController {
     @Param('resourceId') resourceId: string,
     @Query('limit') limit?: string,
   ) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     const maxEntries = limit ? parseInt(limit, 10) : 100;
     
     return this.auditService.getResourceAuditTrail(
@@ -72,7 +72,7 @@ export class SupplyChainAuditController {
   @ApiOperation({ summary: 'Get current security alerts and suspicious patterns' })
   @ApiResponse({ status: 200, description: 'Security alerts retrieved' })
   async getSecurityAlerts(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     return this.auditService.detectSuspiciousPatterns(companyId);
   }
 
@@ -81,7 +81,7 @@ export class SupplyChainAuditController {
   @ApiOperation({ summary: 'Get audit dashboard summary' })
   @ApiResponse({ status: 200, description: 'Audit dashboard data retrieved' })
   async getAuditDashboard(@Request() req: any) {
-    const companyId = req.user.company_id;
+    const companyId = req.user.companyId;
     
     // Get last 7 days for dashboard
     const period = {
